@@ -119,6 +119,7 @@ func main() {
 	}
 
 	//+kubebuilder:scaffold:builder
+	// test comment
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
