@@ -19,7 +19,7 @@ The etcd-operator is designed for developers and operators looking for a robust 
 
 ## Versioning
 
-Versioning adheres to the [Semantic Versioning](http://semver.org/) principles.  
+Versioning adheres to the [Semantic Versioning](http://semver.org/) principles.
 A full list of the available releases is available in the GitHub repository's [Release](https://github.com/aenix-io/etcd-operator/releases) section.
 
 - [Roadmap](https://github.com/orgs/aenix-io/projects/1)
@@ -38,5 +38,5 @@ In case of **Feature Requests** please use the [Discussion's Feature Request sec
 
 ## License
 
-etcd-operator is licensed under Apache 2.0.  
+etcd-operator is licensed under Apache 2.0.
 The code is provided as-is with no warranties.
