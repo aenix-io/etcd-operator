@@ -34,6 +34,7 @@ const (
 	certmanagerURLTmpl = "https://github.com/jetstack/cert-manager/releases/download/%s/cert-manager.yaml"
 )
 
+// test comment
 func warnError(err error) {
 	fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
 }
