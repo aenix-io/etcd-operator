@@ -73,8 +73,7 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("installing CRDs")
 			cmd = exec.Command("make", "install")
-			// TODO: Handle CRD installation error
-			_, _ = utils.Run(cmd)
+			_, err = utils.Run(cmd)
 
 			By("deploying the controller-manager")
 			cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
