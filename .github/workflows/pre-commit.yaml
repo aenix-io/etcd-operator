@@ -1,0 +1,14 @@
+name: Pre-commit
+
+on:
+  pull_request:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.1
+      - uses: pre-commit/action@v3.0.1
