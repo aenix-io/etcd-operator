@@ -11,13 +11,13 @@ repos:
   hooks:
     - id: make-fmt
       name: make-fmt
-      entry: sh -c "make fmt"
+      entry: make fmt
       language: system
     - id: make-vet
       name: make-vet
-      entry: sh -c "make vet"
+      entry: make vet
       language: system
     - id: make-lint-fix
       name: make-lint-fix
-      entry: sh -c "make lint-fix"
+      entry: make lint-fix
       language: system
