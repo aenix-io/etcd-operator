@@ -104,6 +104,7 @@ func InstallCertManager() error {
 	return err
 }
 
+// test comment
 // LoadImageToKindCluster loads a local docker image to the kind cluster
 func LoadImageToKindClusterWithName(name string) error {
 	cluster := "kind"
