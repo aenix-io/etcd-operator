@@ -1,0 +1,12 @@
+apiVersion: etcd.aenix.io.etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: etcdcluster
+    app.kubernetes.io/instance: etcdcluster-sample
+    app.kubernetes.io/part-of: etcd-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: etcd-operator
+  name: etcdcluster-sample
+spec:
+  # TODO(user): Add fields here
