@@ -22,6 +22,8 @@ The etcd-operator is designed for developers and operators looking for a robust 
 Versioning adheres to the [Semantic Versioning](http://semver.org/) principles.  
 A full list of the available releases is available in the GitHub repository's [Release](https://github.com/aenix-io/etcd-operator/releases) section.
 
+- [Roadmap](https://github.com/orgs/aenix-io/projects/1)
+
 ## Contributions
 
 Contributions are highly appreciated and very welcomed!
