@@ -33,9 +33,9 @@ type EtcdClusterReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=etcd.aenix.io.etcd.aenix.io,resources=etcdclusters,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=etcd.aenix.io.etcd.aenix.io,resources=etcdclusters/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=etcd.aenix.io.etcd.aenix.io,resources=etcdclusters/finalizers,verbs=update
+//+kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
