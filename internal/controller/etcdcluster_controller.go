@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -61,6 +62,10 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Error retrieving object, requeue
 		return reconcile.Result{}, err
 	}
+	// If object is being deleted, skipping reconciliation
+	if instance.DeletionTimestamp != nil && !instance.DeletionTimestamp.IsZero() {
+		return reconcile.Result{}, nil
+	}
 
 	// 3. mark CR as initialized
 	if len(instance.Status.Conditions) == 0 {
@@ -82,11 +87,14 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.ensureClusterObjects(ctx, instance); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
 	}
-	if len(instance.Status.Conditions) == 1 && instance.Status.Conditions[0].Type == etcdaenixiov1alpha1.EtcdConditionInitialized {
-		instance.Status.Conditions[0].Status = "True"
-		instance.Status.Conditions[0].LastTransitionTime = metav1.Now()
-		instance.Status.Conditions[0].Reason = "InitializationComplete"
-		instance.Status.Conditions[0].Message = "Cluster initialization is complete"
+
+	if initIdx := slices.IndexFunc(instance.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == etcdaenixiov1alpha1.EtcdConditionInitialized
+	}); initIdx != -1 {
+		instance.Status.Conditions[initIdx].Status = "True"
+		instance.Status.Conditions[initIdx].LastTransitionTime = metav1.Now()
+		instance.Status.Conditions[initIdx].Reason = "InitializationComplete"
+		instance.Status.Conditions[initIdx].Message = "Cluster initialization is complete"
 	} else {
 		instance.Status.Conditions = append(instance.Status.Conditions, metav1.Condition{
 			Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
