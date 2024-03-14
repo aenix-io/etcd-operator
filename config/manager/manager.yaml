@@ -70,7 +70,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: controller:latest
+        image: ghcr.io/aenix-io/etcd-operator:latest
         imagePullPolicy: IfNotPresent
         name: manager
         securityContext:
