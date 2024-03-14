@@ -1,0 +1,24 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v3.2.0
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-added-large-files
+- repo: local
+  hooks:
+    - id: make-fmt
+      name: make-fmt
+      entry: sh -c "make fmt"
+      language: system
+    - id: make-vet
+      name: make-vet
+      entry: sh -c "make vet"
+      language: system
+    - id: make-lint-fix
+      name: make-lint-fix
+      entry: sh -c "make lint-fix"
+      language: system
+      require_serial: true
