@@ -35,6 +35,11 @@ type EtcdClusterSpec struct {
 	Storage  Storage `json:"storage,omitempty"`
 }
 
+const (
+	EtcdConditionInitialized = "Initialized"
+	EtcdConditionReady       = "Ready"
+)
+
 // EtcdClusterStatus defines the observed state of EtcdCluster
 type EtcdClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
