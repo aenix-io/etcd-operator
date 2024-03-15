@@ -19,6 +19,10 @@ package controller
 import (
 	"context"
 
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	resource2 "k8s.io/apimachinery/pkg/api/resource"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -38,7 +42,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{}
 
@@ -51,7 +55,12 @@ var _ = Describe("EtcdCluster Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+						Replicas: 3,
+						Storage: etcdaenixiov1alpha1.Storage{
+							Size: resource2.MustParse("1Gi"),
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -66,6 +75,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			By("Cleanup the specific resource instance EtcdCluster")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &EtcdClusterReconciler{
@@ -77,8 +87,33 @@ var _ = Describe("EtcdCluster Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			err = k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(etcdcluster.Status.Conditions).To(HaveLen(1))
+			Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
+			Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
+
+			// check that ConfigMap is created
+			cm := &v1.ConfigMap{}
+			cmName := types.NamespacedName{
+				Namespace: typeNamespacedName.Namespace,
+				Name:      controllerReconciler.getClusterStateConfigMapName(etcdcluster),
+			}
+			err = k8sClient.Get(ctx, cmName, cm)
+			Expect(err).NotTo(HaveOccurred(), "cluster configmap state should exist")
+			Expect(cm.Data).To(Equal(map[string]string{
+				"ETCD_INITIAL_CLUSTER_STATE": "new",
+			}))
+			// check that Service is created
+			svc := &v1.Service{}
+			err = k8sClient.Get(ctx, typeNamespacedName, svc)
+			Expect(err).NotTo(HaveOccurred(), "cluster headless Service state should exist")
+			Expect(svc.Spec.ClusterIP).To(Equal("None"), "cluster Service should be headless")
+			// check that StatefulSet is created
+			sts := &appsv1.StatefulSet{}
+			err = k8sClient.Get(ctx, typeNamespacedName, sts)
+			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
 		})
 	})
 })
