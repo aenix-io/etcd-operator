@@ -63,7 +63,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, err
 	}
 	// If object is being deleted, skipping reconciliation
-	if instance.DeletionTimestamp != nil && !instance.DeletionTimestamp.IsZero() {
+	if !instance.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
 
