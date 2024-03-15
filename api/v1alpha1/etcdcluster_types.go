@@ -35,7 +35,7 @@ type EtcdClusterSpec struct {
 	Storage  Storage `json:"storage,omitempty"`
 }
 
-var (
+const (
 	EtcdConditionInitialized = "Initialized"
 	EtcdConditionReady       = "Ready"
 )

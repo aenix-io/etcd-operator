@@ -175,7 +175,7 @@ func (r *EtcdClusterReconciler) ensureClusterService(ctx context.Context, cluste
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 	if err = r.Create(ctx, svc); err != nil {
-		return fmt.Errorf("cannot create cluster state configmap: %w", err)
+		return fmt.Errorf("cannot create cluster service: %w", err)
 	}
 	return nil
 }
@@ -233,7 +233,7 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 			if i > 0 {
 				initialCluster += ","
 			}
-			initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc.cluster.local:2380",
+			initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
 				cluster.Name, i,
 				cluster.Name, i, cluster.Name, cluster.Namespace,
 			)
@@ -275,13 +275,13 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 									"--listen-peer-urls=https://0.0.0.0:2380",
 									// for first version disable TLS for client access
 									"--listen-client-urls=http://0.0.0.0:2379",
-									"--initial-advertise-peer-urls=https://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc.cluster.local:2380",
+									"--initial-advertise-peer-urls=https://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2380",
 									"--data-dir=/var/run/etcd/default.etcd",
 									"--initial-cluster=" + initialCluster,
 									fmt.Sprintf("--initial-cluster-token=%s-%s", cluster.Name, cluster.Namespace),
 									"--auto-tls",
 									"--peer-auto-tls",
-									"--advertise-client-urls=http://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc.cluster.local:2379",
+									"--advertise-client-urls=http://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2379",
 								},
 								Ports: []corev1.ContainerPort{
 									{Name: "peer", ContainerPort: 2380},
