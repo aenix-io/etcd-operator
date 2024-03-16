@@ -1,6 +1,10 @@
-
 # How to start contributing
+
+## Read kubebuilder documentation
+[Docs](https://book.kubebuilder.io/introduction)
+
 ## Build your develop environment
+
 ### Easy way
 1. Download and install [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#creating-a-cluster).
 2. Create lind cluster `kind create cluster --name etcd-operator-kind`.
@@ -23,7 +27,7 @@ To deploy your code changes
 Using *easy way* you will not be able to debug golang code locally and every change will be necessary to build as an image, upload to the cluster and then restart operator.
 If you use VSCode, you can connect your IDE to a pod in kubernetes cluster and use `go run cmd/main.go` from the pod. It will allow you to debug easily and faster integrate code changes to you develop environment.
 
-General steps.
+**General steps**
 1. Install VSCode Kubernetes extension.
 2. Install VSCode Dev Containers extension.
 3. Create pvc to store operator code, go modules and your files.
@@ -39,6 +43,3 @@ General steps.
 6. Attach VSCode to a running container through Kubernetes extension.
 7. Install necessary extensions to the container. They will be preserved after container restart if you attached pvc to home directory.
 8. Run `go run cmd/main.go`.
-
-## Read kubebuilder documentation
-[Docs](https://book.kubebuilder.io/introduction)
