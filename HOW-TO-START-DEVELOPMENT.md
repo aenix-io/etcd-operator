@@ -8,7 +8,7 @@
 ### Easy way
 1. Download and install [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#creating-a-cluster).
 2. Create lind cluster `kind create cluster --name etcd-operator-kind`.
-3. Switch kubectl context to kind `kubectl cluster-info --context kind-etcd-operator-kind`. Be attentive to avoid damaging your production environment.
+3. Switch kubectl context to kind `kubectl config use-context kind-etcd-operator-kind`. Be attentive to avoid damaging your production environment.
 4. Install cert-manager (it creates certificate k8s secrets). Refer to the [docs](https://cert-manager.io/docs/installation/helm/#4-install-cert-manager).
 5. Build docker image *controller:latest* `make docker-build`.
 6. Retag image to upload to kind cluster with correct name `docker tag controller:latest ghcr.io/aenix-io/etcd-operator:latest`.
