@@ -71,10 +71,10 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(instance.Status.Conditions) == 0 {
 		instance.Status.Conditions = append(instance.Status.Conditions, metav1.Condition{
 			Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
-			Status:             "False",
+			Status:             metav1.ConditionFalse,
 			ObservedGeneration: instance.Generation,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "InitializationStarted",
+			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
 			Message:            "Cluster initialization has started",
 		})
 	}
@@ -101,25 +101,25 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	r.updateClusterState(instance, metav1.Condition{
 		Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
-		Status:             "True",
+		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "InitializationComplete",
+		Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete),
 		Message:            "Cluster initialization is complete",
 	})
 	if isClusterReady {
 		r.updateClusterState(instance, metav1.Condition{
 			Type:               etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:             "True",
+			Status:             metav1.ConditionTrue,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "StatefulSetReady",
+			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
 			Message:            "Cluster StatefulSet is Ready",
 		})
 	} else {
 		r.updateClusterState(instance, metav1.Condition{
 			Type:               etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:             "False",
+			Status:             metav1.ConditionFalse,
 			LastTransitionTime: metav1.Now(),
-			Reason:             "StatefulSetNotReady",
+			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady),
 			Message:            "Cluster StatefulSet is not Ready",
 		})
 	}
@@ -342,6 +342,16 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 										MountPath: "/var/run/etcd",
 									},
 								},
+								StartupProbe: &corev1.Probe{
+									ProbeHandler: corev1.ProbeHandler{
+										HTTPGet: &corev1.HTTPGetAction{
+											Path: "/readyz?serializable=false",
+											Port: intstr.FromInt32(2379),
+										},
+									},
+									InitialDelaySeconds: 1,
+									PeriodSeconds:       5,
+								},
 								LivenessProbe: &corev1.Probe{
 									ProbeHandler: corev1.ProbeHandler{
 										HTTPGet: &corev1.HTTPGetAction{
@@ -429,5 +439,7 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&etcdaenixiov1alpha1.EtcdCluster{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
