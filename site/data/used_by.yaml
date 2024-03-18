@@ -1,0 +1,7 @@
+# cSpell:ignore Kubernetes
+- name: Cozystack
+  # date: 20yy-mm-dd
+  link: https://cozystack.io/
+  image: https://raw.githubusercontent.com/aenix-io/cozystack/main/img/cozystack-logo-black.svg
+  quote: >
+    Cozystack is a free PaaS platform and framework for building clouds
