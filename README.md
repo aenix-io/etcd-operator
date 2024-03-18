@@ -3,7 +3,7 @@
 
 [![Open Source](https://img.shields.io/badge/Open-Source-brightgreen)](https://opensource.org/)
 [![Apache-2.0 License](https://img.shields.io/github/license/aenix-io/etcd-operator)](https://opensource.org/licenses/)
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/etcd-operator)
+[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=flat&logo=telegram&logoColor=white)](https://t.me/etcd_operator)
 [![Active](http://img.shields.io/badge/Status-Active-green.svg)](https://aenix.io/etcd-operator/)
 [![GitHub Release](https://img.shields.io/github/release/aenix-io/etcd-operator.svg?style=flat)](https://github.com/aenix-io/etcd-operator)
 [![GitHub Commit](https://img.shields.io/github/commit-activity/y/aenix-io/etcd-operator)](https://github.com/aenix-io/etcd-operator)
