@@ -40,6 +40,15 @@ const (
 	EtcdConditionReady       = "Ready"
 )
 
+type EtcdCondType string
+
+const (
+	EtcdCondTypeInitStarted         EtcdCondType = "InitializationStarted"
+	EtcdCondTypeInitComplete        EtcdCondType = "InitializationComplete"
+	EtcdCondTypeStatefulSetReady    EtcdCondType = "StatefulSetReady"
+	EtcdCondTypeStatefulSetNotReady EtcdCondType = "StatefulSetNotReady"
+)
+
 // EtcdClusterStatus defines the observed state of EtcdCluster
 type EtcdClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

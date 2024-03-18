@@ -90,9 +90,11 @@ var _ = Describe("EtcdCluster Controller", func() {
 
 			err = k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(etcdcluster.Status.Conditions).To(HaveLen(1))
+			Expect(etcdcluster.Status.Conditions).To(HaveLen(2))
 			Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
 			Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
+			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+			Expect(etcdcluster.Status.Conditions[1].Status).To(Equal(metav1.ConditionStatus("False")))
 
 			// check that ConfigMap is created
 			cm := &v1.ConfigMap{}
@@ -114,6 +116,38 @@ var _ = Describe("EtcdCluster Controller", func() {
 			sts := &appsv1.StatefulSet{}
 			err = k8sClient.Get(ctx, typeNamespacedName, sts)
 			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
+		})
+
+		It("should successfully reconcile the resource twice and mark as ready", func() {
+			By("Reconciling the created resource twice (second time after marking sts as ready)")
+			controllerReconciler := &EtcdClusterReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// check that StatefulSet is created
+			sts := &appsv1.StatefulSet{}
+			err = k8sClient.Get(ctx, typeNamespacedName, sts)
+			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
+			// mark sts as ready
+			sts.Status.ReadyReplicas = int32(etcdcluster.Spec.Replicas)
+			sts.Status.Replicas = int32(etcdcluster.Spec.Replicas)
+			Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
+			// reconcile and check EtcdCluster status
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			// check EtcdCluster status
+			err = k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+			Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
 		})
 	})
 })
