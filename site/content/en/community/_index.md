@@ -61,4 +61,3 @@ For etcd contribution guidelines, see [How to contribute][].
 [meeting-doc]: https://docs.google.com/document/d/1coiWlHOVfPAIyKqtfpYLhq9eeRPHCuuMxmNmVfo9-sA/edit#heading=h.ygb3chatmgn2
 [online]: https://meet.google.com/fmn-sogk-ofb
 [Central Europe Time]: https://www.timeanddate.com/time/zones/cet
-
