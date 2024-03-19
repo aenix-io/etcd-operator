@@ -81,11 +81,6 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message:            "Cluster initialization has started",
 		})
 	}
-	defer func() {
-		if err := r.Status().Update(ctx, instance); err != nil && !errors.IsConflict(err) {
-			logger.Error(err, "unable to update cluster")
-		}
-	}()
 
 	// check sts condition
 	isClusterReady := false
@@ -99,7 +94,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	if err := r.ensureClusterObjects(ctx, instance, isClusterReady); err != nil {
-		return ctrl.Result{}, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
+		res, err2 := r.updateStatus(ctx, instance)
+		if err2 != nil {
+			return res, err2
+		}
+		return res, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
 	}
 
 	r.updateClusterState(instance, metav1.Condition{
@@ -127,7 +126,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		})
 	}
 
-	return ctrl.Result{}, nil
+	return r.updateStatus(ctx, instance)
 }
 
 // ensureClusterObjects creates or updates all objects owned by cluster CR
@@ -472,6 +471,18 @@ func (r *EtcdClusterReconciler) getClusterStateConfigMapName(cluster *etcdaenixi
 
 func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return cluster.Name + "-client"
+}
+
+func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	if err := r.Status().Update(ctx, cluster); err != nil {
+		logger.Error(err, "unable to update cluster status")
+		if errors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
 }
 
 // updateClusterState patches status condition in cluster using merge by Type
