@@ -234,7 +234,6 @@ func (r *EtcdClusterReconciler) ensureClusterClientService(ctx context.Context, 
 				"app.kubernetes.io/instance":   cluster.Name,
 				"app.kubernetes.io/managed-by": "etcd-operator",
 			},
-			PublishNotReadyAddresses: false,
 		},
 	}
 	if err = ctrl.SetControllerReference(cluster, svc, r.Scheme); err != nil {
