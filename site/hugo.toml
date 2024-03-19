@@ -139,7 +139,7 @@ icon = "fab fa-github"
 desc = "Discussions and help from your fellow users!"
 [[params.links.user]]
 name = "Meeting Recordings"
-url = "TODO"
+url = "https://www.youtube.com/playlist?list=PLJtQvuQ_bJl1dbKiI8zp6KXn9b4NEyQZh"
 icon = "fa fa-video"
 desc = "Watch recordings of our community meetings."
 
