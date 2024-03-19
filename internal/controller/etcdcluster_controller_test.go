@@ -110,12 +110,21 @@ var _ = Describe("EtcdCluster Controller", func() {
 			// check that Service is created
 			svc := &v1.Service{}
 			err = k8sClient.Get(ctx, typeNamespacedName, svc)
-			Expect(err).NotTo(HaveOccurred(), "cluster headless Service state should exist")
+			Expect(err).NotTo(HaveOccurred(), "cluster headless Service should exist")
 			Expect(svc.Spec.ClusterIP).To(Equal("None"), "cluster Service should be headless")
 			// check that StatefulSet is created
 			sts := &appsv1.StatefulSet{}
 			err = k8sClient.Get(ctx, typeNamespacedName, sts)
 			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
+			// check that Service is created
+			svc = &v1.Service{}
+			clientSvcName := types.NamespacedName{
+				Namespace: typeNamespacedName.Namespace,
+				Name:      controllerReconciler.getClientServiceName(etcdcluster),
+			}
+			err = k8sClient.Get(ctx, clientSvcName, svc)
+			Expect(err).NotTo(HaveOccurred(), "cluster client Service should exist")
+			Expect(svc.Spec.ClusterIP).NotTo(Equal("None"), "cluster client Service should NOT be headless")
 		})
 
 		It("should successfully reconcile the resource twice and mark as ready", func() {

@@ -144,6 +144,10 @@ func (r *EtcdClusterReconciler) ensureClusterObjects(
 	if err := r.ensureClusterStatefulSet(ctx, cluster); err != nil {
 		return err
 	}
+	// 3. create or update ClusterIP Service
+	if err := r.ensureClusterClientService(ctx, cluster); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -192,6 +196,52 @@ func (r *EtcdClusterReconciler) ensureClusterService(ctx context.Context, cluste
 	}
 	if err = r.Create(ctx, svc); err != nil {
 		return fmt.Errorf("cannot create cluster service: %w", err)
+	}
+	return nil
+}
+
+func (r *EtcdClusterReconciler) ensureClusterClientService(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+	svc := &corev1.Service{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: cluster.Namespace,
+		Name:      r.getClientServiceName(cluster),
+	}, svc)
+	// Service exists, skip creation
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return fmt.Errorf("cannot get cluster client service: %w", err)
+	}
+
+	svc = &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      r.getClientServiceName(cluster),
+			Namespace: cluster.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "etcd",
+				"app.kubernetes.io/instance":   cluster.Name,
+				"app.kubernetes.io/managed-by": "etcd-operator",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
+			},
+			Type: corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{
+				"app.kubernetes.io/name":       "etcd",
+				"app.kubernetes.io/instance":   cluster.Name,
+				"app.kubernetes.io/managed-by": "etcd-operator",
+			},
+			PublishNotReadyAddresses: false,
+		},
+	}
+	if err = ctrl.SetControllerReference(cluster, svc, r.Scheme); err != nil {
+		return fmt.Errorf("cannot set controller reference: %w", err)
+	}
+	if err = r.Create(ctx, svc); err != nil {
+		return fmt.Errorf("cannot create cluster client service: %w", err)
 	}
 	return nil
 }
@@ -419,6 +469,10 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 
 func (r *EtcdClusterReconciler) getClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return cluster.Name + "-cluster-state"
+}
+
+func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	return cluster.Name + "-client"
 }
 
 // updateClusterState patches status condition in cluster using merge by Type
