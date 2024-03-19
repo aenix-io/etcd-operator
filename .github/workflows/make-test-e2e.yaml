@@ -2,11 +2,15 @@ name: Make run tests e2e
 
 on:
   pull_request:
-    types: [labeled]
+    types:
+      - opened
+      - labeled
+      - synchronize
 
 jobs:
   build:
-    if: ${{ github.event.label.name == 'ok-to-test' }}
+    # Pull request has label 'ok-to-test' or the author is a member of the organization
+    if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
