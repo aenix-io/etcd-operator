@@ -17,6 +17,7 @@ repos:
       name: make-vet
       entry: sh -c "make vet"
       language: system
+      require_serial: true
     - id: make-lint-fix
       name: make-lint-fix
       entry: sh -c "make lint-fix"
