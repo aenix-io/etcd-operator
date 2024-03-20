@@ -94,11 +94,8 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	if err := r.ensureClusterObjects(ctx, instance, isClusterReady); err != nil {
-		res, err2 := r.updateStatus(ctx, instance)
-		if err2 != nil {
-			return res, err2
-		}
-		return res, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
+		logger.Error(err, "cannot create Cluster auxiliary objects")
+		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 
 	r.updateClusterState(instance, metav1.Condition{
@@ -473,6 +470,19 @@ func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha
 	return cluster.Name + "-client"
 }
 
+// updateStatusOnErr wraps error and updates EtcdCluster status
+func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, err error) (ctrl.Result, error) {
+	res, statusErr := r.updateStatus(ctx, cluster)
+	if statusErr != nil {
+		return res, statusErr
+	}
+	if err != nil {
+		return res, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
+	}
+	return res, nil
+}
+
+// updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
 func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	if err := r.Status().Update(ctx, cluster); err != nil {
