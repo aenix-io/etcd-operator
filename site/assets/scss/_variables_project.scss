@@ -1,0 +1,16 @@
+/*
+
+Add styles or override variables from the theme here.
+
+*/
+
+/* etcd-docsy full file override: we're not tracking changes to the docsy base file. */
+
+$etcd-blue: #419eda;
+$etcd-light-blue: lighten($etcd-blue, 10%);
+$etcd-dark-blue: darken($etcd-blue, 20%);
+
+$primary: $etcd-dark-blue;
+$secondary: $etcd-light-blue;
+$_yellow:  #ffc107;
+$warning: $_yellow; // Use Bootstrap default

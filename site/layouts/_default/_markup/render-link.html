@@ -1,0 +1,8 @@
+{{ $isExternal := hasPrefix .Destination "http" -}}
+<a href="{{ .Destination | safeURL }}"
+   {{- with .Title}} title="{{ . }}"{{ end -}}
+   {{- if $isExternal }} target="_blank" rel="noopener"{{ end -}}
+>
+  {{- .Text | safeHTML -}}
+</a>
+{{- /* This directive ensures that all trailing whitespace is trimmed. */ -}}
