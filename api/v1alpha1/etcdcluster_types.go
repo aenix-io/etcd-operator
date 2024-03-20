@@ -32,7 +32,7 @@ type EtcdClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum:=0
-	Replicas int32   `json:"replicas,omitempty"`
+	Replicas *int32  `json:"replicas,omitempty"`
 	Storage  Storage `json:"storage,omitempty"`
 }
 
