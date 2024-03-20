@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"slices"
 
@@ -474,12 +475,9 @@ func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha
 func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, err error) (ctrl.Result, error) {
 	res, statusErr := r.updateStatus(ctx, cluster)
 	if statusErr != nil {
-		return res, statusErr
+		return res, goerrors.Join(statusErr, err)
 	}
-	if err != nil {
-		return res, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err)
-	}
-	return res, nil
+	return res, err
 }
 
 // updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
