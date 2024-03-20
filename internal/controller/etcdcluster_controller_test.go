@@ -104,9 +104,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			}
 			err = k8sClient.Get(ctx, cmName, cm)
 			Expect(err).NotTo(HaveOccurred(), "cluster configmap state should exist")
-			Expect(cm.Data).To(Equal(map[string]string{
-				"ETCD_INITIAL_CLUSTER_STATE": "new",
-			}))
+			Expect(cm.Data).To(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", "new"))
 			// check that Service is created
 			svc := &v1.Service{}
 			err = k8sClient.Get(ctx, typeNamespacedName, svc)

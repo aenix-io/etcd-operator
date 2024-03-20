@@ -267,6 +267,17 @@ func (r *EtcdClusterReconciler) ensureClusterStateConfigMap(
 
 	// configmap does not exist, create with cluster state "new"
 	if errors.IsNotFound(err) {
+		initialCluster := ""
+		for i := uint(0); i < cluster.Spec.Replicas; i++ {
+			if i > 0 {
+				initialCluster += ","
+			}
+			initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
+				cluster.Name, i,
+				cluster.Name, i, cluster.Name, cluster.Namespace,
+			)
+		}
+
 		configMap = &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: cluster.Namespace,
@@ -274,6 +285,8 @@ func (r *EtcdClusterReconciler) ensureClusterStateConfigMap(
 			},
 			Data: map[string]string{
 				"ETCD_INITIAL_CLUSTER_STATE": "new",
+				"ETCD_INITIAL_CLUSTER":       initialCluster,
+				"ETCD_INITIAL_CLUSTER_TOKEN": cluster.Name + "-" + cluster.Namespace,
 			},
 		}
 		if err := ctrl.SetControllerReference(cluster, configMap, r.Scheme); err != nil {
@@ -301,16 +314,6 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 	if errors.IsNotFound(err) {
 		notFound = true
 		// prepare initial cluster members
-		initialCluster := ""
-		for i := uint(0); i < cluster.Spec.Replicas; i++ {
-			if i > 0 {
-				initialCluster += ","
-			}
-			initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
-				cluster.Name, i,
-				cluster.Name, i, cluster.Name, cluster.Namespace,
-			)
-		}
 
 		statefulSet = &appsv1.StatefulSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -350,8 +353,6 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 									"--listen-client-urls=http://0.0.0.0:2379",
 									"--initial-advertise-peer-urls=https://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2380",
 									"--data-dir=/var/run/etcd/default.etcd",
-									"--initial-cluster=" + initialCluster,
-									fmt.Sprintf("--initial-cluster-token=%s-%s", cluster.Name, cluster.Namespace),
 									"--auto-tls",
 									"--peer-auto-tls",
 									"--advertise-client-urls=http://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2379",
