@@ -54,14 +54,6 @@ var _ webhook.Validator = &EtcdCluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 	etcdclusterlog.Info("validate create", "name", r.Name)
-	//var allErrors field.ErrorList
-	//// write validation here
-	//if len(allErrors) > 0 {
-	//	return nil, apierrors.NewInvalid(
-	//		schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
-	//		r.Name, allErrors)
-	//}
-
 	return nil, nil
 }
 
@@ -72,16 +64,6 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	if old.(*EtcdCluster).Spec.Replicas != r.Spec.Replicas {
 		warnings = append(warnings, "cluster resize is not currently supported")
 	}
-
-	//var allErrors field.ErrorList
-	//// write validation here
-	//var err *apierrors.StatusError
-	//if len(allErrors) > 0 {
-	//	err = apierrors.NewInvalid(
-	//		schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
-	//		r.Name, allErrors)
-	//	return warnings, err
-	//}
 	return warnings, nil
 }
 

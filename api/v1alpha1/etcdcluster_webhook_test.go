@@ -50,26 +50,6 @@ var _ = Describe("EtcdCluster Webhook", func() {
 	})
 
 	Context("When creating EtcdCluster under Validating Webhook", func() {
-		//It("Should deny if replicas is negative", func() {
-		//	etcdCluster := &EtcdCluster{
-		//		Spec: EtcdClusterSpec{
-		//			Replicas: ptr.To(int32(-1)),
-		//		},
-		//	}
-		//	_, err := etcdCluster.ValidateCreate()
-		//	var statusErr *apierrors.StatusError
-		//
-		//	if gomega.Expect(err).To(gomega.BeAssignableToTypeOf(statusErr)) {
-		//		statusErr = err.(*apierrors.StatusError)
-		//		gomega.Expect(statusErr.ErrStatus.Reason).To(gomega.Equal(metav1.StatusReasonInvalid))
-		//		gomega.Expect(statusErr.ErrStatus.Details.Causes).To(gomega.ContainElement(metav1.StatusCause{
-		//			Type:    metav1.CauseTypeFieldValueInvalid,
-		//			Message: "Invalid value: -1: cluster replicas cannot be less than zero",
-		//			Field:   "spec.replicas",
-		//		}))
-		//	}
-		//})
-
 		It("Should admit if all required fields are provided", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
