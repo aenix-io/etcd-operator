@@ -19,7 +19,9 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("EtcdCluster Webhook", func() {
@@ -28,7 +30,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
-			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(uint(3)))
+			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(int32(0)), "User should have an opportunity to create cluster with 0 replicas")
 			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("4Gi")))
 		})
 
@@ -43,25 +45,42 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				},
 			}
 			etcdCluster.Default()
-			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(uint(5)))
+			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(int32(5)))
 			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("10Gi")))
 		})
 	})
 
-	// Not yet applicable as currently all fields are optional.
+	Context("When creating EtcdCluster under Validating Webhook", func() {
+		It("Should deny if replicas is negative", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: -1,
+				},
+			}
+			_, err := etcdCluster.ValidateCreate()
+			var statusErr *apierrors.StatusError
 
-	//Context("When creating EtcdCluster under Validating Webhook", func() {
-	//	It("Should deny if a required field is empty", func() {
-	//
-	//		// TODO(user): Add your logic here
-	//
-	//	})
-	//
-	//	It("Should admit if all required fields are provided", func() {
-	//
-	//		// TODO(user): Add your logic here
-	//
-	//	})
-	//})
+			if gomega.Expect(err).To(gomega.BeAssignableToTypeOf(statusErr)) {
+				statusErr = err.(*apierrors.StatusError)
+				gomega.Expect(statusErr.ErrStatus.Reason).To(gomega.Equal(metav1.StatusReasonInvalid))
+				gomega.Expect(statusErr.ErrStatus.Details.Causes).To(gomega.ContainElement(metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Message: "Invalid value: -1: cluster replicas cannot be less than zero",
+					Field:   "spec.replicas",
+				}))
+			}
+		})
+
+		It("Should admit if all required fields are provided", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: 1,
+				},
+			}
+			w, err := etcdCluster.ValidateCreate()
+			gomega.Expect(err).To(gomega.Succeed())
+			gomega.Expect(w).To(gomega.BeEmpty())
+		})
+	})
 
 })

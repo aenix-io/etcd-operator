@@ -268,7 +268,7 @@ func (r *EtcdClusterReconciler) ensureClusterStateConfigMap(
 	// configmap does not exist, create with cluster state "new"
 	if errors.IsNotFound(err) {
 		initialCluster := ""
-		for i := uint(0); i < cluster.Spec.Replicas; i++ {
+		for i := int32(0); i < *cluster.Spec.Replicas; i++ {
 			if i > 0 {
 				initialCluster += ","
 			}
@@ -322,7 +322,7 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 			},
 			Spec: appsv1.StatefulSetSpec{
 				// initialize static fields that cannot be changed across updates.
-				Replicas:            new(int32),
+				Replicas:            cluster.Spec.Replicas,
 				ServiceName:         cluster.Name,
 				PodManagementPolicy: appsv1.ParallelPodManagement,
 				Selector: &metav1.LabelSelector{
@@ -442,7 +442,6 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 				},
 			},
 		}
-		*statefulSet.Spec.Replicas = int32(cluster.Spec.Replicas)
 		if err := ctrl.SetControllerReference(cluster, statefulSet, r.Scheme); err != nil {
 			return fmt.Errorf("cannot set controller reference: %w", err)
 		}

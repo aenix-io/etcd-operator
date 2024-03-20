@@ -17,8 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -42,9 +45,6 @@ var _ webhook.Defaulter = &EtcdCluster{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *EtcdCluster) Default() {
 	etcdclusterlog.Info("default", "name", r.Name)
-	if r.Spec.Replicas == 0 {
-		r.Spec.Replicas = 3
-	}
 	if r.Spec.Storage.Size.IsZero() {
 		r.Spec.Storage.Size = resource.MustParse("4Gi")
 	}
@@ -57,6 +57,20 @@ var _ webhook.Validator = &EtcdCluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 	etcdclusterlog.Info("validate create", "name", r.Name)
+	var allErrors field.ErrorList
+	if r.Spec.Replicas < 0 {
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "replicas"),
+			r.Spec.Replicas,
+			"cluster replicas cannot be less than zero",
+		))
+	}
+	if len(allErrors) > 0 {
+		return nil, apierrors.NewInvalid(
+			schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
+			r.Name, allErrors)
+	}
+
 	return nil, nil
 }
 
@@ -68,10 +82,22 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		warnings = append(warnings, "cluster resize is not currently supported")
 	}
 
-	if len(warnings) > 0 {
-		return warnings, nil
+	var allErrors field.ErrorList
+	if r.Spec.Replicas < 0 {
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "replicas"),
+			r.Spec.Replicas,
+			"cluster replicas cannot be less than zero",
+		))
 	}
-	return nil, nil
+
+	var err *apierrors.StatusError
+	if len(allErrors) > 0 {
+		err = apierrors.NewInvalid(
+			schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
+			r.Name, allErrors)
+	}
+	return warnings, err
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

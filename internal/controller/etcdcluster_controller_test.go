@@ -142,8 +142,8 @@ var _ = Describe("EtcdCluster Controller", func() {
 			err = k8sClient.Get(ctx, typeNamespacedName, sts)
 			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
 			// mark sts as ready
-			sts.Status.ReadyReplicas = int32(etcdcluster.Spec.Replicas)
-			sts.Status.Replicas = int32(etcdcluster.Spec.Replicas)
+			sts.Status.ReadyReplicas = etcdcluster.Spec.Replicas
+			sts.Status.Replicas = etcdcluster.Spec.Replicas
 			Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
 			// reconcile and check EtcdCluster status
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
