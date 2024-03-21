@@ -42,9 +42,6 @@ var _ webhook.Defaulter = &EtcdCluster{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *EtcdCluster) Default() {
 	etcdclusterlog.Info("default", "name", r.Name)
-	if r.Spec.Replicas == 0 {
-		r.Spec.Replicas = 3
-	}
 	if r.Spec.Storage.Size.IsZero() {
 		r.Spec.Storage.Size = resource.MustParse("4Gi")
 	}
@@ -67,11 +64,7 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	if old.(*EtcdCluster).Spec.Replicas != r.Spec.Replicas {
 		warnings = append(warnings, "cluster resize is not currently supported")
 	}
-
-	if len(warnings) > 0 {
-		return warnings, nil
-	}
-	return nil, nil
+	return warnings, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

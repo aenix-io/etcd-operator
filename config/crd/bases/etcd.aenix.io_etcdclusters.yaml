@@ -42,6 +42,8 @@ spec:
               replicas:
                 default: 3
                 description: Replicas is the count of etcd instances in cluster.
+                format: int32
+                minimum: 0
                 type: integer
               storage:
                 properties:

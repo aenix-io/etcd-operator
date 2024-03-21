@@ -31,7 +31,8 @@ type EtcdClusterSpec struct {
 	// Replicas is the count of etcd instances in cluster.
 	// +optional
 	// +kubebuilder:default:=3
-	Replicas uint    `json:"replicas,omitempty"`
+	// +kubebuilder:validation:Minimum:=0
+	Replicas *int32  `json:"replicas,omitempty"`
 	Storage  Storage `json:"storage,omitempty"`
 }
 

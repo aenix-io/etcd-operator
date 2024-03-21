@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 
+	"k8s.io/utils/ptr"
+
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	resource2 "k8s.io/apimachinery/pkg/api/resource"
@@ -56,7 +58,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 						Namespace: "default",
 					},
 					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-						Replicas: 3,
+						Replicas: ptr.To(int32(3)),
 						Storage: etcdaenixiov1alpha1.Storage{
 							Size: resource2.MustParse("1Gi"),
 						},
@@ -142,8 +144,8 @@ var _ = Describe("EtcdCluster Controller", func() {
 			err = k8sClient.Get(ctx, typeNamespacedName, sts)
 			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
 			// mark sts as ready
-			sts.Status.ReadyReplicas = int32(etcdcluster.Spec.Replicas)
-			sts.Status.Replicas = int32(etcdcluster.Spec.Replicas)
+			sts.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
+			sts.Status.Replicas = *etcdcluster.Spec.Replicas
 			Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
 			// reconcile and check EtcdCluster status
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{

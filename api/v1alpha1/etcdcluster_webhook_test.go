@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("EtcdCluster Webhook", func() {
@@ -28,14 +29,14 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
-			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(uint(3)))
+			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.BeNil(), "User should have an opportunity to create cluster with 0 replicas")
 			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("4Gi")))
 		})
 
 		It("Should not override fields with default values if not empty", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
-					Replicas: 5,
+					Replicas: ptr.To(int32(5)),
 					Storage: Storage{
 						StorageClass: "local-path",
 						Size:         resource.MustParse("10Gi"),
@@ -43,25 +44,22 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				},
 			}
 			etcdCluster.Default()
-			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.Equal(uint(5)))
+			gomega.Expect(*etcdCluster.Spec.Replicas).To(gomega.Equal(int32(5)))
 			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("10Gi")))
 		})
 	})
 
-	// Not yet applicable as currently all fields are optional.
-
-	//Context("When creating EtcdCluster under Validating Webhook", func() {
-	//	It("Should deny if a required field is empty", func() {
-	//
-	//		// TODO(user): Add your logic here
-	//
-	//	})
-	//
-	//	It("Should admit if all required fields are provided", func() {
-	//
-	//		// TODO(user): Add your logic here
-	//
-	//	})
-	//})
+	Context("When creating EtcdCluster under Validating Webhook", func() {
+		It("Should admit if all required fields are provided", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+				},
+			}
+			w, err := etcdCluster.ValidateCreate()
+			gomega.Expect(err).To(gomega.Succeed())
+			gomega.Expect(w).To(gomega.BeEmpty())
+		})
+	})
 
 })
