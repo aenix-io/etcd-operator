@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 )
@@ -30,22 +32,39 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
 			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.BeNil(), "User should have an opportunity to create cluster with 0 replicas")
-			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("4Gi")))
+			gomega.Expect(etcdCluster.Spec.Storage.EmptyDir).To(gomega.BeNil())
+			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+			if gomega.Expect(storage).NotTo(gomega.BeNil()) {
+				gomega.Expect(*storage).To(gomega.Equal(resource.MustParse("4Gi")))
+			}
 		})
 
 		It("Should not override fields with default values if not empty", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(5)),
-					Storage: Storage{
-						StorageClass: "local-path",
-						Size:         resource.MustParse("10Gi"),
+					Storage: StorageSpec{
+						VolumeClaimTemplate: EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+								StorageClassName: ptr.To("local-path"),
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: map[corev1.ResourceName]resource.Quantity{
+										corev1.ResourceStorage: resource.MustParse("10Gi"),
+									},
+								},
+							},
+						},
 					},
 				},
 			}
 			etcdCluster.Default()
 			gomega.Expect(*etcdCluster.Spec.Replicas).To(gomega.Equal(int32(5)))
-			gomega.Expect(etcdCluster.Spec.Storage.Size).To(gomega.Equal(resource.MustParse("10Gi")))
+			gomega.Expect(etcdCluster.Spec.Storage.EmptyDir).To(gomega.BeNil())
+			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+			if gomega.Expect(storage).NotTo(gomega.BeNil()) {
+				gomega.Expect(*storage).To(gomega.Equal(resource.MustParse("10Gi")))
+			}
 		})
 	})
 
@@ -62,4 +81,26 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		})
 	})
 
+	Context("When updating EtcdCluster under Validating Webhook", func() {
+		It("Should reject changing storage type", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage:  StorageSpec{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+				},
+			}
+			oldCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage:  StorageSpec{EmptyDir: nil},
+				},
+			}
+			w, err := etcdCluster.ValidateUpdate(oldCluster)
+			gomega.Expect(w).To(gomega.BeEmpty())
+			if gomega.Expect(err).To(gomega.HaveOccurred()) {
+				statusErr := err.(*errors.StatusError)
+				gomega.Expect(statusErr.ErrStatus.Message).To(gomega.ContainSubstring("field is immutable"))
+			}
+		})
+	})
 })

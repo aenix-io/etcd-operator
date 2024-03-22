@@ -424,20 +424,39 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 								},
 							},
 						},
-						Volumes: []corev1.Volume{
-							{
-								Name: "data",
-								VolumeSource: corev1.VolumeSource{
-									// TODO: implement PVC
-									EmptyDir: &corev1.EmptyDirVolumeSource{
-										SizeLimit: &cluster.Spec.Storage.Size,
-									},
-								},
-							},
-						},
 					},
 				},
 			},
+		}
+		if cluster.Spec.Storage.EmptyDir != nil {
+			statefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
+				{
+					Name:         "data",
+					VolumeSource: corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir},
+				},
+			}
+		} else {
+			statefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
+				{
+					Name: "data",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: r.getPVCName(cluster),
+						},
+					},
+				},
+			}
+			statefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        r.getPVCName(cluster),
+						Labels:      cluster.Spec.Storage.VolumeClaimTemplate.Labels,
+						Annotations: cluster.Spec.Storage.VolumeClaimTemplate.Annotations,
+					},
+					Spec:   cluster.Spec.Storage.VolumeClaimTemplate.Spec,
+					Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
+				},
+			}
 		}
 		if err := ctrl.SetControllerReference(cluster, statefulSet, r.Scheme); err != nil {
 			return fmt.Errorf("cannot set controller reference: %w", err)
@@ -445,10 +464,6 @@ func (r *EtcdClusterReconciler) ensureClusterStatefulSet(
 	} else if err != nil {
 		return fmt.Errorf("cannot get cluster statefulset: %w", err)
 	}
-
-	// resize is not currently supported
-	//statefulSet.Spec.Replicas = proto.Int32(int32(cluster.Spec.Replicas))
-	statefulSet.Spec.Template.Spec.Volumes[0].VolumeSource.EmptyDir.SizeLimit = &cluster.Spec.Storage.Size
 
 	if notFound {
 		if err := r.Create(ctx, statefulSet); err != nil {
@@ -469,6 +484,14 @@ func (r *EtcdClusterReconciler) getClusterStateConfigMapName(cluster *etcdaenixi
 
 func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return cluster.Name + "-client"
+}
+
+func (r *EtcdClusterReconciler) getPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	if len(cluster.Spec.Storage.VolumeClaimTemplate.Name) > 0 {
+		return cluster.Spec.Storage.VolumeClaimTemplate.Name
+	}
+
+	return "data"
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
