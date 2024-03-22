@@ -8,5 +8,5 @@
 | Alex Gluck | [@AlexGluck](https://github.com/AlexGluck) |  |
 | Oleg Kunitsyn | [@hiddenmarten](https://github.com/hiddenmarten) |  |
 | Sergey Shevchenko | [@sergeyshevch](https://github.com/sergeyshevch) | Simple Life Apps |
-| Grigorii Rochev | [@uburro]([https://github.com/Uburro) | Simple Life Apps |
-| Kirill Garbar | [@Kirill-Garbar]([https://github.com/Kirill-Garbar]) | Simple Life Apps |
+| Grigorii Rochev | [@uburro]([https://github.com/Uburro) | |
+| Kirill Garbar | [@Kirill-Garbar]([https://github.com/Kirill-Garbar]) | |
