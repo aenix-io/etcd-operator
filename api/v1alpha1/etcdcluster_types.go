@@ -30,7 +30,7 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
 	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
-	PodSpec *PodSpec    `json:"pod,omitempty"`
+	PodSpec PodSpec     `json:"pod,omitempty"`
 	Storage StorageSpec `json:"storage"`
 }
 
