@@ -7,3 +7,4 @@
 | Kirill | [@sircthulhu](https://github.com/sircthulhu) |  |
 | Alex Gluck | [@AlexGluck](https://github.com/AlexGluck) |  |
 | Oleg Kunitsyn | [@hiddenmarten](https://github.com/hiddenmarten) |  |
+| Sergey Shevchenko | [@sergeyshevch](https://github.com/sergeyshevch) | Simple Life Apps |
