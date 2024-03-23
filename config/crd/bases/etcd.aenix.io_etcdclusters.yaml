@@ -39,7 +39,7 @@ spec:
           spec:
             description: EtcdClusterSpec defines the desired state of EtcdCluster
             properties:
-              pod:
+              podSpec:
                 description: PodSpec defines the desired state of PodSpec for etcd
                   members. If not specified, default values will be used.
                 properties:

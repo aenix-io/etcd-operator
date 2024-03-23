@@ -11,8 +11,8 @@ metadata:
 spec:
   storage:
     emptyDir:
-
-  pod:
+      sizeLimit: 1Gi
+  podSpec:
     resources:
       requests:
         cpu: 100m
