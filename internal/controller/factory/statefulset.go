@@ -34,7 +34,10 @@ func CreateOrUpdateStatefulSet(
 			podMetadata.GenerateName = cluster.Spec.PodSpec.PodMetadata.Name
 		}
 
-		podMetadata.Labels = cluster.Spec.PodSpec.PodMetadata.Labels
+		for key, value := range cluster.Spec.PodSpec.PodMetadata.Labels {
+			podMetadata.Labels[key] = value
+		}
+
 		podMetadata.Annotations = cluster.Spec.PodSpec.PodMetadata.Annotations
 	}
 
@@ -57,23 +60,6 @@ func CreateOrUpdateStatefulSet(
 		},
 	}
 	podEnv = append(podEnv, cluster.Spec.PodSpec.ExtraEnv...)
-
-	command := []string{
-		"etcd",
-		"--name=$(POD_NAME)",
-		"--listen-peer-urls=https://0.0.0.0:2380",
-		// for first version disable TLS for client access
-		"--listen-client-urls=http://0.0.0.0:2379",
-		"--initial-advertise-peer-urls=https://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2380",
-		"--data-dir=/var/run/etcd/default.etcd",
-		"--auto-tls",
-		"--peer-auto-tls",
-		"--advertise-client-urls=http://$(POD_NAME)." + cluster.Name + ".$(POD_NAMESPACE).svc:2379",
-	}
-
-	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
-		command = append(command, fmt.Sprintf("--%s=%s", name, value))
-	}
 
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -100,7 +86,7 @@ func CreateOrUpdateStatefulSet(
 							Name:            "etcd",
 							Image:           "quay.io/coreos/etcd:v3.5.12",
 							ImagePullPolicy: cluster.Spec.PodSpec.ImagePullPolicy,
-							Command:         command,
+							Command:         generateEtcdCommand(cluster),
 							Ports: []corev1.ContainerPort{
 								{Name: "peer", ContainerPort: 2380},
 								{Name: "client", ContainerPort: 2379},
@@ -205,4 +191,25 @@ func CreateOrUpdateStatefulSet(
 	}
 
 	return reconcileSTS(ctx, rclient, cluster.Name, statefulSet)
+}
+
+func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	command := []string{
+		"etcd",
+		"--name=$(POD_NAME)",
+		"--listen-peer-urls=https://0.0.0.0:2380",
+		// for first version disable TLS for client access
+		"--listen-client-urls=http://0.0.0.0:2379",
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
+		"--data-dir=/var/run/etcd/default.etcd",
+		"--auto-tls",
+		"--peer-auto-tls",
+		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
+	}
+
+	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
+		command = append(command, fmt.Sprintf("--%s=%s", name, value))
+	}
+
+	return command
 }
