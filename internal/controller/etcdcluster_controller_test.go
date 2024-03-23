@@ -21,12 +21,10 @@ import (
 
 	"k8s.io/utils/ptr"
 
-	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
-	resource2 "k8s.io/apimachinery/pkg/api/resource"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -59,8 +57,8 @@ var _ = Describe("EtcdCluster Controller", func() {
 					},
 					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
 						Replicas: ptr.To(int32(3)),
-						Storage: etcdaenixiov1alpha1.Storage{
-							Size: resource2.MustParse("1Gi"),
+						Storage: etcdaenixiov1alpha1.StorageSpec{
+							EmptyDir: &v1.EmptyDirVolumeSource{},
 						},
 					},
 				}
