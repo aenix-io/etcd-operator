@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 )
 
 // EtcdClusterSpec defines the desired state of EtcdCluster
@@ -63,19 +62,6 @@ type EtcdCluster struct {
 
 	Spec   EtcdClusterSpec   `json:"spec,omitempty"`
 	Status EtcdClusterStatus `json:"status,omitempty"`
-}
-
-func (e *EtcdCluster) AsOwner() []metav1.OwnerReference {
-	return []metav1.OwnerReference{
-		{
-			APIVersion:         e.APIVersion,
-			Kind:               e.Kind,
-			Name:               e.Name,
-			UID:                e.UID,
-			Controller:         ptr.To(true),
-			BlockOwnerDeletion: ptr.To(true),
-		},
-	}
 }
 
 // +kubebuilder:object:root=true

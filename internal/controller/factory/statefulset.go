@@ -7,7 +7,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
@@ -17,6 +19,7 @@ func CreateOrUpdateStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
+	rscheme *runtime.Scheme,
 ) error {
 	podMetadata := metav1.ObjectMeta{
 		Labels: map[string]string{
@@ -74,9 +77,8 @@ func CreateOrUpdateStatefulSet(
 
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:       cluster.Namespace,
-			Name:            cluster.Name,
-			OwnerReferences: cluster.AsOwner(),
+			Namespace: cluster.Namespace,
+			Name:      cluster.Name,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			// initialize static fields that cannot be changed across updates.
@@ -196,6 +198,10 @@ func CreateOrUpdateStatefulSet(
 				Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
 			},
 		}
+	}
+
+	if err := ctrl.SetControllerReference(cluster, statefulSet, rscheme); err != nil {
+		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
 	return reconcileSTS(ctx, rclient, cluster.Name, statefulSet)

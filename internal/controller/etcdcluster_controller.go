@@ -139,7 +139,7 @@ func (r *EtcdClusterReconciler) ensureClusterObjects(
 		return err
 	}
 	// 2. create or update statefulset
-	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
+	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	// 3. create or update ClusterIP Service
