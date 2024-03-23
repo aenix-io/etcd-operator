@@ -44,9 +44,11 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.envVars }}
           envFrom:
             - configMapRef:
                 name: {{ include "etcd-operator.fullname" . }}-env
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
