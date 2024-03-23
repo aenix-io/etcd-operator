@@ -60,12 +60,8 @@ readinessProbe:
     path: /
     port: http
 
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
+# -- Templated map to set environment variables, if you want to delete any, just make it null https://stackoverflow.com/questions/63766999/unset-remove-default-value-in-helm-values-yaml
+envVars: {}
 
 nodeSelector: {}
 
