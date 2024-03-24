@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 )
 
 var _ = Describe("EtcdCluster Controller", func() {
@@ -100,7 +101,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			cm := &v1.ConfigMap{}
 			cmName := types.NamespacedName{
 				Namespace: typeNamespacedName.Namespace,
-				Name:      controllerReconciler.getClusterStateConfigMapName(etcdcluster),
+				Name:      factory.GetClusterStateConfigMapName(etcdcluster),
 			}
 			err = k8sClient.Get(ctx, cmName, cm)
 			Expect(err).NotTo(HaveOccurred(), "cluster configmap state should exist")

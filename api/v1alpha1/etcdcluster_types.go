@@ -27,8 +27,10 @@ type EtcdClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum:=0
-	Replicas *int32      `json:"replicas,omitempty"`
-	Storage  StorageSpec `json:"storage"`
+	Replicas *int32 `json:"replicas,omitempty"`
+	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
+	PodSpec PodSpec     `json:"podSpec,omitempty"`
+	Storage StorageSpec `json:"storage"`
 }
 
 const (
@@ -50,8 +52,8 @@ type EtcdClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // EtcdCluster is the Schema for the etcdclusters API
 type EtcdCluster struct {
@@ -62,7 +64,7 @@ type EtcdCluster struct {
 	Status EtcdClusterStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // EtcdClusterList contains a list of EtcdCluster
 type EtcdClusterList struct {
@@ -96,6 +98,59 @@ type EmbeddedObjectMetadata struct {
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
+}
+
+// PodSpec defines the desired state of PodSpec for etcd members.
+// +k8s:openapi-gen=true
+type PodSpec struct {
+	// ImagePullPolicy describes a policy for if/when to pull a container image
+	// +kubebuilder:default:=IfNotPresent
+	// +optional
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	// ImagePullSecrets An optional list of references to secrets in the same namespace
+	// to use for pulling images from registries
+	// see https://kubernetes.io/docs/concepts/containers/images/#referring-to-an-imagepullsecrets-on-a-pod
+	// +optional
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	// PodMetadata contains metadata relevant to a PodSpec.
+	// +optional
+	PodMetadata *EmbeddedObjectMetadata `json:"metadata,omitempty"`
+	// Resources describes the compute resource requirements.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Affinity sets the scheduling constraints for the pod.
+	// +optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+	// NodeSelector is a selector which must be true for the pod to fit on a node.
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// TopologySpreadConstraints describes how a group of pods ought to spread across topology domains.
+	// +optional
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+	// Tolerations is a list of tolerations.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// SecurityContext holds pod-level security attributes and common container settings.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
+	// PriorityClassName is the name of the PriorityClass for this pod.
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+	// TerminationGracePeriodSeconds is the time to wait before forceful pod shutdown.
+	// +optional
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+	// SchedulerName is the name of the scheduler to be used for scheduling the pod.
+	// +optional
+	SchedulerName string `json:"schedulerName,omitempty"`
+	// RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group, which should be used to run this pod.
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+	// ExtraArgs are the extra arguments to pass to the etcd container.
+	// +optional
+	ExtraArgs map[string]string `json:"extraArgs,omitempty"`
+	// ExtraEnv are the extra environment variables to pass to the etcd container.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 }
 
 // StorageSpec defines the configured storage for a etcd members.

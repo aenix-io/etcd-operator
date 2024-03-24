@@ -39,7 +39,7 @@ func (r *EtcdCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-//+kubebuilder:webhook:path=/mutate-etcd-aenix-io-v1alpha1-etcdcluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=etcd.aenix.io,resources=etcdclusters,verbs=create;update,versions=v1alpha1,name=metcdcluster.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-etcd-aenix-io-v1alpha1-etcdcluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=etcd.aenix.io,resources=etcdclusters,verbs=create;update,versions=v1alpha1,name=metcdcluster.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Defaulter = &EtcdCluster{}
 
@@ -59,7 +59,7 @@ func (r *EtcdCluster) Default() {
 	}
 }
 
-//+kubebuilder:webhook:path=/validate-etcd-aenix-io-v1alpha1-etcdcluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=etcd.aenix.io,resources=etcdclusters,verbs=create;update,versions=v1alpha1,name=vetcdcluster.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-etcd-aenix-io-v1alpha1-etcdcluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=etcd.aenix.io,resources=etcdclusters,verbs=create;update,versions=v1alpha1,name=vetcdcluster.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Validator = &EtcdCluster{}
 
@@ -79,7 +79,7 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	}
 
 	var allErrors field.ErrorList
-	if oldCluster.Spec.Storage.EmptyDir != r.Spec.Storage.EmptyDir {
+	if oldCluster.Spec.Storage.EmptyDir.String() != r.Spec.Storage.EmptyDir.String() {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "storage", "emptyDir"),
 			r.Spec.Storage.EmptyDir,

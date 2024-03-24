@@ -9,4 +9,14 @@ metadata:
     app.kubernetes.io/created-by: etcd-operator
   name: etcdcluster-sample
 spec:
-  # TODO(user): Add fields here
+  storage:
+    emptyDir:
+      sizeLimit: 1Gi
+  podSpec:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 100m
+        memory: 100Mi
