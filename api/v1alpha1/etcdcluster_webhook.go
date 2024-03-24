@@ -79,7 +79,8 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	}
 
 	var allErrors field.ErrorList
-	if oldCluster.Spec.Storage.EmptyDir.String() != r.Spec.Storage.EmptyDir.String() {
+	if oldCluster.Spec.Storage.EmptyDir == nil && r.Spec.Storage.EmptyDir != nil ||
+		oldCluster.Spec.Storage.EmptyDir != nil && r.Spec.Storage.EmptyDir == nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "storage", "emptyDir"),
 			r.Spec.Storage.EmptyDir,
