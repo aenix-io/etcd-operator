@@ -40,7 +40,7 @@ func reconcileSTS(ctx context.Context, rclient client.Client, crdName string, st
 		}
 		return fmt.Errorf("cannot get existing statefulset: %s, for crd_object: %s, err: %w", sts.Name, crdName, err)
 	}
-	sts.Annotations = labels.Merge(sts.Annotations, sts.Annotations)
+	sts.Annotations = labels.Merge(currentSts.Annotations, sts.Annotations)
 	if sts.ResourceVersion != "" {
 		sts.ResourceVersion = currentSts.ResourceVersion
 	}
