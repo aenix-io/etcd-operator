@@ -60,6 +60,17 @@ readinessProbe:
     path: /
     port: http
 
+
+service:
+
+  type: ClusterIP
+
+  portMapping:
+
+    metrics: 8080
+
+    health: 8081
+
 # -- Templated map to set environment variables, if you want to delete any, just make it null https://stackoverflow.com/questions/63766999/unset-remove-default-value-in-helm-values-yaml
 envVars: {}
 
