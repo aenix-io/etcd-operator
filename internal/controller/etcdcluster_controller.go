@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -132,10 +131,10 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 func (r *EtcdClusterReconciler) ensureClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, isClusterInitialized bool) error {
 	// 1. create or update configmap <name>-cluster-state
-	if err := r.ensureClusterStateConfigMap(ctx, cluster, isClusterInitialized); err != nil {
+	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, isClusterInitialized, r.Client, r.Scheme); err != nil {
 		return err
 	}
-	if err := r.ensureClusterService(ctx, cluster); err != nil {
+	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	// 2. create or update statefulset
@@ -143,164 +142,11 @@ func (r *EtcdClusterReconciler) ensureClusterObjects(
 		return err
 	}
 	// 3. create or update ClusterIP Service
-	if err := r.ensureClusterClientService(ctx, cluster); err != nil {
+	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func (r *EtcdClusterReconciler) ensureClusterService(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
-	svc := &corev1.Service{}
-	err := r.Get(ctx, client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      cluster.Name,
-	}, svc)
-	// Service exists, skip creation
-	if err == nil {
-		return nil
-	}
-	if !errors.IsNotFound(err) {
-		return fmt.Errorf("cannot get cluster service: %w", err)
-	}
-
-	svc = &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cluster.Name,
-			Namespace: cluster.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{Name: "peer", TargetPort: intstr.FromInt32(2380), Port: 2380, Protocol: corev1.ProtocolTCP},
-				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
-			},
-			Type:      corev1.ServiceTypeClusterIP,
-			ClusterIP: "None",
-			Selector: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
-			PublishNotReadyAddresses: true,
-		},
-	}
-	if err = ctrl.SetControllerReference(cluster, svc, r.Scheme); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
-	}
-	if err = r.Create(ctx, svc); err != nil {
-		return fmt.Errorf("cannot create cluster service: %w", err)
-	}
-	return nil
-}
-
-func (r *EtcdClusterReconciler) ensureClusterClientService(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
-	svc := &corev1.Service{}
-	err := r.Get(ctx, client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      r.getClientServiceName(cluster),
-	}, svc)
-	// Service exists, skip creation
-	if err == nil {
-		return nil
-	}
-	if !errors.IsNotFound(err) {
-		return fmt.Errorf("cannot get cluster client service: %w", err)
-	}
-
-	svc = &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.getClientServiceName(cluster),
-			Namespace: cluster.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
-			},
-			Type: corev1.ServiceTypeClusterIP,
-			Selector: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
-		},
-	}
-	if err = ctrl.SetControllerReference(cluster, svc, r.Scheme); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
-	}
-	if err = r.Create(ctx, svc); err != nil {
-		return fmt.Errorf("cannot create cluster client service: %w", err)
-	}
-	return nil
-}
-
-// ensureClusterStateConfigMap creates or updates cluster state configmap.
-func (r *EtcdClusterReconciler) ensureClusterStateConfigMap(
-	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, isClusterInitialized bool) error {
-	configMap := &corev1.ConfigMap{}
-	err := r.Get(ctx, client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      factory.GetClusterStateConfigMapName(cluster),
-	}, configMap)
-	// configmap exists, skip editing.
-	if err == nil {
-		if isClusterInitialized {
-			// update cluster state to existing
-			configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
-			if err = r.Update(ctx, configMap); err != nil {
-				return fmt.Errorf("cannot update cluster state configmap: %w", err)
-			}
-		}
-		return nil
-	}
-
-	// configmap does not exist, create with cluster state "new"
-	if errors.IsNotFound(err) {
-		initialCluster := ""
-		for i := int32(0); i < *cluster.Spec.Replicas; i++ {
-			if i > 0 {
-				initialCluster += ","
-			}
-			initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
-				cluster.Name, i,
-				cluster.Name, i, cluster.Name, cluster.Namespace,
-			)
-		}
-
-		configMap = &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: cluster.Namespace,
-				Name:      factory.GetClusterStateConfigMapName(cluster),
-			},
-			Data: map[string]string{
-				"ETCD_INITIAL_CLUSTER_STATE": "new",
-				"ETCD_INITIAL_CLUSTER":       initialCluster,
-				"ETCD_INITIAL_CLUSTER_TOKEN": cluster.Name + "-" + cluster.Namespace,
-			},
-		}
-		if err := ctrl.SetControllerReference(cluster, configMap, r.Scheme); err != nil {
-			return fmt.Errorf("cannot set controller reference: %w", err)
-		}
-		if err := r.Create(ctx, configMap); err != nil {
-			return fmt.Errorf("cannot create cluster state configmap: %w", err)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("cannot get cluster state configmap: %w", err)
-}
-
-func (r *EtcdClusterReconciler) getClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	return cluster.Name + "-client"
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
