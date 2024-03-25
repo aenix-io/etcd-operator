@@ -95,12 +95,28 @@ var _ = Describe("EtcdCluster Webhook", func() {
 					Storage:  StorageSpec{EmptyDir: nil},
 				},
 			}
-			w, err := etcdCluster.ValidateUpdate(oldCluster)
-			gomega.Expect(w).To(gomega.BeEmpty())
+			_, err := etcdCluster.ValidateUpdate(oldCluster)
 			if gomega.Expect(err).To(gomega.HaveOccurred()) {
 				statusErr := err.(*errors.StatusError)
 				gomega.Expect(statusErr.ErrStatus.Message).To(gomega.ContainSubstring("field is immutable"))
 			}
+		})
+
+		It("Should allow changing emptydir size", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage:  StorageSpec{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr.To(resource.MustParse("4Gi"))}},
+				},
+			}
+			oldCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage:  StorageSpec{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr.To(resource.MustParse("10Gi"))}},
+				},
+			}
+			_, err := etcdCluster.ValidateUpdate(oldCluster)
+			gomega.Expect(err).To(gomega.Succeed())
 		})
 	})
 })
