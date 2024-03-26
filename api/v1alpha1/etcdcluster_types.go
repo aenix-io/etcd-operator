@@ -21,6 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const defaultEtcdImage = "quay.io/coreos/etcd:v3.5.12"
+
 // EtcdClusterSpec defines the desired state of EtcdCluster
 type EtcdClusterSpec struct {
 	// Replicas is the count of etcd instances in cluster.
@@ -103,6 +105,9 @@ type EmbeddedObjectMetadata struct {
 // PodSpec defines the desired state of PodSpec for etcd members.
 // +k8s:openapi-gen=true
 type PodSpec struct {
+	// Image is the etcd container image name
+	// +optional
+	Image string `json:"image,omitempty"`
 	// ImagePullPolicy describes a policy for if/when to pull a container image
 	// +kubebuilder:default:=IfNotPresent
 	// +optional

@@ -31,6 +31,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
+			gomega.Expect(etcdCluster.Spec.PodSpec.Image).To(gomega.Equal(defaultEtcdImage))
 			gomega.Expect(etcdCluster.Spec.Replicas).To(gomega.BeNil(), "User should have an opportunity to create cluster with 0 replicas")
 			gomega.Expect(etcdCluster.Spec.Storage.EmptyDir).To(gomega.BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
@@ -43,6 +44,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(5)),
+					PodSpec: PodSpec{
+						Image: "myregistry.local/etcd:v1.1.1",
+					},
 					Storage: StorageSpec{
 						VolumeClaimTemplate: EmbeddedPersistentVolumeClaim{
 							Spec: corev1.PersistentVolumeClaimSpec{
@@ -60,6 +64,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 			etcdCluster.Default()
 			gomega.Expect(*etcdCluster.Spec.Replicas).To(gomega.Equal(int32(5)))
+			gomega.Expect(etcdCluster.Spec.PodSpec.Image).To(gomega.Equal("myregistry.local/etcd:v1.1.1"))
 			gomega.Expect(etcdCluster.Spec.Storage.EmptyDir).To(gomega.BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
 			if gomega.Expect(storage).NotTo(gomega.BeNil()) {
