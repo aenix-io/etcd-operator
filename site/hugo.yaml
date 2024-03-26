@@ -86,8 +86,12 @@ params:
         url: https://github.com/aenix-io/etcd-operator/discussions
         icon: fab fa-github
         desc: Discussions and help from your fellow users!
+      - name: Google Group
+        url: https://groups.google.com/u/1/g/etcd-operator-dev
+        icon: fab fa-google
+        desc: Join our mailing list to get updates and share your feedback.
       - name: Meeting Recordings
-        url: TODO
+        url: https://www.youtube.com/playlist?list=PLJtQvuQ_bJl1dbKiI8zp6KXn9b4NEyQZh
         icon: fa fa-video
         desc: Watch recordings of our community meetings.
     developer:
