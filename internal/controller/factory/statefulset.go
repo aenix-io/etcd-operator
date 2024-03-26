@@ -100,7 +100,7 @@ func CreateOrUpdateStatefulSet(
 					Containers: []corev1.Container{
 						{
 							Name:            "etcd",
-							Image:           "quay.io/coreos/etcd:v3.5.12",
+							Image:           cluster.Spec.PodSpec.Image,
 							ImagePullPolicy: cluster.Spec.PodSpec.ImagePullPolicy,
 							Command:         generateEtcdCommand(cluster),
 							Ports: []corev1.ContainerPort{
