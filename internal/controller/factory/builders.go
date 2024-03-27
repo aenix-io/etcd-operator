@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func reconcileSTS(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
+func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
 	logger := log.FromContext(ctx)
 
 	currentSts := &appsv1.StatefulSet{}
@@ -68,7 +68,7 @@ func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName stri
 	return rclient.Update(ctx, configMap)
 }
 
-func reconcileSVC(ctx context.Context, rclient client.Client, crdName string, svc *corev1.Service) error {
+func reconcileService(ctx context.Context, rclient client.Client, crdName string, svc *corev1.Service) error {
 	logger := log.FromContext(ctx)
 
 	currentSvc := &corev1.Service{}

@@ -129,9 +129,9 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 // ensureClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureClusterObjects(
-	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, isClusterInitialized bool) error {
+	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, isClusterReady bool) error {
 	// 1. create or update configmap <name>-cluster-state
-	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, isClusterInitialized, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, isClusterReady, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {

@@ -70,7 +70,7 @@ func CreateOrUpdateClusterService(
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileSVC(ctx, rclient, cluster.Name, svc)
+	return reconcileService(ctx, rclient, cluster.Name, svc)
 }
 
 func CreateOrUpdateClientService(
@@ -106,5 +106,5 @@ func CreateOrUpdateClientService(
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileSVC(ctx, rclient, cluster.Name, svc)
+	return reconcileService(ctx, rclient, cluster.Name, svc)
 }

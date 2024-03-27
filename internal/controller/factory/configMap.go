@@ -36,7 +36,7 @@ func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) stri
 func CreateOrUpdateClusterStateConfigMap(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
-	isClusterInitialized bool,
+	isClusterReady bool,
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
@@ -63,7 +63,7 @@ func CreateOrUpdateClusterStateConfigMap(
 		},
 	}
 
-	if isClusterInitialized {
+	if isClusterReady {
 		// update cluster state to existing
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}
