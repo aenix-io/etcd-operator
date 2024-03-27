@@ -1,0 +1,12 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+  - Kirill-Garbar   # Kirill Garbar <kirill@garbar.pro>
+  - hiddenmarten    # Oleg Kunitsyn
+  - kvaps           # Andrei Kvapil <kvapss@gmail.com> <andrei.kvapil@aenix.io>
+  - sergeyshevch    # Sergey Shevchenko <sergeyshevchdevelop@gmail.com>
+  - sircthulhu      # Kirill <Stitch14@yandex.ru>
+reviewers:
+  - AlexGluck       # Alex Gluck
+  - Uburro          # Grigorii Rochev
+  - gecube          # George Gaal <gb12335@gmail.com> <george.gaal@aenix.io>
