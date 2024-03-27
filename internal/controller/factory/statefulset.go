@@ -38,11 +38,7 @@ func CreateOrUpdateStatefulSet(
 	rscheme *runtime.Scheme,
 ) error {
 	podMetadata := metav1.ObjectMeta{
-		Labels: map[string]string{
-			"app.kubernetes.io/name":       "etcd",
-			"app.kubernetes.io/instance":   cluster.Name,
-			"app.kubernetes.io/managed-by": "etcd-operator",
-		},
+		Labels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 	}
 
 	if cluster.Spec.PodSpec.PodMetadata != nil {
@@ -88,11 +84,7 @@ func CreateOrUpdateStatefulSet(
 			ServiceName:         cluster.Name,
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app.kubernetes.io/name":       "etcd",
-					"app.kubernetes.io/instance":   cluster.Name,
-					"app.kubernetes.io/managed-by": "etcd-operator",
-				},
+				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: podMetadata,
