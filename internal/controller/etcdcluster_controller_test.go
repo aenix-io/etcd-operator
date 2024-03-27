@@ -119,7 +119,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			svc = &v1.Service{}
 			clientSvcName := types.NamespacedName{
 				Namespace: typeNamespacedName.Namespace,
-				Name:      controllerReconciler.getClientServiceName(etcdcluster),
+				Name:      factory.GetClientServiceName(etcdcluster),
 			}
 			err = k8sClient.Get(ctx, clientSvcName, svc)
 			Expect(err).NotTo(HaveOccurred(), "cluster client Service should exist")

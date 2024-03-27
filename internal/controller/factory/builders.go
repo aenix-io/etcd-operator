@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func reconcileSTS(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
+func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
 	logger := log.FromContext(ctx)
 
 	currentSts := &appsv1.StatefulSet{}
@@ -46,4 +47,43 @@ func reconcileSTS(ctx context.Context, rclient client.Client, crdName string, st
 	}
 	sts.Status = currentSts.Status
 	return rclient.Update(ctx, sts)
+}
+
+func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName string, configMap *corev1.ConfigMap) error {
+	logger := log.FromContext(ctx)
+
+	currentConfigMap := &corev1.ConfigMap{}
+	err := rclient.Get(ctx, types.NamespacedName{Namespace: configMap.Namespace, Name: configMap.Name}, currentConfigMap)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.V(2).Info("creating new configMap", "cm_name", configMap.Name, "crd_object", crdName)
+			return rclient.Create(ctx, configMap)
+		}
+		return fmt.Errorf("cannot get existing configMap: %s, for crd_object: %s, err: %w", configMap.Name, crdName, err)
+	}
+	configMap.Annotations = labels.Merge(currentConfigMap.Annotations, configMap.Annotations)
+	if configMap.ResourceVersion != "" {
+		configMap.ResourceVersion = currentConfigMap.ResourceVersion
+	}
+	return rclient.Update(ctx, configMap)
+}
+
+func reconcileService(ctx context.Context, rclient client.Client, crdName string, svc *corev1.Service) error {
+	logger := log.FromContext(ctx)
+
+	currentSvc := &corev1.Service{}
+	err := rclient.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, currentSvc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.V(2).Info("creating new service", "svc_name", svc.Name, "crd_object", crdName)
+			return rclient.Create(ctx, svc)
+		}
+		return fmt.Errorf("cannot get existing service: %s, for crd_object: %s, err: %w", svc.Name, crdName, err)
+	}
+	svc.Annotations = labels.Merge(currentSvc.Annotations, svc.Annotations)
+	if svc.ResourceVersion != "" {
+		svc.ResourceVersion = currentSvc.ResourceVersion
+	}
+	svc.Status = currentSvc.Status
+	return rclient.Update(ctx, svc)
 }

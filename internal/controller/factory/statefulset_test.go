@@ -69,6 +69,24 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		It("should successfully create the statefulset with filled spec", func() {
 			By("Creating the statefulset")
 			etcdcluster := etcdcluster.DeepCopy()
+			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
+				VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
+					EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+						Name: "etcd-data",
+					},
+					Spec: v1.PersistentVolumeClaimSpec{
+						AccessModes: []v1.PersistentVolumeAccessMode{
+							v1.ReadWriteOnce,
+						},
+						Resources: v1.VolumeResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+					Status: v1.PersistentVolumeClaimStatus{},
+				},
+			}
 			etcdcluster.Spec.PodSpec = etcdaenixiov1alpha1.PodSpec{
 				Resources: v1.ResourceRequirements{
 					Requests: v1.ResourceList{

@@ -206,7 +206,7 @@ func CreateOrUpdateStatefulSet(
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileSTS(ctx, rclient, cluster.Name, statefulSet)
+	return reconcileStatefulSet(ctx, rclient, cluster.Name, statefulSet)
 }
 
 func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
