@@ -21,7 +21,6 @@ import (
 	goerrors "errors"
 	"fmt"
 
-	"github.com/aenix-io/etcd-operator/internal/util"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -72,7 +71,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
-		util.FillConditions(instance)
+		factory.FillConditions(instance)
 	}
 
 	// ensure managed resources
@@ -82,7 +81,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster initialization condition
-	util.SetCondition(instance, etcdaenixiov1alpha1.EtcdConditionInitialized, true)
+	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
+		WithStatus(true).
+		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete)).
+		WithMessage(string(etcdaenixiov1alpha1.EtcdInitCondPosMessage)).
+		Complete())
 
 	// check sts condition
 	clusterReady, err := r.clusterIsReady(ctx, instance)
@@ -92,7 +95,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster readiness condition
-	util.SetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady, clusterReady)
+	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+		WithStatus(clusterReady).
+		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
+		WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
+		Complete())
 	return r.updateStatus(ctx, instance)
 }
 

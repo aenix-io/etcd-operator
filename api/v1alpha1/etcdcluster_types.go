@@ -52,7 +52,7 @@ const (
 
 const (
 	EtcdInitCondNegMessage  EtcdCondMessage = "Cluster initialization started"
-	EtcdInitCondPosMessage  EtcdCondMessage = "Cluster initialization is complete"
+	EtcdInitCondPosMessage  EtcdCondMessage = "Cluster managed resources created"
 	EtcdReadyCondNegMessage EtcdCondMessage = "Cluster StatefulSet is not Ready"
 	EtcdReadyCondPosMessage EtcdCondMessage = "Cluster StatefulSet is Ready"
 )

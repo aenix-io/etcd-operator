@@ -19,7 +19,6 @@ package factory
 import (
 	"context"
 
-	"github.com/aenix-io/etcd-operator/internal/util"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -66,7 +65,8 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
 
 			By("updating the configmap for initialized cluster")
-			util.SetCondition(etcdcluster, etcdaenixiov1alpha1.EtcdConditionReady, true)
+			SetCondition(etcdcluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+				WithStatus(true).Complete())
 			err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
 			Expect(err).NotTo(HaveOccurred())
 
