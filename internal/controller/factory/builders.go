@@ -121,9 +121,7 @@ func reconcilePdb(ctx context.Context, rclient client.Client, crdName string, pd
 		return fmt.Errorf("cannot get existing pdb resource: %s for crd_object: %s, err: %w", pdb.Name, crdName, err)
 	}
 	pdb.Annotations = labels.Merge(currentPdb.Annotations, pdb.Annotations)
-	if pdb.ResourceVersion != "" {
-		pdb.ResourceVersion = currentPdb.ResourceVersion
-	}
+	pdb.ResourceVersion = currentPdb.ResourceVersion
 	pdb.Status = currentPdb.Status
 	return rclient.Update(ctx, pdb)
 }

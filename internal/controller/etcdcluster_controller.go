@@ -21,6 +21,8 @@ import (
 	goerrors "errors"
 	"fmt"
 
+	policyv1 "k8s.io/api/policy/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -49,6 +51,7 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;watch;delete;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
+// +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;create;delete;update;patch;list;watch
 
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -184,5 +187,6 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
+		Owns(&policyv1.PodDisruptionBudget{}).
 		Complete(r)
 }

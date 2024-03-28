@@ -12,6 +12,7 @@ spec:
   storage:
     emptyDir:
       sizeLimit: 1Gi
+  podDisruptionBudget: {}
   podSpec:
     resources:
       requests:
