@@ -82,8 +82,8 @@ type EtcdCluster struct {
 	Status EtcdClusterStatus `json:"status,omitempty"`
 }
 
-// calculateQuorumSize returns minimum quorum size for current number of replicas
-func (r *EtcdCluster) calculateQuorumSize() int {
+// CalculateQuorumSize returns minimum quorum size for current number of replicas
+func (r *EtcdCluster) CalculateQuorumSize() int {
 	replicas := *r.Spec.Replicas
 	if replicas%2 == 0 {
 		replicas = replicas + 1
