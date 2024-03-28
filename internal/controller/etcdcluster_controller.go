@@ -88,7 +88,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Complete())
 
 	// check sts condition
-	clusterReady, err := r.clusterIsReady(ctx, instance)
+	clusterReady, err := r.isStatefulSetReady(ctx, instance)
 	if err != nil {
 		logger.Error(err, "failed to check etcd cluster state")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
@@ -147,8 +147,8 @@ func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcda
 	return ctrl.Result{}, nil
 }
 
-// clusterIsReady gets managed StatefulSet and checks its readiness.
-func (r *EtcdClusterReconciler) clusterIsReady(ctx context.Context, c *etcdaenixiov1alpha1.EtcdCluster) (bool, error) {
+// isStatefulSetReady gets managed StatefulSet and checks its readiness.
+func (r *EtcdClusterReconciler) isStatefulSetReady(ctx context.Context, c *etcdaenixiov1alpha1.EtcdCluster) (bool, error) {
 	sts := &appsv1.StatefulSet{}
 	err := r.Get(ctx, client.ObjectKeyFromObject(c), sts)
 	if err == nil {

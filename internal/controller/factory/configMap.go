@@ -63,7 +63,7 @@ func CreateOrUpdateClusterStateConfigMap(
 		},
 	}
 
-	if etcdClusterIsReady(cluster) {
+	if isEtcdClusterReady(cluster) {
 		// update cluster state to existing
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}
@@ -75,8 +75,8 @@ func CreateOrUpdateClusterStateConfigMap(
 	return reconcileConfigMap(ctx, rclient, cluster.Name, configMap)
 }
 
-// etcdClusterIsReady returns true if condition "Ready" has status equal to "True", otherwise false.
-func etcdClusterIsReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
+// isEtcdClusterReady returns true if condition "Ready" has status equal to "True", otherwise false.
+func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
 	idx := slices.IndexFunc(cluster.Status.Conditions, func(condition metav1.Condition) bool {
 		return condition.Type == etcdaenixiov1alpha1.EtcdConditionReady
 	})

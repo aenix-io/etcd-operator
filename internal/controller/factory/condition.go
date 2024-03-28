@@ -80,6 +80,7 @@ func SetCondition(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	condition metav1.Condition,
 ) {
+	condition.ObservedGeneration = cluster.GetGeneration()
 	idx := slices.IndexFunc(cluster.Status.Conditions, func(c metav1.Condition) bool {
 		return c.Type == condition.Type
 	})
@@ -88,7 +89,9 @@ func SetCondition(
 		cluster.Status.Conditions = append(cluster.Status.Conditions, condition)
 		return
 	}
-	if cluster.Status.Conditions[idx].Status == condition.Status {
+	statusNotChanged := cluster.Status.Conditions[idx].Status == condition.Status
+	reasonNotChanged := cluster.Status.Conditions[idx].Reason == condition.Reason
+	if statusNotChanged && reasonNotChanged {
 		return
 	}
 	cluster.Status.Conditions[idx] = condition
