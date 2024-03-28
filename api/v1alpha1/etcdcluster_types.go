@@ -17,8 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"math"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const defaultEtcdImage = "quay.io/coreos/etcd:v3.5.12"
@@ -31,8 +34,9 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
 	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
-	PodSpec PodSpec     `json:"podSpec,omitempty"`
-	Storage StorageSpec `json:"storage"`
+	PodSpec             PodSpec                     `json:"podSpec,omitempty"`
+	PodDisruptionBudget EmbeddedPodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
+	Storage             StorageSpec                 `json:"storage"`
 }
 
 const (
@@ -74,6 +78,11 @@ type EtcdCluster struct {
 
 	Spec   EtcdClusterSpec   `json:"spec,omitempty"`
 	Status EtcdClusterStatus `json:"status,omitempty"`
+}
+
+// calculateQuorumSize returns minimum quorum size for current number of replicas
+func (r *EtcdCluster) calculateQuorumSize() int {
+	return int(math.Ceil(float64(*r.Spec.Replicas) / 2.))
 }
 
 // +kubebuilder:object:root=true
@@ -200,6 +209,34 @@ type EmbeddedPersistentVolumeClaim struct {
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
 	// +optional
 	Status corev1.PersistentVolumeClaimStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+}
+
+// EmbeddedPodDisruptionBudget describes PDB resource for etcd cluster members
+type EmbeddedPodDisruptionBudget struct {
+	metav1.TypeMeta `json:",inline"`
+	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	// +optional
+	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	// If Enabled, PDB resource will be deployed for cluster members
+	//+optional
+	Enabled bool `json:"enabled,omitempty"`
+	// Spec defines the desired characteristics of a PDB.
+	// More info: https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#pod-disruption-budgets
+	//+optional
+	Spec PodDisruptionBudgetSpec `json:"spec"`
+}
+
+type PodDisruptionBudgetSpec struct {
+	// MinAvailable describes minimum ready replicas. If both are empty, controller will implicitly
+	// calculate MaxUnavailable based on number of replicas
+	// Mutually exclusive with MaxUnavailable.
+	// +optional
+	MinAvailable intstr.IntOrString `json:"minAvailable,omitempty"`
+	// MinAvailable describes maximum not ready replicas. If both are empty, controller will implicitly
+	// calculate MaxUnavailable based on number of replicas
+	// Mutually exclusive with MinAvailable
+	// +optional
+	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
 func init() {
