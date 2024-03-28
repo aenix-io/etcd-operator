@@ -82,7 +82,12 @@ type EtcdCluster struct {
 
 // calculateQuorumSize returns minimum quorum size for current number of replicas
 func (r *EtcdCluster) calculateQuorumSize() int {
-	return int(math.Ceil(float64(*r.Spec.Replicas) / 2.))
+	replicas := *r.Spec.Replicas
+	if replicas%2 == 0 {
+		replicas = replicas - 1
+	}
+
+	return int(math.Ceil(float64(replicas) / 2.))
 }
 
 // +kubebuilder:object:root=true
