@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aenix-io/etcd-operator/internal/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,7 +37,6 @@ func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) stri
 func CreateOrUpdateClusterStateConfigMap(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
-	isClusterReady bool,
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
@@ -63,7 +63,7 @@ func CreateOrUpdateClusterStateConfigMap(
 		},
 	}
 
-	if isClusterReady {
+	if util.EtcdClusterIsReady(cluster) {
 		// update cluster state to existing
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}

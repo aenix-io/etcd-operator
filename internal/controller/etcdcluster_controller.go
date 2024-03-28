@@ -20,15 +20,14 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
-	"slices"
 
+	"github.com/aenix-io/etcd-operator/internal/util"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,67 +70,37 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, nil
 	}
 
-	// 3. mark CR as initialized
+	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
-		instance.Status.Conditions = append(instance.Status.Conditions, metav1.Condition{
-			Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: instance.Generation,
-			LastTransitionTime: metav1.Now(),
-			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
-			Message:            "Cluster initialization has started",
-		})
+		util.FillConditions(instance)
 	}
 
-	// check sts condition
-	isClusterReady := false
-	sts := &appsv1.StatefulSet{}
-	err = r.Get(ctx, client.ObjectKey{
-		Namespace: instance.Namespace,
-		Name:      instance.Name,
-	}, sts)
-	if err == nil {
-		isClusterReady = sts.Status.ReadyReplicas == *sts.Spec.Replicas
-	}
-
-	if err := r.ensureClusterObjects(ctx, instance, isClusterReady); err != nil {
+	// ensure managed resources
+	if err := r.ensureClusterObjects(ctx, instance); err != nil {
 		logger.Error(err, "cannot create Cluster auxiliary objects")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 
-	r.updateClusterState(instance, metav1.Condition{
-		Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete),
-		Message:            "Cluster initialization is complete",
-	})
-	if isClusterReady {
-		r.updateClusterState(instance, metav1.Condition{
-			Type:               etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:             metav1.ConditionTrue,
-			LastTransitionTime: metav1.Now(),
-			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
-			Message:            "Cluster StatefulSet is Ready",
-		})
-	} else {
-		r.updateClusterState(instance, metav1.Condition{
-			Type:               etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:             metav1.ConditionFalse,
-			LastTransitionTime: metav1.Now(),
-			Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady),
-			Message:            "Cluster StatefulSet is not Ready",
-		})
+	// set cluster initialization condition
+	util.SetCondition(instance, etcdaenixiov1alpha1.EtcdConditionInitialized, true)
+
+	// check sts condition
+	clusterReady, err := r.clusterIsReady(ctx, instance)
+	if err != nil {
+		logger.Error(err, "failed to check etcd cluster state")
+		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
 	}
 
+	// set cluster readiness condition
+	util.SetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady, clusterReady)
 	return r.updateStatus(ctx, instance)
 }
 
 // ensureClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureClusterObjects(
-	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, isClusterReady bool) error {
+	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
 	// 1. create or update configmap <name>-cluster-state
-	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, isClusterReady, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {
@@ -171,20 +140,14 @@ func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcda
 	return ctrl.Result{}, nil
 }
 
-// updateClusterState patches status condition in cluster using merge by Type
-func (r *EtcdClusterReconciler) updateClusterState(cluster *etcdaenixiov1alpha1.EtcdCluster, state metav1.Condition) {
-	if initIdx := slices.IndexFunc(cluster.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == state.Type
-	}); initIdx != -1 {
-		cluster.Status.Conditions[initIdx].Status = state.Status
-		cluster.Status.Conditions[initIdx].LastTransitionTime = state.LastTransitionTime
-		cluster.Status.Conditions[initIdx].ObservedGeneration = cluster.Generation
-		cluster.Status.Conditions[initIdx].Reason = state.Reason
-		cluster.Status.Conditions[initIdx].Message = state.Message
-	} else {
-		state.ObservedGeneration = cluster.Generation
-		cluster.Status.Conditions = append(cluster.Status.Conditions, state)
+// clusterIsReady gets managed StatefulSet and checks its readiness.
+func (r *EtcdClusterReconciler) clusterIsReady(ctx context.Context, c *etcdaenixiov1alpha1.EtcdCluster) (bool, error) {
+	sts := &appsv1.StatefulSet{}
+	err := r.Get(ctx, client.ObjectKeyFromObject(c), sts)
+	if err == nil {
+		return sts.Status.ReadyReplicas == *sts.Spec.Replicas, nil
 	}
+	return false, client.IgnoreNotFound(err)
 }
 
 // SetupWithManager sets up the controller with the Manager.
