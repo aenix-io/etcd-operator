@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +37,6 @@ func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) stri
 func CreateOrUpdateClusterStateConfigMap(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
-	isClusterReady bool,
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
@@ -63,7 +63,7 @@ func CreateOrUpdateClusterStateConfigMap(
 		},
 	}
 
-	if isClusterReady {
+	if isEtcdClusterReady(cluster) {
 		// update cluster state to existing
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}
@@ -73,4 +73,15 @@ func CreateOrUpdateClusterStateConfigMap(
 	}
 
 	return reconcileConfigMap(ctx, rclient, cluster.Name, configMap)
+}
+
+// isEtcdClusterReady returns true if condition "Ready" has status equal to "True", otherwise false.
+func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
+	idx := slices.IndexFunc(cluster.Status.Conditions, func(condition metav1.Condition) bool {
+		return condition.Type == etcdaenixiov1alpha1.EtcdConditionReady
+	})
+	if idx == -1 {
+		return false
+	}
+	return cluster.Status.Conditions[idx].Status == metav1.ConditionTrue
 }
