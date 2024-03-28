@@ -34,9 +34,11 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
 	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
-	PodSpec             PodSpec                     `json:"podSpec,omitempty"`
-	PodDisruptionBudget EmbeddedPodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
-	Storage             StorageSpec                 `json:"storage"`
+	PodSpec PodSpec `json:"podSpec,omitempty"`
+	// PodDisruptionBudget describes PDB resource to create for etcd cluster members. Nil to disable.
+	//+optional
+	PodDisruptionBudget *EmbeddedPodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
+	Storage             StorageSpec                  `json:"storage"`
 }
 
 const (
@@ -84,7 +86,7 @@ type EtcdCluster struct {
 func (r *EtcdCluster) calculateQuorumSize() int {
 	replicas := *r.Spec.Replicas
 	if replicas%2 == 0 {
-		replicas = replicas - 1
+		replicas = replicas + 1
 	}
 
 	return int(math.Ceil(float64(replicas) / 2.))
@@ -218,13 +220,9 @@ type EmbeddedPersistentVolumeClaim struct {
 
 // EmbeddedPodDisruptionBudget describes PDB resource for etcd cluster members
 type EmbeddedPodDisruptionBudget struct {
-	metav1.TypeMeta `json:",inline"`
 	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
 	// +optional
 	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-	// If Enabled, PDB resource will be deployed for cluster members
-	//+optional
-	Enabled bool `json:"enabled,omitempty"`
 	// Spec defines the desired characteristics of a PDB.
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#pod-disruption-budgets
 	//+optional
@@ -236,12 +234,12 @@ type PodDisruptionBudgetSpec struct {
 	// calculate MaxUnavailable based on number of replicas
 	// Mutually exclusive with MaxUnavailable.
 	// +optional
-	MinAvailable intstr.IntOrString `json:"minAvailable,omitempty"`
+	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
 	// MinAvailable describes maximum not ready replicas. If both are empty, controller will implicitly
 	// calculate MaxUnavailable based on number of replicas
 	// Mutually exclusive with MinAvailable
 	// +optional
-	MaxUnavailable intstr.IntOrString `json:"maxUnavailable,omitempty"`
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
 func init() {

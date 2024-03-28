@@ -39,7 +39,6 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			if Expect(storage).NotTo(BeNil()) {
 				Expect(*storage).To(Equal(resource.MustParse("4Gi")))
 			}
-			Expect(etcdCluster.Spec.PodDisruptionBudget.Enabled).To(BeFalse())
 		})
 
 		It("Should not override fields with default values if not empty", func() {
@@ -49,10 +48,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 					PodSpec: PodSpec{
 						Image: "myregistry.local/etcd:v1.1.1",
 					},
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{
-						Enabled: true,
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
-							MaxUnavailable: intstr.FromInt32(int32(2)),
+							MaxUnavailable: ptr.To(intstr.FromInt32(int32(2))),
 						},
 					},
 					Storage: StorageSpec{
@@ -72,7 +70,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 			etcdCluster.Default()
 			Expect(*etcdCluster.Spec.Replicas).To(Equal(int32(5)))
-			Expect(etcdCluster.Spec.PodDisruptionBudget.Enabled).To(BeTrue())
+			Expect(etcdCluster.Spec.PodDisruptionBudget).NotTo(BeNil())
 			Expect(etcdCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable.IntValue()).To(Equal(2))
 			Expect(etcdCluster.Spec.PodSpec.Image).To(Equal("myregistry.local/etcd:v1.1.1"))
 			Expect(etcdCluster.Spec.Storage.EmptyDir).To(BeNil())
@@ -98,7 +96,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas:            ptr.To(int32(1)),
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{Enabled: true},
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{},
 				},
 			}
 			w, err := etcdCluster.ValidateCreate()
@@ -109,10 +107,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{
-						Enabled: true,
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
-							MinAvailable: intstr.FromInt32(int32(-1)),
+							MinAvailable: ptr.To(intstr.FromInt32(int32(-1))),
 						},
 					},
 				},
@@ -127,10 +124,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{
-						Enabled: true,
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
-							MaxUnavailable: intstr.FromInt32(int32(-1)),
+							MaxUnavailable: ptr.To(intstr.FromInt32(int32(-1))),
 						},
 					},
 				},
@@ -145,10 +141,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{
-						Enabled: true,
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
-							MinAvailable: intstr.FromInt32(int32(2)),
+							MinAvailable: ptr.To(intstr.FromInt32(int32(2))),
 						},
 					},
 				},
@@ -163,10 +158,9 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: EmbeddedPodDisruptionBudget{
-						Enabled: true,
+					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
-							MaxUnavailable: intstr.FromInt32(int32(2)),
+							MaxUnavailable: ptr.To(intstr.FromInt32(int32(2))),
 						},
 					},
 				},

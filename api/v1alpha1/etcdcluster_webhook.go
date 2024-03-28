@@ -124,56 +124,57 @@ func (r *EtcdCluster) ValidateDelete() (admission.Warnings, error) {
 
 // validatePdb validates PDB fields
 func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
-	if !r.Spec.PodDisruptionBudget.Enabled {
+	if r.Spec.PodDisruptionBudget == nil {
 		return nil, nil
 	}
 	pdb := r.Spec.PodDisruptionBudget
 	var warnings admission.Warnings
 	var allErrors field.ErrorList
-	if pdb.Spec.MinAvailable.IntValue() != 0 && pdb.Spec.MaxUnavailable.IntValue() != 0 {
+	if pdb.Spec.MinAvailable != nil && pdb.Spec.MaxUnavailable != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
 			pdb.Spec.MinAvailable.IntValue(),
 			"minAvailable is mutually exclusive with maxUnavailable"),
 		)
-	}
-	minQuorumSize := r.calculateQuorumSize()
-	if pdb.Spec.MinAvailable.IntValue() != 0 {
-		if pdb.Spec.MinAvailable.IntValue() < 0 {
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
-				pdb.Spec.MinAvailable.IntValue(),
-				"value cannot be less than zero"),
-			)
+	} else {
+		minQuorumSize := r.calculateQuorumSize()
+		if pdb.Spec.MinAvailable != nil {
+			if pdb.Spec.MinAvailable.IntValue() < 0 {
+				allErrors = append(allErrors, field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
+					pdb.Spec.MinAvailable.IntValue(),
+					"value cannot be less than zero"),
+				)
+			}
+			if pdb.Spec.MinAvailable.IntValue() > int(*r.Spec.Replicas) {
+				allErrors = append(allErrors, field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
+					pdb.Spec.MinAvailable.IntValue(),
+					"value cannot be larger than number of replicas"),
+				)
+			}
+			if pdb.Spec.MinAvailable.IntValue() < minQuorumSize {
+				warnings = append(warnings, "current number of spec.podDisruptionBudget.minAvailable can lead to loss of quorum")
+			}
 		}
-		if pdb.Spec.MinAvailable.IntValue() > int(*r.Spec.Replicas) {
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
-				pdb.Spec.MinAvailable.IntValue(),
-				"value cannot be larger than number of replicas"),
-			)
-		}
-		if pdb.Spec.MinAvailable.IntValue() < minQuorumSize {
-			warnings = append(warnings, "current number of spec.podDisruptionBudget.minAvailable can lead to loss of quorum")
-		}
-	}
-	if pdb.Spec.MaxUnavailable.IntValue() != 0 {
-		if pdb.Spec.MaxUnavailable.IntValue() < 0 {
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
-				pdb.Spec.MaxUnavailable.IntValue(),
-				"value cannot be less than zero"),
-			)
-		}
-		if pdb.Spec.MaxUnavailable.IntValue() > int(*r.Spec.Replicas) {
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
-				pdb.Spec.MaxUnavailable.IntValue(),
-				"value cannot be larger than number of replicas"),
-			)
-		}
-		if int(*r.Spec.Replicas)-pdb.Spec.MaxUnavailable.IntValue() < minQuorumSize {
-			warnings = append(warnings, "current number of spec.podDisruptionBudget.maxUnavailable can lead to loss of quorum")
+		if pdb.Spec.MaxUnavailable != nil {
+			if pdb.Spec.MaxUnavailable.IntValue() < 0 {
+				allErrors = append(allErrors, field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
+					pdb.Spec.MaxUnavailable.IntValue(),
+					"value cannot be less than zero"),
+				)
+			}
+			if pdb.Spec.MaxUnavailable.IntValue() > int(*r.Spec.Replicas) {
+				allErrors = append(allErrors, field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
+					pdb.Spec.MaxUnavailable.IntValue(),
+					"value cannot be larger than number of replicas"),
+				)
+			}
+			if int(*r.Spec.Replicas)-pdb.Spec.MaxUnavailable.IntValue() < minQuorumSize {
+				warnings = append(warnings, "current number of spec.podDisruptionBudget.maxUnavailable can lead to loss of quorum")
+			}
 		}
 	}
 
