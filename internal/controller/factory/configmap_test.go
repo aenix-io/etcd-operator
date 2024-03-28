@@ -56,7 +56,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			cm := &corev1.ConfigMap{}
 
 			By("creating the configmap for initial cluster")
-			err := CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, false, k8sClient, k8sClient.Scheme())
+			err := CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
 			Expect(err).NotTo(HaveOccurred())
 
 			err = k8sClient.Get(ctx, typeNamespacedName, cm)
@@ -65,7 +65,9 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
 
 			By("updating the configmap for initialized cluster")
-			err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, true, k8sClient, k8sClient.Scheme())
+			SetCondition(etcdcluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+				WithStatus(true).Complete())
+			err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
 			Expect(err).NotTo(HaveOccurred())
 
 			err = k8sClient.Get(ctx, typeNamespacedName, cm)
@@ -83,7 +85,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			etcdcluster := etcdcluster.DeepCopy()
 			emptyScheme := runtime.NewScheme()
 
-			err := CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, false, k8sClient, emptyScheme)
+			err := CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, emptyScheme)
 			Expect(err).To(HaveOccurred())
 		})
 	})
