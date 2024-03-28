@@ -95,11 +95,31 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster readiness condition
-	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-		WithStatus(clusterReady).
-		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
-		WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
-		Complete())
+	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
+	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) {
+		// we should change from "waiting for first quorum establishment" to "StatefulSet ready / not ready"
+		// only after sts gets ready first time
+		if clusterReady {
+			factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+				WithStatus(true).
+				WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
+				WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
+				Complete())
+		}
+	} else {
+		reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
+		message := etcdaenixiov1alpha1.EtcdReadyCondPosMessage
+		if !clusterReady {
+			reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
+			message = etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+		}
+
+		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+			WithStatus(clusterReady).
+			WithReason(string(reason)).
+			WithMessage(string(message)).
+			Complete())
+	}
 	return r.updateStatus(ctx, instance)
 }
 

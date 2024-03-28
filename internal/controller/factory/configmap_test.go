@@ -54,31 +54,51 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 
 		It("should successfully ensure the configmap", func() {
 			cm := &corev1.ConfigMap{}
+			var err error
+			var cmUid types.UID
+			By("creating the configmap for initial cluster", func() {
+				err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
+				Expect(err).NotTo(HaveOccurred())
 
-			By("creating the configmap for initial cluster")
-			err := CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+				err = k8sClient.Get(ctx, typeNamespacedName, cm)
+				cmUid = cm.UID
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
+			})
 
-			err = k8sClient.Get(ctx, typeNamespacedName, cm)
-			cmUid := cm.UID
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
+			By("updating the configmap for initialized cluster", func() {
+				SetCondition(etcdcluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
+					WithStatus(true).
+					Complete())
+				err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
+				Expect(err).NotTo(HaveOccurred())
 
-			By("updating the configmap for initialized cluster")
-			SetCondition(etcdcluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-				WithStatus(true).Complete())
-			err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+				err = k8sClient.Get(ctx, typeNamespacedName, cm)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("existing"))
+				// Check that we are updating the same configmap
+				Expect(cm.UID).To(Equal(cmUid))
+			})
 
-			err = k8sClient.Get(ctx, typeNamespacedName, cm)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("existing"))
-			// Check that we are updating the same configmap
-			Expect(cm.UID).To(Equal(cmUid))
+			By("updating the configmap back to new", func() {
+				SetCondition(etcdcluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum)).
+					WithStatus(true).
+					Complete())
+				err = CreateOrUpdateClusterStateConfigMap(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
+				Expect(err).NotTo(HaveOccurred())
 
-			By("deleting the configmap")
+				err = k8sClient.Get(ctx, typeNamespacedName, cm)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cm.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
+				// Check that we are updating the same configmap
+				Expect(cm.UID).To(Equal(cmUid))
+			})
 
-			Expect(k8sClient.Delete(ctx, cm)).To(Succeed())
+			By("deleting the configmap", func() {
+				Expect(k8sClient.Delete(ctx, cm)).To(Succeed())
+			})
 		})
 
 		It("should fail on creating the configMap with invalid owner reference", func() {

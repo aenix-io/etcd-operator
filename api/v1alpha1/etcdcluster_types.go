@@ -44,17 +44,19 @@ type EtcdCondType string
 type EtcdCondMessage string
 
 const (
-	EtcdCondTypeInitStarted         EtcdCondType = "InitializationStarted"
-	EtcdCondTypeInitComplete        EtcdCondType = "InitializationComplete"
-	EtcdCondTypeStatefulSetReady    EtcdCondType = "StatefulSetReady"
-	EtcdCondTypeStatefulSetNotReady EtcdCondType = "StatefulSetNotReady"
+	EtcdCondTypeInitStarted           EtcdCondType = "InitializationStarted"
+	EtcdCondTypeInitComplete          EtcdCondType = "InitializationComplete"
+	EtcdCondTypeWaitingForFirstQuorum EtcdCondType = "WaitingForFirstQuorum"
+	EtcdCondTypeStatefulSetReady      EtcdCondType = "StatefulSetReady"
+	EtcdCondTypeStatefulSetNotReady   EtcdCondType = "StatefulSetNotReady"
 )
 
 const (
-	EtcdInitCondNegMessage  EtcdCondMessage = "Cluster initialization started"
-	EtcdInitCondPosMessage  EtcdCondMessage = "Cluster managed resources created"
-	EtcdReadyCondNegMessage EtcdCondMessage = "Cluster StatefulSet is not Ready"
-	EtcdReadyCondPosMessage EtcdCondMessage = "Cluster StatefulSet is Ready"
+	EtcdInitCondNegMessage           EtcdCondMessage = "Cluster initialization started"
+	EtcdInitCondPosMessage           EtcdCondMessage = "Cluster managed resources created"
+	EtcdReadyCondNegMessage          EtcdCondMessage = "Cluster StatefulSet is not Ready"
+	EtcdReadyCondPosMessage          EtcdCondMessage = "Cluster StatefulSet is Ready"
+	EtcdReadyCondNegWaitingForQuorum EtcdCondMessage = "Waiting for first quorum to be established"
 )
 
 // EtcdClusterStatus defines the observed state of EtcdCluster
