@@ -137,7 +137,7 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 			"minAvailable is mutually exclusive with maxUnavailable"),
 		)
 	} else {
-		minQuorumSize := r.calculateQuorumSize()
+		minQuorumSize := r.CalculateQuorumSize()
 		if pdb.Spec.MinAvailable != nil {
 			if pdb.Spec.MinAvailable.IntValue() < 0 {
 				allErrors = append(allErrors, field.Invalid(
