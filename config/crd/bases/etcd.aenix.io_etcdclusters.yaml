@@ -39,6 +39,67 @@ spec:
           spec:
             description: EtcdClusterSpec defines the desired state of EtcdCluster
             properties:
+              podDisruptionBudget:
+                description: PodDisruptionBudget describes PDB resource to create
+                  for etcd cluster members. Nil to disable.
+                properties:
+                  metadata:
+                    description: EmbeddedMetadata contains metadata relevant to an
+                      EmbeddedResource.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Labels Map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels
+                        type: object
+                      name:
+                        description: |-
+                          Name must be unique within a namespace. Is required when creating resources, although
+                          some resources may allow a client to request the generation of an appropriate name
+                          automatically. Name is primarily intended for creation idempotence and configuration
+                          definition.
+                          Cannot be updated.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names
+                        type: string
+                    type: object
+                  spec:
+                    description: |-
+                      Spec defines the desired characteristics of a PDB.
+                      More info: https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#pod-disruption-budgets
+                    properties:
+                      maxUnavailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          MinAvailable describes maximum not ready replicas. If both are empty, controller will implicitly
+                          calculate MaxUnavailable based on number of replicas
+                          Mutually exclusive with MinAvailable
+                        x-kubernetes-int-or-string: true
+                      minAvailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          MinAvailable describes minimum ready replicas. If both are empty, controller will implicitly
+                          calculate MaxUnavailable based on number of replicas
+                          Mutually exclusive with MaxUnavailable.
+                        x-kubernetes-int-or-string: true
+                    type: object
+                type: object
               podSpec:
                 description: PodSpec defines the desired state of PodSpec for etcd
                   members. If not specified, default values will be used.
