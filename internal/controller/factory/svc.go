@@ -44,24 +44,16 @@ func CreateOrUpdateClusterService(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
 			Namespace: cluster.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
+			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{Name: "peer", TargetPort: intstr.FromInt32(2380), Port: 2380, Protocol: corev1.ProtocolTCP},
 				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
 			},
-			Type:      corev1.ServiceTypeClusterIP,
-			ClusterIP: "None",
-			Selector: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
+			Type:                     corev1.ServiceTypeClusterIP,
+			ClusterIP:                "None",
+			Selector:                 NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 			PublishNotReadyAddresses: true,
 		},
 	}
@@ -83,22 +75,14 @@ func CreateOrUpdateClientService(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetClientServiceName(cluster),
 			Namespace: cluster.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
+			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
 			},
-			Type: corev1.ServiceTypeClusterIP,
-			Selector: map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   cluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-			},
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
 	}
 
