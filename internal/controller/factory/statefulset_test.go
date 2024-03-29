@@ -237,4 +237,166 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+
+	Context("When getting liveness probe", func() {
+		It("should correctly get default values", func() {
+			probe := getLivenessProbe(nil)
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/livez",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       5,
+			}))
+		})
+		It("should correctly override all values", func() {
+			probe := getLivenessProbe(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/liveznew",
+						Port: intstr.FromInt32(2390),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/liveznew",
+						Port: intstr.FromInt32(2390),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			}))
+		})
+		It("should correctly override partial changes ", func() {
+			probe := getLivenessProbe(&v1.Probe{
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/livez",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			}))
+		})
+	})
+
+	Context("When getting startup probe", func() {
+		It("should correctly get default values", func() {
+			probe := getStartupProbe(nil)
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/readyz?serializable=false",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 1,
+				PeriodSeconds:       5,
+			}))
+		})
+		It("should correctly override all values", func() {
+			probe := getStartupProbe(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/readyz",
+						Port: intstr.FromInt32(2390),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/readyz",
+						Port: intstr.FromInt32(2390),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			}))
+		})
+		It("should correctly override partial changes", func() {
+			probe := getStartupProbe(&v1.Probe{
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/readyz?serializable=false",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 7,
+				PeriodSeconds:       3,
+			}))
+		})
+	})
+
+	Context("When getting liveness probe", func() {
+		It("should correctly get default values", func() {
+			probe := getLivenessProbe(nil)
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/livez",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       5,
+			}))
+		})
+		It("should correctly override all values", func() {
+			probe := getLivenessProbe(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/liveznew",
+						Port: intstr.FromInt32(2371),
+					},
+				},
+				InitialDelaySeconds: 11,
+				PeriodSeconds:       13,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/liveznew",
+						Port: intstr.FromInt32(2371),
+					},
+				},
+				InitialDelaySeconds: 11,
+				PeriodSeconds:       13,
+			}))
+		})
+		It("should correctly override partial changes", func() {
+			probe := getLivenessProbe(&v1.Probe{
+				InitialDelaySeconds: 11,
+				PeriodSeconds:       13,
+			})
+			Expect(probe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/livez",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 11,
+				PeriodSeconds:       13,
+			}))
+		})
+	})
 })

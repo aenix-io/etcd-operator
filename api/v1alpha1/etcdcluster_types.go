@@ -164,6 +164,18 @@ type PodSpec struct {
 	// ExtraEnv are the extra environment variables to pass to the etcd container.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+
+	// LivenessProbe defines liveness probe check for the pod.
+	// +optional
+	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
+
+	// ReadinessProbe defines readiness probe check for the pod.
+	// +optional
+	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
+
+	// StartupProbe defines startup probe check for the pod.
+	// +optional
+	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
 }
 
 // StorageSpec defines the configured storage for a etcd members.
