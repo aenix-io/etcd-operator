@@ -17,8 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"math"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -84,12 +82,7 @@ type EtcdCluster struct {
 
 // CalculateQuorumSize returns minimum quorum size for current number of replicas
 func (r *EtcdCluster) CalculateQuorumSize() int {
-	replicas := *r.Spec.Replicas
-	if replicas%2 == 0 {
-		replicas = replicas + 1
-	}
-
-	return int(math.Ceil(float64(replicas) / 2.))
+	return int(*r.Spec.Replicas)/2 + 1
 }
 
 // +kubebuilder:object:root=true
