@@ -166,14 +166,17 @@ type PodSpec struct {
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
 
 	// LivenessProbe defines liveness probe check for the pod.
+	// If not specified, default probe will be used.
 	// +optional
 	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
 
 	// ReadinessProbe defines readiness probe check for the pod.
+	// If not specified, default probe will be used.
 	// +optional
 	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
 
 	// StartupProbe defines startup probe check for the pod.
+	// If not specified, default probe will be used.
 	// +optional
 	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
 }
