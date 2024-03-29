@@ -182,6 +182,87 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
 		})
 
+		It("should successfully override probes", func() {
+			By("Creating the statefulset")
+			etcdcluster := etcdcluster.DeepCopy()
+			etcdcluster.Spec.PodSpec = etcdaenixiov1alpha1.PodSpec{
+				LivenessProbe: &v1.Probe{
+					InitialDelaySeconds: 13,
+					PeriodSeconds:       11,
+				},
+				ReadinessProbe: &v1.Probe{
+					PeriodSeconds: 3,
+				},
+				StartupProbe: &v1.Probe{
+					PeriodSeconds: 7,
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path: "/test",
+							Port: intstr.FromInt32(2389),
+						},
+					},
+				},
+			}
+
+			sts := &appsv1.StatefulSet{}
+			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Get(ctx, typeNamespacedName, sts)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking the updated startup probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/test",
+						Port:   intstr.FromInt32(2389),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 1,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       7,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
+
+			By("Checking the updated readiness probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/readyz",
+						Port:   intstr.FromInt32(2379),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 5,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       3,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
+
+			By("Checking the updated liveness probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/livez",
+						Port:   intstr.FromInt32(2379),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 13,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       11,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
+
+			By("Deleting the statefulset")
+			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+		})
+
 		It("should successfully create the statefulset with emptyDir", func() {
 			By("Creating the statefulset")
 			etcdcluster := etcdcluster.DeepCopy()
