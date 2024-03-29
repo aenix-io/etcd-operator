@@ -250,9 +250,13 @@ func mergeWithDefaultProbe(probe *corev1.Probe, defaultProbe *corev1.Probe) *cor
 		defaultProbe.PeriodSeconds = probe.PeriodSeconds
 	}
 
-	if probe.HTTPGet != nil {
-		defaultProbe.HTTPGet = probe.HTTPGet
+	if hasProbeHandlerAction(*probe) {
+		defaultProbe.ProbeHandler = probe.ProbeHandler
 	}
 
 	return defaultProbe
+}
+
+func hasProbeHandlerAction(probe corev1.Probe) bool {
+	return probe.HTTPGet != nil || probe.TCPSocket != nil || probe.Exec != nil || probe.GRPC != nil
 }
