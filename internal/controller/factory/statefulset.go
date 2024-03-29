@@ -238,25 +238,23 @@ func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
 }
 
 func mergeWithDefaultProbe(probe *corev1.Probe, defaultProbe corev1.Probe) *corev1.Probe {
-	res := defaultProbe.DeepCopy()
-
 	if probe == nil {
-		return res
+		return &defaultProbe
 	}
 
 	if probe.InitialDelaySeconds != 0 {
-		res.InitialDelaySeconds = probe.InitialDelaySeconds
+		defaultProbe.InitialDelaySeconds = probe.InitialDelaySeconds
 	}
 
 	if probe.PeriodSeconds != 0 {
-		res.PeriodSeconds = probe.PeriodSeconds
+		defaultProbe.PeriodSeconds = probe.PeriodSeconds
 	}
 
 	if hasProbeHandlerAction(*probe) {
-		res.ProbeHandler = probe.ProbeHandler
+		defaultProbe.ProbeHandler = probe.ProbeHandler
 	}
 
-	return res
+	return &defaultProbe
 }
 
 func hasProbeHandlerAction(probe corev1.Probe) bool {
