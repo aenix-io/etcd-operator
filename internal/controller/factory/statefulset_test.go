@@ -130,60 +130,63 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			By("Checking the extraArgs")
 			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand(etcdcluster)))
 
-			By("Checking the default startup probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/readyz?serializable=false",
-						Port:   intstr.FromInt32(2379),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the default startup probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/readyz?serializable=false",
+							Port:   intstr.FromInt32(2379),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 1,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       5,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 1,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       5,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Checking the default readiness probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/readyz",
-						Port:   intstr.FromInt32(2379),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the default readiness probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/readyz",
+							Port:   intstr.FromInt32(2379),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 5,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       5,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 5,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       5,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Checking the default liveness probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/livez",
-						Port:   intstr.FromInt32(2379),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the default liveness probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/livez",
+							Port:   intstr.FromInt32(2379),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 5,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       5,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 5,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       5,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Deleting the statefulset")
-			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+			By("Deleting the statefulset", func() {
+				Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+			})
 		})
 
 		It("should successfully override probes", func() {
-			By("Creating the statefulset")
 			etcdcluster := etcdcluster.DeepCopy()
 			etcdcluster.Spec.PodSpec = etcdaenixiov1alpha1.PodSpec{
 				LivenessProbe: &v1.Probe{
@@ -211,56 +214,60 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			err = k8sClient.Get(ctx, typeNamespacedName, sts)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking the updated startup probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/test",
-						Port:   intstr.FromInt32(2389),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the updated startup probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/test",
+							Port:   intstr.FromInt32(2389),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 1,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       7,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 1,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       7,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Checking the updated readiness probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/readyz",
-						Port:   intstr.FromInt32(2379),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the updated readiness probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/readyz",
+							Port:   intstr.FromInt32(2379),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 5,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       3,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 5,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       3,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Checking the updated liveness probe")
-			Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
-						Path:   "/livez",
-						Port:   intstr.FromInt32(2379),
-						Scheme: v1.URISchemeHTTP,
+			By("Checking the updated liveness probe", func() {
+				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
+					ProbeHandler: v1.ProbeHandler{
+						HTTPGet: &v1.HTTPGetAction{
+							Path:   "/livez",
+							Port:   intstr.FromInt32(2379),
+							Scheme: v1.URISchemeHTTP,
+						},
 					},
-				},
-				InitialDelaySeconds: 13,
-				TimeoutSeconds:      1,
-				PeriodSeconds:       11,
-				SuccessThreshold:    1,
-				FailureThreshold:    3,
-			}))
+					InitialDelaySeconds: 13,
+					TimeoutSeconds:      1,
+					PeriodSeconds:       11,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				}))
+			})
 
-			By("Deleting the statefulset")
-			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+			By("Deleting the statefulset", func() {
+				Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+			})
 		})
 
 		It("should successfully create the statefulset with emptyDir", func() {
