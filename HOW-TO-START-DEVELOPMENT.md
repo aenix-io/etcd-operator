@@ -12,14 +12,14 @@
 4. Install cert-manager (it creates certificate k8s secrets). Refer to the [docs](https://cert-manager.io/docs/installation/helm/#4-install-cert-manager).
 5. Build docker image *controller:latest* `make docker-build`.
 6. Retag image to upload to kind cluster with correct name `docker tag controller:latest ghcr.io/aenix-io/etcd-operator:latest`.
-7. Load image to kind cluster `kind load docker-image ghcr.io/aenix-io/etcd-operator:latest`.
+7. Load image to kind cluster `kind load docker-image --name etcd-operator-kind ghcr.io/aenix-io/etcd-operator:latest`.
 8. Install CRDs `make install`.
 9. Deploy operator, RBAC, webhook certs `make deploy`.
 
 To deploy your code changes
 1. Rebuild the image `make docker-build`.
 2. Retag image to upload to kind cluster with correct name `docker tag controller:latest ghcr.io/aenix-io/etcd-operator:latest`.
-3. Load image to kind cluster `kind load docker-image ghcr.io/aenix-io/etcd-operator:latest`.
+3. Load image to kind cluster `kind load docker-image --name etcd-operator-kind ghcr.io/aenix-io/etcd-operator:latest`.
 4. Redeploy yaml manifests if necessary `make deploy`.
 5. Restart etcd-operator `kubectl rollout restart -n etcd-operator-system deploy/etcd-operator-controller-manager`.
 
