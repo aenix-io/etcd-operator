@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -128,6 +129,54 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			By("Checking the extraArgs")
 			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand(etcdcluster)))
+
+			By("Checking the default startup probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/readyz?serializable=false",
+						Port:   intstr.FromInt32(2379),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 1,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       5,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
+
+			By("Checking the default readiness probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/readyz",
+						Port:   intstr.FromInt32(2379),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 5,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       5,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
+
+			By("Checking the default liveness probe")
+			Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path:   "/livez",
+						Port:   intstr.FromInt32(2379),
+						Scheme: v1.URISchemeHTTP,
+					},
+				},
+				InitialDelaySeconds: 5,
+				TimeoutSeconds:      1,
+				PeriodSeconds:       5,
+				SuccessThreshold:    1,
+				FailureThreshold:    3,
+			}))
 
 			By("Deleting the statefulset")
 			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
