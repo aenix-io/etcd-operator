@@ -107,11 +107,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				Complete())
 		}
 	} else {
-		reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
-		message := etcdaenixiov1alpha1.EtcdReadyCondPosMessage
-		if !clusterReady {
-			reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
-			message = etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+		reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
+		message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+		if clusterReady {
+			reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
+			message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
 		}
 
 		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
