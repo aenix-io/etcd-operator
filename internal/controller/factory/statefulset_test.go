@@ -487,4 +487,41 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+	Context("When merge with default probe", func() {
+		It("should correctly merge probe with default", func() {
+			defaultProbe := v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					HTTPGet: &v1.HTTPGetAction{
+						Path: "/livez",
+						Port: intstr.FromInt32(2379),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       5,
+			}
+			defaultProbeCopy := defaultProbe.DeepCopy()
+
+			probe := &v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					Exec: &v1.ExecAction{
+						Command: []string{"test"},
+					},
+				},
+				InitialDelaySeconds: 11,
+			}
+			result := mergeWithDefaultProbe(probe, defaultProbe)
+			Expect(result).To(Equal(&v1.Probe{
+				ProbeHandler: v1.ProbeHandler{
+					Exec: &v1.ExecAction{
+						Command: []string{"test"},
+					},
+				},
+				InitialDelaySeconds: 11,
+				PeriodSeconds:       5,
+			}))
+			By("Shouldn't mutate default probe", func() {
+				Expect(defaultProbe).To(Equal(*defaultProbeCopy))
+			})
+		})
+	})
 })

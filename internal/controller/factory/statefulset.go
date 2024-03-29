@@ -196,7 +196,7 @@ func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 }
 
 func getStartupProbe(probe *corev1.Probe) *corev1.Probe {
-	defaultProbe := &corev1.Probe{
+	defaultProbe := corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/readyz?serializable=false",
@@ -210,7 +210,7 @@ func getStartupProbe(probe *corev1.Probe) *corev1.Probe {
 }
 
 func getReadinessProbe(probe *corev1.Probe) *corev1.Probe {
-	defaultProbe := &corev1.Probe{
+	defaultProbe := corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/readyz",
@@ -224,7 +224,7 @@ func getReadinessProbe(probe *corev1.Probe) *corev1.Probe {
 }
 
 func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
-	defaultProbe := &corev1.Probe{
+	defaultProbe := corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/livez",
@@ -237,24 +237,26 @@ func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
 	return mergeWithDefaultProbe(probe, defaultProbe)
 }
 
-func mergeWithDefaultProbe(probe *corev1.Probe, defaultProbe *corev1.Probe) *corev1.Probe {
+func mergeWithDefaultProbe(probe *corev1.Probe, defaultProbe corev1.Probe) *corev1.Probe {
+	res := defaultProbe.DeepCopy()
+
 	if probe == nil {
-		return defaultProbe
+		return res
 	}
 
 	if probe.InitialDelaySeconds != 0 {
-		defaultProbe.InitialDelaySeconds = probe.InitialDelaySeconds
+		res.InitialDelaySeconds = probe.InitialDelaySeconds
 	}
 
 	if probe.PeriodSeconds != 0 {
-		defaultProbe.PeriodSeconds = probe.PeriodSeconds
+		res.PeriodSeconds = probe.PeriodSeconds
 	}
 
 	if hasProbeHandlerAction(*probe) {
-		defaultProbe.ProbeHandler = probe.ProbeHandler
+		res.ProbeHandler = probe.ProbeHandler
 	}
 
-	return defaultProbe
+	return res
 }
 
 func hasProbeHandlerAction(probe corev1.Probe) bool {
