@@ -5,9 +5,10 @@ metadata:
     {{- include "etcd-operator.labels" . | nindent 4 }}
   name: {{ include "etcd-operator.fullname" . }}-webhook-service
 spec:
+  type: {{ .Values.etcdOperator.service.type }}
   ports:
     - port: 443
       protocol: TCP
-      targetPort: 9443
+      targetPort: {{ .Values.etcdOperator.service.port }}
   selector:
-    control-plane: controller-manager
+    {{- include "etcd-operator.selectorLabels" . | nindent 4 }}

@@ -51,12 +51,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Create the name of the service account to use
+Render docker image
+{{ include "etcd-operator.imageRef" (dict "image" .Values.image) }}
 */}}
-{{- define "etcd-operator.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "etcd-operator.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
+{{- define "etcd-operator.imageRef" -}}
+{{- $tag := (.image.tag | default .Chart.AppVersion) | toString -}}
+{{- print (.image.registry "/" .image.repository $tag) -}}
+{{- end -}}
