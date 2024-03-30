@@ -1,21 +1,24 @@
 package factory
 
 import (
-	"fmt"
+	"strings"
 )
 
-// ArgsFromMapToSlice create the slice of args
-// Along with that, if a flag doesn't have a value, it's presented barely without a value assignment.
-func argsFromMapToSlice(args map[string]string) (slice []string) {
-	for flag, value := range args {
-		if len(value) == 0 {
-			slice = append(slice, flag)
+// argsFromSliceToMap transforms a slice of string into a map
+func argsFromSliceToMap(args []string) (m map[string]string) {
+	m = make(map[string]string)
 
-			continue
+	for _, arg := range args {
+		parts := strings.SplitN(arg, "=", 2)
+
+		flag, value := parts[0], ""
+
+		if len(parts) > 1 {
+			value = parts[1]
 		}
 
-		slice = append(slice, fmt.Sprintf("%s=%s", flag, value))
+		m[flag] = value
 	}
 
-	return slice
+	return m
 }

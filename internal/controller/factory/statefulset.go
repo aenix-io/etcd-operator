@@ -208,17 +208,18 @@ func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 }
 
-func generateBaseEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
-	return map[string]string{
-		"--name":             "$(POD_NAME)",
-		"--listen-peer-urls": "https://0.0.0.0:2380",
+func generateBaseEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	// the order of arguments is matter
+	return []string{
+		"--name=$(POD_NAME)",
+		"--listen-peer-urls=https://0.0.0.0:2380",
 		// for first version disable TLS for client access
-		"--listen-client-urls":          "http://0.0.0.0:2379",
-		"--initial-advertise-peer-urls": fmt.Sprintf("https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
-		"--data-dir":                    "/var/run/etcd/default.etcd",
-		"--auto-tls":                    "",
-		"--peer-auto-tls":               "",
-		"--advertise-client-urls":       fmt.Sprintf("http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
+		"--listen-client-urls=http://0.0.0.0:2379",
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
+		"--data-dir=/var/run/etcd/default.etcd",
+		"--auto-tls",
+		"--peer-auto-tls",
+		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
 	}
 }
 
@@ -226,20 +227,29 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := generateBaseEtcdArgs(cluster)
 
 	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
-		key := "--" + name
-		args[key] = value
+		flag := "--" + name
+		if len(value) == 0 {
+			args = append(args, flag)
+
+			continue
+		}
+
+		args = append(args, fmt.Sprintf("%s=%s", flag, value))
 	}
 
-	return argsFromMapToSlice(args)
+	return args
 }
 
 func ValidatePodExtraArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) error {
-	baseArgs := generateBaseEtcdArgs(cluster)
+	if len(cluster.Spec.PodSpec.ExtraArgs) == 0 {
+		return nil
+	}
 
-	for name := range cluster.Spec.PodSpec.ExtraArgs {
-		key := "--" + name
-		if _, exists := baseArgs[key]; exists {
-			return fmt.Errorf("can't use base exta argument '%s' in .Spec.PodSpec.ExtraArgs", key)
+	baseArgs := argsFromSliceToMap(generateBaseEtcdArgs(cluster))
+
+	for flag := range baseArgs {
+		if _, exists := baseArgs[flag]; exists {
+			return fmt.Errorf("can't use base exta argument '%s' in .Spec.PodSpec.ExtraArgs", flag)
 		}
 	}
 
