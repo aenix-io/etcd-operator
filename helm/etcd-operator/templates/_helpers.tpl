@@ -49,12 +49,3 @@ Selector labels
 app.kubernetes.io/name: {{ include "etcd-operator.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-
-{{/*
-Render docker image
-{{ include "etcd-operator.imageRef" (dict "image" .Values.image) }}
-*/}}
-{{- define "etcd-operator.imageRef" -}}
-{{- $tag := (.image.tag | default .Chart.AppVersion) | toString -}}
-{{- print (.image.registry "/" .image.repository $tag) -}}
-{{- end -}}
