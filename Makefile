@@ -151,16 +151,16 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 # Build and upload docker image to the local Kind cluster
 .PHONY: docker-load
 docker-load: docker-build
-	kind load docker-image ${IMG}
+	kind load docker-image ${IMG} --name etcd-operator-kind
 
 # Redeploy controller with new docker image
 .PHONY: redeploy
 redeploy: manifests kustomize docker-build docker-load
+	$(KUBECTL) config use-context kind-etcd-operator-kind
 	# deploy configs
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 	# force recreate pods
-	$(KUBECTL) delete pod -n etcd-operator-system --all
+	$(KUBECTL) rollout restart -n etcd-operator-system deploy/etcd-operator-controller-manager
 
 ##@ Dependencies
 
