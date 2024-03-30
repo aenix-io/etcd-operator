@@ -95,6 +95,7 @@ func CreateOrUpdateStatefulSet(
 							Image:           cluster.Spec.PodSpec.Image,
 							ImagePullPolicy: cluster.Spec.PodSpec.ImagePullPolicy,
 							Command:         generateEtcdCommand(cluster),
+							Args:            generateEtcdArgs(cluster),
 							Ports: []corev1.ContainerPort{
 								{Name: "peer", ContainerPort: 2380},
 								{Name: "client", ContainerPort: 2379},
@@ -202,22 +203,45 @@ func CreateOrUpdateStatefulSet(
 }
 
 func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
-	command := []string{
+	return []string{
 		"etcd",
-		"--name=$(POD_NAME)",
-		"--listen-peer-urls=https://0.0.0.0:2380",
-		// for first version disable TLS for client access
-		"--listen-client-urls=http://0.0.0.0:2379",
-		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
-		"--data-dir=/var/run/etcd/default.etcd",
-		"--auto-tls",
-		"--peer-auto-tls",
-		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
 	}
+}
+
+func generateBaseEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
+	return map[string]string{
+		"--name":             "$(POD_NAME)",
+		"--listen-peer-urls": "https://0.0.0.0:2380",
+		// for first version disable TLS for client access
+		"--listen-client-urls":          "http://0.0.0.0:2379",
+		"--initial-advertise-peer-urls": fmt.Sprintf("https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
+		"--data-dir":                    "/var/run/etcd/default.etcd",
+		"--auto-tls":                    "",
+		"--peer-auto-tls":               "",
+		"--advertise-client-urls":       fmt.Sprintf("http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
+	}
+}
+
+func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	args := generateBaseEtcdArgs(cluster)
 
 	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
-		command = append(command, fmt.Sprintf("--%s=%s", name, value))
+		key := "--" + name
+		args[key] = value
 	}
 
-	return command
+	return argsFromMapToSlice(args)
+}
+
+func ValidatePodExtraArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+	baseArgs := generateBaseEtcdArgs(cluster)
+
+	for name := range cluster.Spec.PodSpec.ExtraArgs {
+		key := "--" + name
+		if _, exists := baseArgs[key]; exists {
+			return fmt.Errorf("can't use base exta argument '%s' in .Spec.PodSpec.ExtraArgs", key)
+		}
+	}
+
+	return nil
 }

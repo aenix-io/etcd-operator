@@ -180,9 +180,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				},
 			}
 
-			command := generateEtcdCommand(etcdcluster)
+			args := generateEtcdArgs(etcdcluster)
 
-			Expect(command).To(ContainElements([]string{
+			Expect(args).To(ContainElements([]string{
 				"--key1=value1",
 				"--key2=value2",
 			}))

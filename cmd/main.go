@@ -36,7 +36,10 @@ import (
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller"
+
 	//+kubebuilder:scaffold:imports
+
+	"github.com/aenix-io/etcd-operator/internal/webhooks"
 )
 
 var (
@@ -130,7 +133,7 @@ func main() {
 		os.Exit(1)
 	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = (&etcdaenixiov1alpha1.EtcdCluster{}).SetupWebhookWithManager(mgr); err != nil {
+		if err = (&webhooks.EtcdCluster{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "EtcdCluster")
 			os.Exit(1)
 		}

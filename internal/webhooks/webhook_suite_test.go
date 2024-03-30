@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package webhooks
 
 import (
 	"context"
@@ -40,6 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -87,7 +89,7 @@ var _ = BeforeSuite(func() {
 	Expect(cfg).NotTo(BeNil())
 
 	scheme := apimachineryruntime.NewScheme()
-	err = AddToScheme(scheme)
+	err = v1alpha1.AddToScheme(scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	err = admissionv1.AddToScheme(scheme)
