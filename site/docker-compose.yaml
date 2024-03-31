@@ -4,6 +4,7 @@ services:
 
   site:
     image: docsy/docsy-example
+    platform: linux/amd64
     build:
       context: .
     command: server
