@@ -9,7 +9,7 @@ env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
-  CHARTS_REGISTRY: ${{ github.repository_owner }}/charts
+  CHARTS_REPOSITORY: ${{ github.repository_owner }}/charts
   CHART_NAME: etcd-operator
 
 
@@ -46,7 +46,7 @@ jobs:
           helm registry login \
             --username ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }} \
-            ${{ env.CHARTS_REGISTRY }}
+            ${{ env.REGISTRY }}/${{ env.CHARTS_REPOSITORY }}
 
       - name: Helm package chart
         working-directory: charts
@@ -60,4 +60,4 @@ jobs:
         working-directory: charts
         run: |
           helm push ${{ env.CHART_NAME }}-${LATEST_TAG_TRIMMED_V}.tgz \
-              oci://${{ env.CHARTS_REGISTRY }}
+              oci://${{ env.REGISTRY }}/${{ env.CHARTS_REPOSITORY }}
