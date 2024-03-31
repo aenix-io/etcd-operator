@@ -79,11 +79,11 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: helm-lint
 helm-lint: helm ## Run helm lint over chart
-	$(HELM) lint helm/etcd-operator
+	$(HELM) lint charts/etcd-operator
 
 .PHONY: helm-schema-run
 helm-schema-run: helm-schema ## Run helm schema over chart
-	$(HELM) schema -input helm/etcd-operator/values.yaml -output helm/etcd-operator/values.schema.json
+	$(HELM) schema -input charts/etcd-operator/values.yaml -output charts/etcd-operator/values.schema.json
 
 .PHONY: helm-docs-run
 helm-docs-run: helm-docs ## Run helm schema over chart
