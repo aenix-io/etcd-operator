@@ -69,8 +69,8 @@ func FillConditions(cluster *etcdaenixiov1alpha1.EtcdCluster) {
 		Complete())
 	SetCondition(cluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
 		WithStatus(false).
-		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady)).
-		WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondNegMessage)).
+		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum)).
+		WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum)).
 		Complete())
 }
 
@@ -95,4 +95,16 @@ func SetCondition(
 		return
 	}
 	cluster.Status.Conditions[idx] = condition
+}
+
+// GetCondition returns condition from cluster status conditions by type or nil if not present.
+func GetCondition(cluster *etcdaenixiov1alpha1.EtcdCluster, condType string) *metav1.Condition {
+	idx := slices.IndexFunc(cluster.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == condType
+	})
+	if idx == -1 {
+		return nil
+	}
+
+	return &cluster.Status.Conditions[idx]
 }

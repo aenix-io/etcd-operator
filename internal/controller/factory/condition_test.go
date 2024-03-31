@@ -18,6 +18,7 @@ package factory
 
 import (
 	"slices"
+	"time"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -69,6 +70,58 @@ var _ = Describe("Condition builder", func() {
 				WithMessage("test").
 				Complete())
 			Expect(etcdCluster.Status.Conditions[idx].LastTransitionTime).NotTo(Equal(timestamp))
+		})
+	})
+
+	Context("when retrieving conditions", func() {
+		It("should return nil if condition of such type is not present", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Status: etcdaenixiov1alpha1.EtcdClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 0,
+							LastTransitionTime: metav1.NewTime(time.Now()),
+							Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete),
+							Message:            string(etcdaenixiov1alpha1.EtcdInitCondPosMessage),
+						},
+					},
+				},
+			}
+
+			Expect(GetCondition(etcdCluster, etcdaenixiov1alpha1.EtcdConditionReady)).To(BeNil())
+		})
+
+		It("should return correct condition from the list", func() {
+			expectedCond := metav1.Condition{
+				Type:               etcdaenixiov1alpha1.EtcdConditionReady,
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: 0,
+				LastTransitionTime: metav1.NewTime(time.Now()),
+				Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
+				Message:            string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage),
+			}
+
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Status: etcdaenixiov1alpha1.EtcdClusterStatus{
+					Conditions: []metav1.Condition{
+						expectedCond,
+						{
+							Type:               etcdaenixiov1alpha1.EtcdConditionInitialized,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 0,
+							LastTransitionTime: metav1.NewTime(time.Now()),
+							Reason:             string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete),
+							Message:            string(etcdaenixiov1alpha1.EtcdInitCondPosMessage),
+						},
+					},
+				},
+			}
+			foundCond := GetCondition(etcdCluster, etcdaenixiov1alpha1.EtcdConditionReady)
+			if Expect(foundCond).NotTo(BeNil()) {
+				Expect(*foundCond).To(Equal(expectedCond))
+			}
 		})
 	})
 })
