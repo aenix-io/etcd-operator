@@ -17,9 +17,10 @@ limitations under the License.
 package webhooks
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"

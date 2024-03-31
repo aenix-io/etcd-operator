@@ -249,16 +249,36 @@ func ValidatePodExtraArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) error {
 	baseArgs := argsFromSliceToMap(generateBaseEtcdArgs(cluster))
 
 	for name := range cluster.Spec.PodSpec.ExtraArgs {
-		if strings.HasPrefix(name, "-") {
-			return fmt.Errorf("the extra argument shoudn't have dashes, flag: %s", name)
+		if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+			return fmt.Errorf("Extra arg should not start from dash and have trailing dash, "+
+				"but it can contain dashes in the middle. flag: %s", name)
 		}
 
 		flag := "--" + name
 
 		if _, exists := baseArgs[flag]; exists {
-			return fmt.Errorf("can't use base exta argument '%s' in .Spec.PodSpec.ExtraArgs", flag)
+			return fmt.Errorf("can't use base extra argument '%s' in .Spec.PodSpec.ExtraArgs", flag)
 		}
 	}
 
 	return nil
+}
+
+// argsFromSliceToMap transforms a slice of string into a map
+func argsFromSliceToMap(args []string) (m map[string]string) {
+	m = make(map[string]string)
+
+	for _, arg := range args {
+		parts := strings.SplitN(arg, "=", 2)
+
+		flag, value := parts[0], ""
+
+		if len(parts) > 1 {
+			value = parts[1]
+		}
+
+		m[flag] = value
+	}
+
+	return m
 }
