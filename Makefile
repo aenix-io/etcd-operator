@@ -85,6 +85,10 @@ helm-lint: helm ## Run helm lint over chart
 helm-schema-run: helm-schema ## Run helm schema over chart
 	$(HELM) schema -input helm/etcd-operator/values.yaml -output helm/etcd-operator/values.schema.json
 
+.PHONY: helm-docs-run
+helm-docs-run: helm-docs ## Run helm schema over chart
+	$(HELM_DOCS)
+
 ##@ Build
 
 .PHONY: build
@@ -175,6 +179,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 HELM ?= $(LOCALBIN)/helm
+HELM_DOCS ?= $(LOCALBIN)/helm-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
@@ -183,6 +188,7 @@ ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
 HELM_VERSION ?= v3.14.3
 HELM_SCHEMA_VERSION ?= v1.2.2
+HELM_DOCS_VERSION ?= v1.13.1
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -224,3 +230,8 @@ helm-schema: helm $(HELM_PLUGINS)
 		fi; \
 		$(HELM) plugin install https://github.com/losisin/helm-values-schema-json --version=$(HELM_SCHEMA_VERSION); \
 	fi
+
+.PHONY: helm-docs
+helm-docs: $(LOCALBIN)
+	@test -x $(HELM_DOCS) && $(HELM_DOCS) version | grep -q $(HELM_DOCS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/norwoodj/helm-docs/cmd/helm-docs@$(HELM_DOCS_VERSION)
