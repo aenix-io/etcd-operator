@@ -13,6 +13,7 @@ spec:
     emptyDir:
       sizeLimit: 1Gi
   podSpec:
+    extraArgs: {}
     resources:
       requests:
         cpu: 100m
