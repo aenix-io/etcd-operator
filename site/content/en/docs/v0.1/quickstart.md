@@ -11,7 +11,7 @@ Pre-requisites:
 - [kustomize](https://github.com/kubernetes-sigs/kustomize)
 - Kubernetes cluster and `kubectl` configured to use it
   - If you don't have a Kubernetes cluster, you can use [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) to create a local one
-- cert-manager installed in the cluster
+- [cert-manager](https://cert-manager.io/docs/installation/) installed in the cluster
 
 1. Install etcd-operator:
     ```bash
@@ -23,7 +23,7 @@ Pre-requisites:
     ```
 3. Create an etcd cluster:
     ```bash
-    kubectl apply -f https://raw.githubusercontent.com/aenix-io/etcd-operator/main/config/samples/etcd.aenix.io_v1alpha1_etcdcluster.yaml
+    kubectl apply -f https://github.com/aenix-io/etcd-operator/raw/main/config/samples/etcd.aenix.io_v1alpha1_etcdcluster.yaml
     ```
    **Caution**: by default emptyDir storage is used. It means such cluster configuration is not intended for long-term storage.
 
