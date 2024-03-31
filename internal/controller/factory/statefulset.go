@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -247,7 +248,13 @@ func ValidatePodExtraArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) error {
 
 	baseArgs := argsFromSliceToMap(generateBaseEtcdArgs(cluster))
 
-	for flag := range baseArgs {
+	for name := range cluster.Spec.PodSpec.ExtraArgs {
+		if strings.HasPrefix(name, "-") {
+			return fmt.Errorf("the extra argument shoudn't have dashes, flag: %s", name)
+		}
+
+		flag := "--" + name
+
 		if _, exists := baseArgs[flag]; exists {
 			return fmt.Errorf("can't use base exta argument '%s' in .Spec.PodSpec.ExtraArgs", flag)
 		}
