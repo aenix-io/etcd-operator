@@ -34,8 +34,7 @@ jobs:
 
       - name: Get latest tag
         run: |
-          git fetch --tags
-          TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+          TAG=${{ github.ref_name }}
           echo "Latest tag on current commit is $TAG"
           echo "LATEST_TAG=${TAG}" >> $GITHUB_ENV
           echo "LATEST_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
