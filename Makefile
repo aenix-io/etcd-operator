@@ -94,10 +94,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
-.PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
-
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -127,40 +123,69 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 
 ##@ Deployment
 
+KIND_CLUSTER_NAME ?= etcd-operator-kind
+NAMESPACE_NAME ?= etcd-operator-system
+
+CERT_MANAGER_NAMESPACE ?= cert-manager
+CERT_MANAGER_VERSION ?= v1.14.4
+
+# Separate kubeconfig file for developing purposes
+KUBECONFIG ?= $(shell pwd)/bin/.kube/config
+export KUBECONFIG
+$(KUBECONFIG):
+	mkdir -p $(shell pwd)/bin/.kube
+
 ifndef ignore-not-found
   ignore-not-found = false
 endif
 
 .PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests kustomize kind-create ## Install CRDs into the K8s cluster specified in $KUBECONFIG.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+uninstall: manifests kustomize kind-create ## Uninstall CRDs from the K8s cluster specified in $KUBECONFIG. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster specified in $KUBECONFIG.
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE_NAME) apply -f -
 
 .PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+undeploy: kustomize kind-create ## Undeploy controller from the K8s cluster specified in $KUBECONFIG. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
-# Build and upload docker image to the local Kind cluster
-.PHONY: docker-load
-docker-load: docker-build
-	kind load docker-image ${IMG} --name etcd-operator-kind
-
-# Redeploy controller with new docker image
 .PHONY: redeploy
-redeploy: manifests kustomize docker-build docker-load
-	$(KUBECTL) config use-context kind-etcd-operator-kind
-	# deploy configs
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+redeploy: deploy ## Redeploy controller with new docker image.
 	# force recreate pods
-	$(KUBECTL) rollout restart -n etcd-operator-system deploy/etcd-operator-controller-manager
+	$(KUBECTL) rollout restart -n $(NAMESPACE_NAME) deploy/etcd-operator-controller-manager
+
+.PHONY: kind-create
+kind-create: kind $(KUBECONFIG) ## Create kubernetes cluster using Kind.
+	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
+	fi
+
+.PHONY: kind-delete
+kind-delete: kind $(KUBECONFIG) ## Create kubernetes cluster using Kind.
+	@if $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+	fi
+
+.PHONY: kind-load
+kind-load: docker-build kind-prepare ## Build and upload docker image to the local Kind cluster.
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
+
+.PHONY: kind-prepare
+kind-prepare: kind-create ## Prepare kind cluster for installing etcd-operator.
+	$(HELM) upgrade \
+	  cert-manager \
+	  https://charts.jetstack.io/charts/cert-manager-$(CERT_MANAGER_VERSION).tgz \
+	  --install \
+	  --namespace $(CERT_MANAGER_NAMESPACE) \
+	  --create-namespace \
+	  --set installCRDs=true
 
 ##@ Dependencies
 
@@ -175,14 +200,19 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+HELM ?= $(LOCALBIN)/helm
+KIND ?= $(LOCALBIN)/kind
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
+HELM_VERSION ?= v3.14.3
+KIND_VERSION ?= v0.22.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
@@ -204,3 +234,14 @@ envtest: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+helm: $(LOCALBIN)
+	@if test -x $(HELM) && ! $(HELM) version | grep -q $(HELM_VERSION); then \
+		rm -f $(HELM); \
+	fi
+	PATH="$(LOCALBIN):$(PATH)"
+	@test -x $(HELM) || { curl -Ss $(HELM_INSTALL_SCRIPT) | sed "s|/usr/local/bin|$(LOCALBIN)|" | bash -s -- --no-sudo --version $(HELM_VERSION); }
+
+kind: $(LOCALBIN)
+	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
