@@ -35,7 +35,7 @@ jobs:
       - name: Get latest tag
         run: |
           TAG=${{ github.ref_name }}
-          echo "Latest tag on current commit is $TAG"
+          echo "Tag for packaging chart is $TAG"
           echo "LATEST_TAG=${TAG}" >> $GITHUB_ENV
           echo "LATEST_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
 
