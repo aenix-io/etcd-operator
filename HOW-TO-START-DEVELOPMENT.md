@@ -6,17 +6,21 @@
 ## Build your develop environment
 
 ### Easy way
-1. Create and prepare kind cluster, build image and load it into cluster, deploy etcd-operator, RBAC, webhook certs:
+1. Create and prepare kind cluster:
+    ```shell
+    make kind-prepare
+    ```
+2. Build image and load it into cluster, deploy etcd-operator, RBAC, webhook certs
     ```shell
     make deploy
     ```
 
-2. To deploy your code changes, redeploy etcd-operator:
+3. To deploy your code changes, redeploy etcd-operator:
     ```shell
     make redeploy
     ```
 
-3. To clean up after all, delete kind cluster:
+4. To clean up after all, delete kind cluster:
     ```shell
     make kind-delete
     ```

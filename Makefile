@@ -126,7 +126,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE_NAME ?= etcd-operator-system
 
-CERT_MANAGER_NAMESPACE ?= cert-manager
+PROMETHEUS_OPERATOR_VERSION ?= v0.72.0
 CERT_MANAGER_VERSION ?= v1.14.4
 
 ifndef ignore-not-found
@@ -134,11 +134,11 @@ ifndef ignore-not-found
 endif
 
 .PHONY: install
-install: manifests kustomize kind-create ## Install CRDs into the K8s cluster specified in ~/.kube/config
+install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize kind-create ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
@@ -147,13 +147,17 @@ deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster sp
 	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE_NAME) apply -f -
 
 .PHONY: undeploy
-undeploy: kustomize kind-create ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: redeploy
 redeploy: deploy ## Redeploy controller with new docker image.
 	# force recreate pods
 	$(KUBECTL) rollout restart -n $(NAMESPACE_NAME) deploy/etcd-operator-controller-manager
+
+.PHONY: kind-load
+kind-load: docker-build  ## Build and upload docker image to the local Kind cluster.
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
 kind-create: kind ## Create kubernetes cluster using Kind.
@@ -167,19 +171,12 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
 	fi
 
-.PHONY: kind-load
-kind-load: docker-build kind-prepare ## Build and upload docker image to the local Kind cluster.
-	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
-
 .PHONY: kind-prepare
-kind-prepare: kind-create ## Prepare kind cluster for installing etcd-operator.
-	$(HELM) upgrade \
-	  cert-manager \
-	  https://charts.jetstack.io/charts/cert-manager-$(CERT_MANAGER_VERSION).tgz \
-	  --install \
-	  --namespace $(CERT_MANAGER_NAMESPACE) \
-	  --create-namespace \
-	  --set installCRDs=true
+kind-prepare: kind-create
+	# Install prometheus operator
+	$(KUBECTL) apply --server-side -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
+	# Install cert-manager operator
+	$(KUBECTL) apply --server-side -f "https://github.com/jetstack/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml"
 
 ##@ Dependencies
 
@@ -194,7 +191,6 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-HELM ?= $(LOCALBIN)/helm
 KIND ?= $(LOCALBIN)/kind
 
 ## Tool Versions
@@ -202,11 +198,9 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
-HELM_VERSION ?= v3.14.3
 KIND_VERSION ?= v0.22.0
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
-HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
@@ -228,13 +222,6 @@ envtest: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-
-helm: $(LOCALBIN)
-	@if test -x $(HELM) && ! $(HELM) version | grep -q $(HELM_VERSION); then \
-		rm -f $(HELM); \
-	fi
-	PATH="$(LOCALBIN):$(PATH)"
-	@test -x $(HELM) || { curl -Ss $(HELM_INSTALL_SCRIPT) | sed "s|/usr/local/bin|$(LOCALBIN)|" | bash -s -- --no-sudo --version $(HELM_VERSION); }
 
 kind: $(LOCALBIN)
 	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
