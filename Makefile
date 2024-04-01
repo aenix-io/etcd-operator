@@ -156,7 +156,7 @@ redeploy: deploy ## Redeploy controller with new docker image.
 	$(KUBECTL) rollout restart -n $(NAMESPACE_NAME) deploy/etcd-operator-controller-manager
 
 .PHONY: kind-load
-kind-load: docker-build  ## Build and upload docker image to the local Kind cluster.
+kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
 	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
