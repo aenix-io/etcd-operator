@@ -148,6 +148,20 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
+# Build and upload docker image to the local Kind cluster
+.PHONY: docker-load
+docker-load: docker-build
+	kind load docker-image ${IMG} --name etcd-operator-kind
+
+# Redeploy controller with new docker image
+.PHONY: redeploy
+redeploy: manifests kustomize docker-build docker-load
+	$(KUBECTL) config use-context kind-etcd-operator-kind
+	# deploy configs
+	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	# force recreate pods
+	$(KUBECTL) rollout restart -n etcd-operator-system deploy/etcd-operator-controller-manager
+
 ##@ Dependencies
 
 ## Location to install dependencies to
