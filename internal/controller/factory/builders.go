@@ -42,9 +42,6 @@ func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName st
 		return fmt.Errorf("cannot get existing statefulset: %s, for crd_object: %s, err: %w", sts.Name, crdName, err)
 	}
 	sts.Annotations = labels.Merge(currentSts.Annotations, sts.Annotations)
-	if sts.ResourceVersion != "" {
-		sts.ResourceVersion = currentSts.ResourceVersion
-	}
 	sts.Status = currentSts.Status
 	return rclient.Update(ctx, sts)
 }
@@ -62,9 +59,6 @@ func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName stri
 		return fmt.Errorf("cannot get existing configMap: %s, for crd_object: %s, err: %w", configMap.Name, crdName, err)
 	}
 	configMap.Annotations = labels.Merge(currentConfigMap.Annotations, configMap.Annotations)
-	if configMap.ResourceVersion != "" {
-		configMap.ResourceVersion = currentConfigMap.ResourceVersion
-	}
 	return rclient.Update(ctx, configMap)
 }
 
@@ -81,9 +75,6 @@ func reconcileService(ctx context.Context, rclient client.Client, crdName string
 		return fmt.Errorf("cannot get existing service: %s, for crd_object: %s, err: %w", svc.Name, crdName, err)
 	}
 	svc.Annotations = labels.Merge(currentSvc.Annotations, svc.Annotations)
-	if svc.ResourceVersion != "" {
-		svc.ResourceVersion = currentSvc.ResourceVersion
-	}
 	svc.Status = currentSvc.Status
 	return rclient.Update(ctx, svc)
 }
