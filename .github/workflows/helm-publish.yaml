@@ -6,9 +6,7 @@ on:
     tags: [ 'v*.*.*' ]
 
 env:
-  # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
   CHARTS_REPOSITORY: ${{ github.repository_owner }}/charts
   CHART_NAME: etcd-operator
 
