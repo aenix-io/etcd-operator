@@ -63,7 +63,7 @@ spec:
               name: cert
               readOnly: true
         - name: kube-rbac-proxy
-          image: {{ .Values.kubeRbacProxy.image.repository }}:{{ .Values.kubeRbacProxy.image.tag | default .Chart.AppVersion }}
+          image: {{ .Values.kubeRbacProxy.image.repository }}:{{ .Values.kubeRbacProxy.image.tag }}
           imagePullPolicy: {{ .Values.kubeRbacProxy.image.pullPolicy }}
           {{- with .Values.kubeRbacProxy.args }}
           args:
