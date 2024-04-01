@@ -13,7 +13,7 @@
 | etcdOperator.envVars | object | `{}` |  |
 | etcdOperator.image.pullPolicy | string | `"IfNotPresent"` |  |
 | etcdOperator.image.repository | string | `"ghcr.io/aenix-io/etcd-operator"` |  |
-| etcdOperator.image.tag | string | `"latest"` |  |
+| etcdOperator.image.tag | string | `""` |  |
 | etcdOperator.livenessProbe.httpGet.path | string | `"/healthz"` |  |
 | etcdOperator.livenessProbe.httpGet.port | int | `8081` |  |
 | etcdOperator.livenessProbe.initialDelaySeconds | int | `15` |  |
@@ -49,6 +49,7 @@
 | kubeRbacProxy.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
 | kubeRbacProxy.service.port | int | `8443` |  |
 | kubeRbacProxy.service.type | string | `"ClusterIP"` |  |
+| kubernetesClusterDomain | string | `"cluster.local"` |  |
 | nameOverride | string | `""` |  |
 | nodeSelector | object | `{}` |  |
 | podAnnotations | object | `{}` |  |

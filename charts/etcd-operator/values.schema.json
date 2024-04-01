@@ -231,6 +231,9 @@
             },
             "type": "object"
         },
+        "kubernetesClusterDomain": {
+            "type": "string"
+        },
         "nameOverride": {
             "type": "string"
         },

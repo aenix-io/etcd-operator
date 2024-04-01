@@ -7,7 +7,7 @@ metadata:
 spec:
   dnsNames:
     - {{ include "etcd-operator.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc
-    - {{ include "etcd-operator.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+    - {{ include "etcd-operator.fullname" . }}-webhook-service.{{ .Release.Namespace }}.svc.{{ .Values.kubernetesClusterDomain }}
   issuerRef:
     kind: Issuer
     name: {{ include "etcd-operator.fullname" . }}-selfsigned-issuer

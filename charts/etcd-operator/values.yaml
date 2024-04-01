@@ -65,6 +65,8 @@ kubeRbacProxy:
       drop:
         - ALL
 
+kubernetesClusterDomain: cluster.local
+
 replicaCount: 1
 
 imagePullSecrets: []
