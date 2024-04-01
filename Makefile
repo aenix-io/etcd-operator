@@ -129,31 +129,25 @@ NAMESPACE_NAME ?= etcd-operator-system
 CERT_MANAGER_NAMESPACE ?= cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
-# Separate kubeconfig file for developing purposes
-KUBECONFIG ?= $(shell pwd)/bin/.kube/config
-export KUBECONFIG
-$(KUBECONFIG):
-	mkdir -p $(shell pwd)/bin/.kube
-
 ifndef ignore-not-found
   ignore-not-found = false
 endif
 
 .PHONY: install
-install: manifests kustomize kind-create ## Install CRDs into the K8s cluster specified in $KUBECONFIG.
+install: manifests kustomize kind-create ## Install CRDs into the K8s cluster specified in ~/.kube/config
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize kind-create ## Uninstall CRDs from the K8s cluster specified in $KUBECONFIG. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: manifests kustomize kind-create ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster specified in $KUBECONFIG.
+deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE_NAME) apply -f -
 
 .PHONY: undeploy
-undeploy: kustomize kind-create ## Undeploy controller from the K8s cluster specified in $KUBECONFIG. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+undeploy: kustomize kind-create ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE_NAME) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: redeploy
@@ -162,13 +156,13 @@ redeploy: deploy ## Redeploy controller with new docker image.
 	$(KUBECTL) rollout restart -n $(NAMESPACE_NAME) deploy/etcd-operator-controller-manager
 
 .PHONY: kind-create
-kind-create: kind $(KUBECONFIG) ## Create kubernetes cluster using Kind.
+kind-create: kind ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
 		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
 	fi
 
 .PHONY: kind-delete
-kind-delete: kind $(KUBECONFIG) ## Create kubernetes cluster using Kind.
+kind-delete: kind ## Create kubernetes cluster using Kind.
 	@if $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
 		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
 	fi
