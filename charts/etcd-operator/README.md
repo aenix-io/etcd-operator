@@ -24,7 +24,7 @@
 | etcdOperator.readinessProbe.periodSeconds | int | `10` |  |
 | etcdOperator.resources.limits.cpu | string | `"500m"` |  |
 | etcdOperator.resources.limits.memory | string | `"128Mi"` |  |
-| etcdOperator.resources.requests.cpu | string | `"10m"` |  |
+| etcdOperator.resources.requests.cpu | string | `"100m"` |  |
 | etcdOperator.resources.requests.memory | string | `"64Mi"` |  |
 | etcdOperator.securityContext.allowPrivilegeEscalation | bool | `false` |  |
 | etcdOperator.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
@@ -43,7 +43,7 @@
 | kubeRbacProxy.readinessProbe | object | `{}` |  |
 | kubeRbacProxy.resources.limits.cpu | string | `"500m"` |  |
 | kubeRbacProxy.resources.limits.memory | string | `"128Mi"` |  |
-| kubeRbacProxy.resources.requests.cpu | string | `"5m"` |  |
+| kubeRbacProxy.resources.requests.cpu | string | `"100m"` |  |
 | kubeRbacProxy.resources.requests.memory | string | `"64Mi"` |  |
 | kubeRbacProxy.securityContext.allowPrivilegeEscalation | bool | `false` |  |
 | kubeRbacProxy.securityContext.capabilities.drop[0] | string | `"ALL"` |  |

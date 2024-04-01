@@ -29,7 +29,7 @@ etcdOperator:
       cpu: 500m
       memory: 128Mi
     requests:
-      cpu: 10m
+      cpu: 100m
       memory: 64Mi
   securityContext:
     allowPrivilegeEscalation: false
@@ -57,7 +57,7 @@ kubeRbacProxy:
       cpu: 500m
       memory: 128Mi
     requests:
-      cpu: 5m
+      cpu: 100m
       memory: 64Mi
   securityContext:
     allowPrivilegeEscalation: false
