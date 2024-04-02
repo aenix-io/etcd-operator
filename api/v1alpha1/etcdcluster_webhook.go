@@ -96,6 +96,13 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		)
 	}
 
+	if errExtraArgs := validateExtraArgs(r); errExtraArgs != nil {
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "podSpec", "extraArgs"),
+			r.Spec.PodSpec.ExtraArgs,
+			errExtraArgs.Error()))
+	}
+
 	if len(allErrors) > 0 {
 		err := errors.NewInvalid(
 			schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
@@ -103,7 +110,7 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		return warnings, err
 	}
 
-	return warnings, validateExtraArgs(r)
+	return warnings, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
