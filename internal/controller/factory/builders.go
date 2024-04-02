@@ -22,6 +22,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -77,4 +78,41 @@ func reconcileService(ctx context.Context, rclient client.Client, crdName string
 	svc.Annotations = labels.Merge(currentSvc.Annotations, svc.Annotations)
 	svc.Status = currentSvc.Status
 	return rclient.Update(ctx, svc)
+}
+
+// deleteManagedPdb deletes cluster PDB if it exists.
+// pdb parameter should have at least metadata.name and metadata.namespace fields filled.
+func deleteManagedPdb(ctx context.Context, rclient client.Client, pdb *v1.PodDisruptionBudget) error {
+	logger := log.FromContext(ctx)
+	currentPdb := &v1.PodDisruptionBudget{}
+	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
+	if err != nil {
+		logger.V(2).Info("error getting cluster PDB", "error", err)
+		return client.IgnoreNotFound(err)
+	}
+	err = rclient.Delete(ctx, currentPdb)
+	if err != nil {
+		logger.Error(err, "error deleting cluster PDB", "name", pdb.Name)
+		return client.IgnoreNotFound(err)
+	}
+
+	return nil
+}
+
+func reconcilePdb(ctx context.Context, rclient client.Client, crdName string, pdb *v1.PodDisruptionBudget) error {
+	logger := log.FromContext(ctx)
+	currentPdb := &v1.PodDisruptionBudget{}
+	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.V(2).Info("creating new PDB", "pdb_name", pdb.Name, "crd_object", crdName)
+			return rclient.Create(ctx, pdb)
+		}
+		logger.V(2).Info("error getting cluster PDB", "error", err)
+		return fmt.Errorf("cannot get existing pdb resource: %s for crd_object: %s, err: %w", pdb.Name, crdName, err)
+	}
+	pdb.Annotations = labels.Merge(currentPdb.Annotations, pdb.Annotations)
+	pdb.ResourceVersion = currentPdb.ResourceVersion
+	pdb.Status = currentPdb.Status
+	return rclient.Update(ctx, pdb)
 }
