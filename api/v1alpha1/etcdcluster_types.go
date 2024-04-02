@@ -167,13 +167,13 @@ type PodSpec struct {
 
 	// LivenessProbe defines liveness probe check for the pod.
 	// If not specified, default probe will be used with HTTP probe handler and path /livez on the port 2379,
-	// with initialDelaySeconds 5 and periodSeconds 5.
+	// with periodSeconds 5.
 	// +optional
 	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
 
 	// ReadinessProbe defines readiness probe check for the pod.
 	// If not specified, default probe will be used with HTTP probe handler and path /readyz on the port 2379,
-	// with initialDelaySeconds 5 and periodSeconds 5.
+	// with periodSeconds 5.
 	// +optional
 	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
 

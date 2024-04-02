@@ -216,8 +216,7 @@ func getReadinessProbe(probe *corev1.Probe) *corev1.Probe {
 				Port: intstr.FromInt32(2379),
 			},
 		},
-		InitialDelaySeconds: 5,
-		PeriodSeconds:       5,
+		PeriodSeconds: 5,
 	}
 	return mergeWithDefaultProbe(probe, defaultProbe)
 }
@@ -230,8 +229,7 @@ func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
 				Port: intstr.FromInt32(2379),
 			},
 		},
-		InitialDelaySeconds: 5,
-		PeriodSeconds:       5,
+		PeriodSeconds: 5,
 	}
 	return mergeWithDefaultProbe(probe, defaultProbe)
 }

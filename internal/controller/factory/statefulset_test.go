@@ -139,11 +139,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 0,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       5,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
+					TimeoutSeconds:   1,
+					PeriodSeconds:    5,
+					SuccessThreshold: 1,
+					FailureThreshold: 3,
 				}))
 			})
 
@@ -156,11 +155,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 5,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       5,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
+					TimeoutSeconds:   1,
+					PeriodSeconds:    5,
+					SuccessThreshold: 1,
+					FailureThreshold: 3,
 				}))
 			})
 
@@ -173,11 +171,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 5,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       5,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
+					TimeoutSeconds:   1,
+					PeriodSeconds:    5,
+					SuccessThreshold: 1,
+					FailureThreshold: 3,
 				}))
 			})
 
@@ -223,11 +220,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 0,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       7,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
+					TimeoutSeconds:   1,
+					PeriodSeconds:    7,
+					SuccessThreshold: 1,
+					FailureThreshold: 3,
 				}))
 			})
 
@@ -240,11 +236,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 5,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       3,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
+					TimeoutSeconds:   1,
+					PeriodSeconds:    3,
+					SuccessThreshold: 1,
+					FailureThreshold: 3,
 				}))
 			})
 
@@ -336,8 +331,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						Port: intstr.FromInt32(2379),
 					},
 				},
-				InitialDelaySeconds: 5,
-				PeriodSeconds:       5,
+				PeriodSeconds: 5,
 			}))
 		})
 		It("should correctly override all values", func() {
@@ -390,8 +384,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						Port: intstr.FromInt32(2379),
 					},
 				},
-				InitialDelaySeconds: 0,
-				PeriodSeconds:       5,
+				PeriodSeconds: 5,
 			}))
 		})
 		It("should correctly override all values", func() {
@@ -444,8 +437,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						Port: intstr.FromInt32(2379),
 					},
 				},
-				InitialDelaySeconds: 5,
-				PeriodSeconds:       5,
+				PeriodSeconds: 5,
 			}))
 		})
 		It("should correctly override all values", func() {
@@ -496,8 +488,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						Port: intstr.FromInt32(2379),
 					},
 				},
-				InitialDelaySeconds: 5,
-				PeriodSeconds:       5,
+				PeriodSeconds: 5,
 			}
 			defaultProbeCopy := defaultProbe.DeepCopy()
 

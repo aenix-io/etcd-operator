@@ -1278,8 +1278,9 @@ spec:
                       for this pod.
                     type: string
                   readinessProbe:
-                    description: ReadinessProbe defines readiness probe check for
-                      the pod.
+                    description: |-
+                      ReadinessProbe defines readiness probe check for the pod.
+                      If not specified, default probe will be used.
                     properties:
                       exec:
                         description: Exec specifies the action to take.
@@ -1667,8 +1668,9 @@ spec:
                         type: object
                     type: object
                   startupProbe:
-                    description: StartupProbe defines startup probe check for the
-                      pod.
+                    description: |-
+                      StartupProbe defines startup probe check for the pod.
+                      If not specified, default probe will be used.
                     properties:
                       exec:
                         description: Exec specifies the action to take.
