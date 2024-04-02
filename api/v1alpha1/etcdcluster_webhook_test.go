@@ -239,5 +239,17 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				}
 			}
 		})
+		It("should correctly use zero numeric value for maxUnavailable PDB", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(0)))
+			_, err := localCluster.validatePdb()
+			Expect(err).To(BeNil())
+		})
+		It("should correctly use zero string value for PDB", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("0"))
+			_, err := localCluster.validatePdb()
+			Expect(err).To(BeNil())
+		})
 	})
 })

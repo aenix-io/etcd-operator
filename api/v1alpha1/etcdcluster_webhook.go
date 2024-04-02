@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -146,7 +147,7 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 	minQuorumSize := r.CalculateQuorumSize()
 	if pdb.Spec.MinAvailable != nil {
 		minAvailable := pdb.Spec.MinAvailable.IntValue()
-		if pdb.Spec.MinAvailable.IntVal == 0 && pdb.Spec.MinAvailable.IntValue() == 0 {
+		if pdb.Spec.MinAvailable.Type == intstr.String && minAvailable == 0 && pdb.Spec.MinAvailable.StrVal != "0" {
 			var percentage int
 			_, err := fmt.Sscanf(pdb.Spec.MinAvailable.StrVal, "%d%%", &percentage)
 			if err != nil {
@@ -180,7 +181,7 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 	}
 	if pdb.Spec.MaxUnavailable != nil {
 		maxUnavailable := pdb.Spec.MaxUnavailable.IntValue()
-		if pdb.Spec.MaxUnavailable.IntVal == 0 && pdb.Spec.MaxUnavailable.IntValue() == 0 {
+		if pdb.Spec.MaxUnavailable.Type == intstr.String && maxUnavailable == 0 && pdb.Spec.MaxUnavailable.StrVal != "0" {
 			var percentage int
 			_, err := fmt.Sscanf(pdb.Spec.MaxUnavailable.StrVal, "%d%%", &percentage)
 			if err != nil {
