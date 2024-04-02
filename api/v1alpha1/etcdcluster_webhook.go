@@ -129,7 +129,7 @@ func validateExtraArgs(cluster *EtcdCluster) error {
 
 	for name := range cluster.Spec.PodSpec.ExtraArgs {
 		if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
-			return fmt.Errorf("Extra arg should not start from dash and have trailing dash, "+
+			return fmt.Errorf("Extra arg should not start with dash and have trailing dash, "+
 				"but it can contain dashes in the middle. flag: %s", name)
 		}
 
