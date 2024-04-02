@@ -139,7 +139,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 1,
+					InitialDelaySeconds: 0,
 					TimeoutSeconds:      1,
 					PeriodSeconds:       5,
 					SuccessThreshold:    1,
@@ -223,7 +223,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
-					InitialDelaySeconds: 1,
+					InitialDelaySeconds: 0,
 					TimeoutSeconds:      1,
 					PeriodSeconds:       7,
 					SuccessThreshold:    1,
@@ -390,7 +390,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						Port: intstr.FromInt32(2379),
 					},
 				},
-				InitialDelaySeconds: 1,
+				InitialDelaySeconds: 0,
 				PeriodSeconds:       5,
 			}))
 		})

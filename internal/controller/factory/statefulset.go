@@ -203,8 +203,7 @@ func getStartupProbe(probe *corev1.Probe) *corev1.Probe {
 				Port: intstr.FromInt32(2379),
 			},
 		},
-		InitialDelaySeconds: 1,
-		PeriodSeconds:       5,
+		PeriodSeconds: 5,
 	}
 	return mergeWithDefaultProbe(probe, defaultProbe)
 }
