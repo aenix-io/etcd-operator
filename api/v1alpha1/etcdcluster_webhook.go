@@ -18,8 +18,8 @@ package v1alpha1
 
 import (
 	"fmt"
-	"strings"
 	"math"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -75,14 +75,29 @@ var _ webhook.Validator = &EtcdCluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 	etcdclusterlog.Info("validate create", "name", r.Name)
-	warnings, err := r.validatePdb()
-	if err != nil {
-		return nil, errors.NewInvalid(
-			schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
-			r.Name, err)
+
+	var allErrors field.ErrorList
+
+	warnings, pdbErr := r.validatePdb()
+	if pdbErr != nil {
+		allErrors = append(allErrors, pdbErr...)
 	}
 
-	return warnings, validateExtraArgs(r)
+	if errExtraArgs := validateExtraArgs(r); errExtraArgs != nil {
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "podSpec", "extraArgs"),
+			r.Spec.PodSpec.ExtraArgs,
+			errExtraArgs.Error()))
+	}
+
+	if len(allErrors) > 0 {
+		err := errors.NewInvalid(
+			schema.GroupKind{Group: GroupVersion.Group, Kind: "EtcdCluster"},
+			r.Name, allErrors)
+		return warnings, err
+	}
+
+	return warnings, nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
