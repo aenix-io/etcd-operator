@@ -127,7 +127,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			Expect(sts.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodSpec.PodMetadata.Annotations))
 
 			By("Checking the extraArgs")
-			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand(etcdcluster)))
+			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
 
 			By("Deleting the statefulset")
 			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())

@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const DefaultEtcdImage = "quay.io/coreos/etcd:v3.5.12"
+const defaultEtcdImage = "quay.io/coreos/etcd:v3.5.12"
 
 // EtcdClusterSpec defines the desired state of EtcdCluster
 type EtcdClusterSpec struct {
