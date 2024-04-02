@@ -21,6 +21,8 @@ import (
 	goerrors "errors"
 	"fmt"
 
+	policyv1 "k8s.io/api/policy/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -49,6 +51,7 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;watch;delete;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
+// +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;create;delete;update;patch;list;watch
 
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -95,30 +98,50 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster readiness condition
-	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-		WithStatus(clusterReady).
-		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
-		WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
-		Complete())
+	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
+	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) {
+		// we should change from "waiting for first quorum establishment" to "StatefulSet ready / not ready"
+		// only after sts gets ready first time
+		if clusterReady {
+			factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+				WithStatus(true).
+				WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
+				WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
+				Complete())
+		}
+	} else {
+		reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
+		message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+		if clusterReady {
+			reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
+			message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
+		}
+
+		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+			WithStatus(clusterReady).
+			WithReason(string(reason)).
+			WithMessage(string(message)).
+			Complete())
+	}
 	return r.updateStatus(ctx, instance)
 }
 
 // ensureClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
-	// 1. create or update configmap <name>-cluster-state
 	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
-	// 2. create or update statefulset
 	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
-	// 3. create or update ClusterIP Service
 	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client, r.Scheme); err != nil {
+		return err
+	}
+	if err := factory.CreateOrUpdatePdb(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 
@@ -164,5 +187,6 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
+		Owns(&policyv1.PodDisruptionBudget{}).
 		Complete(r)
 }

@@ -20,4 +20,4 @@ jobs:
       - uses: helm/kind-action@v1.9.0
         with:
           cluster_name: kind
-      - run: make test-e2e
+      - run: make test-e2e KIND_CLUSTER_NAME=kind

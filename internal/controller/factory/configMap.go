@@ -19,7 +19,6 @@ package factory
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,13 +74,10 @@ func CreateOrUpdateClusterStateConfigMap(
 	return reconcileConfigMap(ctx, rclient, cluster.Name, configMap)
 }
 
-// isEtcdClusterReady returns true if condition "Ready" has status equal to "True", otherwise false.
+// isEtcdClusterReady returns true if condition "Ready" has progressed
+// from reason v1alpha1.EtcdCondTypeWaitingForFirstQuorum.
 func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
-	idx := slices.IndexFunc(cluster.Status.Conditions, func(condition metav1.Condition) bool {
-		return condition.Type == etcdaenixiov1alpha1.EtcdConditionReady
-	})
-	if idx == -1 {
-		return false
-	}
-	return cluster.Status.Conditions[idx].Status == metav1.ConditionTrue
+	cond := GetCondition(cluster, etcdaenixiov1alpha1.EtcdConditionReady)
+	return cond != nil && (cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady) ||
+		cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady))
 }
