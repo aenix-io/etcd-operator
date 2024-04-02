@@ -1,0 +1,9 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: test
+  namespace: default
+spec:
+  replicas: 3
+  podDisruptionBudgetTemplate: {}

@@ -1,0 +1,78 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: test
+  namespace: default
+spec:
+  replicas: 3
+  options:
+    election-timeout: "1000"
+    max-wals: "5"
+    max-snapshots: "5"
+
+  storage:
+    emptyDir: {}
+    volumeClaimTemplate:
+      metadata:
+        labels:
+          env: prod
+        annotations:
+          example.com/annotation: "true"
+      spec:
+        storageClassName: gp3
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
+
+  podTemplate:
+    metadata:
+      labels:
+        env: prod
+      annotations:
+        example.com/annotation: "true"
+    spec:
+      imagePullSecrets:
+      - name: myregistrykey
+      serviceAccountName: default
+      affinity: {}
+      nodeSelector: {}
+      tolerations: []
+      securityContext: {}
+      priorityClassName: "low"
+      topologySpreadConstraints: []
+      terminationGracePeriodSeconds: 30
+      schedulerName: "default-scheduler"
+      runtimeClassName: "legacy"
+      readinessGates: []
+      containers:
+      - name: etcd
+        image: "quay.io/coreos/etcd:v3.5.12"
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 200m
+            memory: 200Mi
+      volumes: []
+
+  serviceTemplate:
+    metadata:
+      labels:
+        env: prod
+      annotations:
+        example.com/annotation: "true"
+    spec:
+
+  podDisruptionBudgetTemplate:
+    metadata:
+      labels:
+        env: prod
+      annotations:
+        example.com/annotation: "true"
+    spec:
+      maxUnavailable: 1
+      minAvailable: 2
