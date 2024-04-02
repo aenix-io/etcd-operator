@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 )
 
@@ -92,85 +93,6 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			Expect(err).To(Succeed())
 			Expect(w).To(BeEmpty())
 		})
-		It("Should admit enabled empty PDB", func() {
-			etcdCluster := &EtcdCluster{
-				Spec: EtcdClusterSpec{
-					Replicas:            ptr.To(int32(1)),
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{},
-				},
-			}
-			w, err := etcdCluster.ValidateCreate()
-			Expect(err).To(Succeed())
-			Expect(w).To(BeEmpty())
-		})
-		It("Should reject if negative spec.podDisruptionBudget.minAvailable", func() {
-			etcdCluster := &EtcdCluster{
-				Spec: EtcdClusterSpec{
-					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
-						Spec: PodDisruptionBudgetSpec{
-							MinAvailable: ptr.To(intstr.FromInt32(int32(-1))),
-						},
-					},
-				},
-			}
-			_, err := etcdCluster.ValidateCreate()
-			if Expect(err).To(HaveOccurred()) {
-				statusErr := err.(*errors.StatusError)
-				Expect(statusErr.ErrStatus.Message).To(ContainSubstring("value cannot be less than zero"))
-			}
-		})
-		It("Should reject if negative spec.podDisruptionBudget.maxUnavailable", func() {
-			etcdCluster := &EtcdCluster{
-				Spec: EtcdClusterSpec{
-					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
-						Spec: PodDisruptionBudgetSpec{
-							MaxUnavailable: ptr.To(intstr.FromInt32(int32(-1))),
-						},
-					},
-				},
-			}
-			_, err := etcdCluster.ValidateCreate()
-			if Expect(err).To(HaveOccurred()) {
-				statusErr := err.(*errors.StatusError)
-				Expect(statusErr.ErrStatus.Message).To(ContainSubstring("maxUnavailable: Invalid value: -1: value cannot be less than zero"))
-			}
-		})
-		It("Should reject if min available field larger than replicas", func() {
-			etcdCluster := &EtcdCluster{
-				Spec: EtcdClusterSpec{
-					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
-						Spec: PodDisruptionBudgetSpec{
-							MinAvailable: ptr.To(intstr.FromInt32(int32(2))),
-						},
-					},
-				},
-			}
-			_, err := etcdCluster.ValidateCreate()
-			if Expect(err).To(HaveOccurred()) {
-				statusErr := err.(*errors.StatusError)
-				Expect(statusErr.ErrStatus.Message).To(ContainSubstring("minAvailable: Invalid value: 2: value cannot be larger than number of replicas"))
-			}
-		})
-		It("Should reject if max unavailable field larger than replicas", func() {
-			etcdCluster := &EtcdCluster{
-				Spec: EtcdClusterSpec{
-					Replicas: ptr.To(int32(1)),
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
-						Spec: PodDisruptionBudgetSpec{
-							MaxUnavailable: ptr.To(intstr.FromInt32(int32(2))),
-						},
-					},
-				},
-			}
-			_, err := etcdCluster.ValidateCreate()
-			if Expect(err).To(HaveOccurred()) {
-				statusErr := err.(*errors.StatusError)
-				Expect(statusErr.ErrStatus.Message).To(ContainSubstring("maxUnavailable: Invalid value: 2: value cannot be larger than number of replicas"))
-			}
-		})
 	})
 
 	Context("When updating EtcdCluster under Validating Webhook", func() {
@@ -209,6 +131,113 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 			_, err := etcdCluster.ValidateUpdate(oldCluster)
 			Expect(err).To(Succeed())
+		})
+	})
+
+	Context("Validate PDB", func() {
+		etcdCluster := &EtcdCluster{
+			Spec: EtcdClusterSpec{
+				Replicas:            ptr.To(int32(3)),
+				PodDisruptionBudget: &EmbeddedPodDisruptionBudget{},
+			},
+		}
+		It("Should admit enabled empty PDB", func() {
+			localCluster := etcdCluster.DeepCopy()
+			w, err := localCluster.validatePdb()
+			Expect(err).To(BeNil())
+			Expect(w).To(BeEmpty())
+		})
+		It("Should reject if negative spec.podDisruptionBudget.minAvailable", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(-1)))
+			_, err := localCluster.validatePdb()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
+					-1,
+					"value cannot be less than zero",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+		It("Should reject if negative spec.podDisruptionBudget.maxUnavailable", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(-1)))
+			_, err := localCluster.validatePdb()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
+					-1,
+					"value cannot be less than zero",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+		It("Should reject if min available field larger than replicas", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Replicas = ptr.To(int32(1))
+			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(2)))
+			_, err := localCluster.validatePdb()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "minAvailable"),
+					2,
+					"value cannot be larger than number of replicas",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+		It("Should reject if max unavailable field larger than replicas", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Replicas = ptr.To(int32(1))
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(2)))
+			_, err := localCluster.validatePdb()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
+					2,
+					"value cannot be larger than number of replicas",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+		It("should accept correct percentage value for minAvailable", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Replicas = ptr.To(int32(4))
+			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromString("50%"))
+			warnings, err := localCluster.validatePdb()
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement("current number of spec.podDisruptionBudget.minAvailable can lead to loss of quorum"))
+		})
+		It("should accept correct percentage value for maxUnavailable", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("50%"))
+			warnings, err := localCluster.validatePdb()
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement("current number of spec.podDisruptionBudget.maxUnavailable can lead to loss of quorum"))
+		})
+		It("Should reject incorrect value for maxUnavailable", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("50$"))
+			_, err := localCluster.validatePdb()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "podDisruptionBudget", "maxUnavailable"),
+					"50$",
+					"invalid percentage value",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
 		})
 	})
 })
