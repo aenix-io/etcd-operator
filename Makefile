@@ -1,8 +1,8 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.29.0
+ENVTEST_K8S_VERSION ?= 1.29.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -106,10 +106,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
-.PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
-
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -134,10 +130,16 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 		$(KUSTOMIZE) build config/crd > dist/install.yaml; \
 	fi
 	echo "---" >> dist/install.yaml  # Add a document separator before appending
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
 	$(KUSTOMIZE) build config/default >> dist/install.yaml
 
 ##@ Deployment
+
+KIND_CLUSTER_NAME ?= etcd-operator-kind
+NAMESPACE ?= etcd-operator-system
+
+PROMETHEUS_OPERATOR_VERSION ?= v0.72.0
+CERT_MANAGER_VERSION ?= v1.14.4
 
 ifndef ignore-not-found
   ignore-not-found = false
@@ -149,16 +151,44 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
+	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
+
+.PHONY: redeploy
+redeploy: deploy ## Redeploy controller with new docker image.
+	# force recreate pods
+	$(KUBECTL) rollout restart -n $(NAMESPACE) deploy/etcd-operator-controller-manager
+
+.PHONY: kind-load
+kind-load: docker-build kind ## Build and upload docker image to the local Kind cluster.
+	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
+
+.PHONY: kind-create
+kind-create: kind ## Create kubernetes cluster using Kind.
+	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
+	fi
+
+.PHONY: kind-delete
+kind-delete: kind ## Create kubernetes cluster using Kind.
+	@if $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
+		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+	fi
+
+.PHONY: kind-prepare
+kind-prepare: kind-create
+	# Install prometheus operator
+	$(KUBECTL) apply --server-side -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
+	# Install cert-manager operator
+	$(KUBECTL) apply --server-side -f "https://github.com/jetstack/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml"
 
 ##@ Dependencies
 
@@ -178,6 +208,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 
@@ -186,6 +217,7 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
+KIND_VERSION ?= v0.22.0
 HELM_VERSION ?= v3.14.3
 HELM_SCHEMA_VERSION ?= v1.2.2
 HELM_DOCS_VERSION ?= v1.13.1
@@ -214,6 +246,10 @@ envtest: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+kind: $(LOCALBIN)
+	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
+	GOBIN=$(LOCALBIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
 
 .PHONY: helm
 helm: $(LOCALBIN)

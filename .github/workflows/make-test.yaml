@@ -11,10 +11,13 @@ jobs:
   build:
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
+    strategy:
+      matrix:
+        k8s_version: [1.27.1,1.28.0,1.29.0]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: 1.22.1
-      - run: make test
+      - run: ENVTEST_K8S_VERSION=${{ matrix.k8s_version }} make test
