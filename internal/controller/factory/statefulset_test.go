@@ -303,18 +303,14 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	})
 
 	Context("When generating a etcd command", func() {
-		It("should correctly fillExtraArgs", func() {
+		It("should correctly fill options to args", func() {
 			extraArgs := map[string]string{
 				"key1": "value1",
 				"key2": "value2",
 			}
 			etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
 				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-					PodTemplate: etcdaenixiov1alpha1.PodTemplate{
-						Spec: etcdaenixiov1alpha1.PodSpec{
-							ExtraArgs: extraArgs,
-						},
-					},
+					Options: extraArgs,
 				},
 			}
 

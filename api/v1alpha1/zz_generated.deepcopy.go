@@ -159,6 +159,13 @@ func (in *EtcdClusterSpec) DeepCopyInto(out *EtcdClusterSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.Options != nil {
+		in, out := &in.Options, &out.Options
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.PodTemplate.DeepCopyInto(&out.PodTemplate)
 	if in.PodDisruptionBudgetTemplate != nil {
 		in, out := &in.PodDisruptionBudgetTemplate, &out.PodDisruptionBudgetTemplate
@@ -274,13 +281,6 @@ func (in *PodSpec) DeepCopyInto(out *PodSpec) {
 		in, out := &in.RuntimeClassName, &out.RuntimeClassName
 		*out = new(string)
 		**out = **in
-	}
-	if in.ExtraArgs != nil {
-		in, out := &in.ExtraArgs, &out.ExtraArgs
-		*out = make(map[string]string, len(*in))
-		for key, val := range *in {
-			(*out)[key] = val
-		}
 	}
 	if in.ExtraEnv != nil {
 		in, out := &in.ExtraEnv, &out.ExtraEnv

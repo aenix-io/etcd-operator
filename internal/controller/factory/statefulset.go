@@ -192,7 +192,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
 	}
 
-	for name, value := range cluster.Spec.PodTemplate.Spec.ExtraArgs {
+	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
 		if len(value) == 0 {
 			args = append(args, flag)

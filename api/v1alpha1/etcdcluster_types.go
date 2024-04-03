@@ -31,6 +31,10 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
+	// Options are the extra arguments to pass to the etcd container.
+	// +optional
+	// +kubebuilder:example:={enable-v2: "false", debug: "true"}
+	Options map[string]string `json:"options,omitempty"`
 	// PodTemplate defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
 	PodTemplate PodTemplate `json:"podTemplate,omitempty"`
 	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
@@ -176,9 +180,6 @@ type PodSpec struct {
 	// RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group, which should be used to run this pod.
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
-	// ExtraArgs are the extra arguments to pass to the etcd container.
-	// +optional
-	ExtraArgs map[string]string `json:"extraArgs,omitempty"`
 	// ExtraEnv are the extra environment variables to pass to the etcd container.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`

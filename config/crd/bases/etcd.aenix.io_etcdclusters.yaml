@@ -39,6 +39,14 @@ spec:
           spec:
             description: EtcdClusterSpec defines the desired state of EtcdCluster
             properties:
+              options:
+                additionalProperties:
+                  type: string
+                description: Options are the extra arguments to pass to the etcd container.
+                example:
+                  debug: "true"
+                  enable-v2: "false"
+                type: object
               podDisruptionBudgetTemplate:
                 description: PodDisruptionBudgetTemplate describes PDB resource to
                   create for etcd cluster members. Nil to disable.
@@ -1038,12 +1046,6 @@ spec:
                                   type: object
                                 type: array
                             type: object
-                        type: object
-                      extraArgs:
-                        additionalProperties:
-                          type: string
-                        description: ExtraArgs are the extra arguments to pass to
-                          the etcd container.
                         type: object
                       extraEnv:
                         description: ExtraEnv are the extra environment variables
