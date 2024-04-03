@@ -33,10 +33,10 @@ type EtcdClusterSpec struct {
 	Replicas *int32 `json:"replicas,omitempty"`
 	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
 	PodSpec PodSpec `json:"podSpec,omitempty"`
-	// PodDisruptionBudget describes PDB resource to create for etcd cluster members. Nil to disable.
+	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
 	//+optional
-	PodDisruptionBudget *EmbeddedPodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
-	Storage             StorageSpec                  `json:"storage"`
+	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
+	Storage                     StorageSpec                  `json:"storage"`
 }
 
 const (

@@ -49,7 +49,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 					PodSpec: PodSpec{
 						Image: "myregistry.local/etcd:v1.1.1",
 					},
-					PodDisruptionBudget: &EmbeddedPodDisruptionBudget{
+					PodDisruptionBudgetTemplate: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
 							MaxUnavailable: ptr.To(intstr.FromInt32(int32(2))),
 						},
@@ -71,8 +71,8 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 			etcdCluster.Default()
 			Expect(*etcdCluster.Spec.Replicas).To(Equal(int32(5)))
-			Expect(etcdCluster.Spec.PodDisruptionBudget).NotTo(BeNil())
-			Expect(etcdCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable.IntValue()).To(Equal(2))
+			Expect(etcdCluster.Spec.PodDisruptionBudgetTemplate).NotTo(BeNil())
+			Expect(etcdCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable.IntValue()).To(Equal(2))
 			Expect(etcdCluster.Spec.PodSpec.Image).To(Equal("myregistry.local/etcd:v1.1.1"))
 			Expect(etcdCluster.Spec.Storage.EmptyDir).To(BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
@@ -137,8 +137,8 @@ var _ = Describe("EtcdCluster Webhook", func() {
 	Context("Validate PDB", func() {
 		etcdCluster := &EtcdCluster{
 			Spec: EtcdClusterSpec{
-				Replicas:            ptr.To(int32(3)),
-				PodDisruptionBudget: &EmbeddedPodDisruptionBudget{},
+				Replicas:                    ptr.To(int32(3)),
+				PodDisruptionBudgetTemplate: &EmbeddedPodDisruptionBudget{},
 			},
 		}
 		It("Should admit enabled empty PDB", func() {
@@ -149,7 +149,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		})
 		It("Should reject if negative spec.podDisruptionBudget.minAvailable", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(-1)))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(-1)))
 			_, err := localCluster.validatePdb()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
@@ -164,7 +164,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		})
 		It("Should reject if negative spec.podDisruptionBudget.maxUnavailable", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(-1)))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(-1)))
 			_, err := localCluster.validatePdb()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
@@ -180,7 +180,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should reject if min available field larger than replicas", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Replicas = ptr.To(int32(1))
-			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(2)))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(2)))
 			_, err := localCluster.validatePdb()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
@@ -196,7 +196,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should reject if max unavailable field larger than replicas", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Replicas = ptr.To(int32(1))
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(2)))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(2)))
 			_, err := localCluster.validatePdb()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
@@ -212,21 +212,21 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("should accept correct percentage value for minAvailable", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Replicas = ptr.To(int32(4))
-			localCluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromString("50%"))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromString("50%"))
 			warnings, err := localCluster.validatePdb()
 			Expect(err).To(BeNil())
 			Expect(warnings).To(ContainElement("current number of spec.podDisruptionBudget.minAvailable can lead to loss of quorum"))
 		})
 		It("should accept correct percentage value for maxUnavailable", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("50%"))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromString("50%"))
 			warnings, err := localCluster.validatePdb()
 			Expect(err).To(BeNil())
 			Expect(warnings).To(ContainElement("current number of spec.podDisruptionBudget.maxUnavailable can lead to loss of quorum"))
 		})
 		It("Should reject incorrect value for maxUnavailable", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("50$"))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromString("50$"))
 			_, err := localCluster.validatePdb()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
@@ -241,13 +241,13 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		})
 		It("should correctly use zero numeric value for maxUnavailable PDB", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(0)))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(int32(0)))
 			_, err := localCluster.validatePdb()
 			Expect(err).To(BeNil())
 		})
 		It("should correctly use zero string value for PDB", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable = ptr.To(intstr.FromString("0"))
+			localCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromString("0"))
 			_, err := localCluster.validatePdb()
 			Expect(err).To(BeNil())
 		})

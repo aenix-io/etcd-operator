@@ -36,7 +36,7 @@ func CreateOrUpdatePdb(
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
-	if cluster.Spec.PodDisruptionBudget == nil {
+	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
 		return deleteManagedPdb(ctx, rclient, &v1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: cluster.Namespace,
@@ -50,8 +50,8 @@ func CreateOrUpdatePdb(
 			Name:      cluster.Name,
 		},
 		Spec: v1.PodDisruptionBudgetSpec{
-			MinAvailable:   cluster.Spec.PodDisruptionBudget.Spec.MinAvailable,
-			MaxUnavailable: cluster.Spec.PodDisruptionBudget.Spec.MaxUnavailable,
+			MinAvailable:   cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable,
+			MaxUnavailable: cluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 			},

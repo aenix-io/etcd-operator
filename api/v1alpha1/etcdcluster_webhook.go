@@ -152,10 +152,10 @@ func (r *EtcdCluster) ValidateDelete() (admission.Warnings, error) {
 
 // validatePdb validates PDB fields
 func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
-	if r.Spec.PodDisruptionBudget == nil {
+	if r.Spec.PodDisruptionBudgetTemplate == nil {
 		return nil, nil
 	}
-	pdb := r.Spec.PodDisruptionBudget
+	pdb := r.Spec.PodDisruptionBudgetTemplate
 	var warnings admission.Warnings
 	var allErrors field.ErrorList
 

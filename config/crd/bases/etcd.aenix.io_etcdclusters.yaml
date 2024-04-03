@@ -39,9 +39,9 @@ spec:
           spec:
             description: EtcdClusterSpec defines the desired state of EtcdCluster
             properties:
-              podDisruptionBudget:
-                description: PodDisruptionBudget describes PDB resource to create
-                  for etcd cluster members. Nil to disable.
+              podDisruptionBudgetTemplate:
+                description: PodDisruptionBudgetTemplate describes PDB resource to
+                  create for etcd cluster members. Nil to disable.
                 properties:
                   metadata:
                     description: EmbeddedMetadata contains metadata relevant to an

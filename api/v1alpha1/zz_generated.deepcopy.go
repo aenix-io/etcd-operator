@@ -160,8 +160,8 @@ func (in *EtcdClusterSpec) DeepCopyInto(out *EtcdClusterSpec) {
 		**out = **in
 	}
 	in.PodSpec.DeepCopyInto(&out.PodSpec)
-	if in.PodDisruptionBudget != nil {
-		in, out := &in.PodDisruptionBudget, &out.PodDisruptionBudget
+	if in.PodDisruptionBudgetTemplate != nil {
+		in, out := &in.PodDisruptionBudgetTemplate, &out.PodDisruptionBudgetTemplate
 		*out = new(EmbeddedPodDisruptionBudget)
 		(*in).DeepCopyInto(*out)
 	}
