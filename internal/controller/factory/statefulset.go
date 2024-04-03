@@ -118,36 +118,9 @@ func CreateOrUpdateStatefulSet(
 									MountPath: "/var/run/etcd",
 								},
 							},
-							StartupProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz?serializable=false",
-										Port: intstr.FromInt32(2379),
-									},
-								},
-								InitialDelaySeconds: 1,
-								PeriodSeconds:       5,
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/livez",
-										Port: intstr.FromInt32(2379),
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
-										Port: intstr.FromInt32(2379),
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-							},
+							StartupProbe:   getStartupProbe(cluster.Spec.PodSpec.StartupProbe),
+							LivenessProbe:  getLivenessProbe(cluster.Spec.PodSpec.LivenessProbe),
+							ReadinessProbe: getReadinessProbe(cluster.Spec.PodSpec.ReadinessProbe),
 						},
 					},
 					ImagePullSecrets:              cluster.Spec.PodSpec.ImagePullSecrets,
@@ -233,4 +206,67 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	return args
+}
+
+func getStartupProbe(probe *corev1.Probe) *corev1.Probe {
+	defaultProbe := corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/readyz?serializable=false",
+				Port: intstr.FromInt32(2379),
+			},
+		},
+		PeriodSeconds: 5,
+	}
+	return mergeWithDefaultProbe(probe, defaultProbe)
+}
+
+func getReadinessProbe(probe *corev1.Probe) *corev1.Probe {
+	defaultProbe := corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/readyz",
+				Port: intstr.FromInt32(2379),
+			},
+		},
+		PeriodSeconds: 5,
+	}
+	return mergeWithDefaultProbe(probe, defaultProbe)
+}
+
+func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
+	defaultProbe := corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/livez",
+				Port: intstr.FromInt32(2379),
+			},
+		},
+		PeriodSeconds: 5,
+	}
+	return mergeWithDefaultProbe(probe, defaultProbe)
+}
+
+func mergeWithDefaultProbe(probe *corev1.Probe, defaultProbe corev1.Probe) *corev1.Probe {
+	if probe == nil {
+		return &defaultProbe
+	}
+
+	if probe.InitialDelaySeconds != 0 {
+		defaultProbe.InitialDelaySeconds = probe.InitialDelaySeconds
+	}
+
+	if probe.PeriodSeconds != 0 {
+		defaultProbe.PeriodSeconds = probe.PeriodSeconds
+	}
+
+	if hasProbeHandlerAction(*probe) {
+		defaultProbe.ProbeHandler = probe.ProbeHandler
+	}
+
+	return &defaultProbe
+}
+
+func hasProbeHandlerAction(probe corev1.Probe) bool {
+	return probe.HTTPGet != nil || probe.TCPSocket != nil || probe.Exec != nil || probe.GRPC != nil
 }

@@ -175,6 +175,24 @@ type PodSpec struct {
 	// ExtraEnv are the extra environment variables to pass to the etcd container.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+
+	// LivenessProbe defines liveness probe check for the pod.
+	// If not specified, default probe will be used with HTTP probe handler and path /livez on the port 2379,
+	// with periodSeconds 5.
+	// +optional
+	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
+
+	// ReadinessProbe defines readiness probe check for the pod.
+	// If not specified, default probe will be used with HTTP probe handler and path /readyz on the port 2379,
+	// with periodSeconds 5.
+	// +optional
+	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
+
+	// StartupProbe defines startup probe check for the pod.
+	// If not specified, default probe will be used with HTTP probe handler and path /readyz?serializable=false on the port 2379,
+	// with periodSeconds 5.
+	// +optional
+	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
 }
 
 // StorageSpec defines the configured storage for a etcd members.
