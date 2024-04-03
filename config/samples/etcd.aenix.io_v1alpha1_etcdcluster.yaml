@@ -9,15 +9,17 @@ metadata:
     app.kubernetes.io/created-by: etcd-operator
   name: etcdcluster-sample
 spec:
+  options: { }
   storage:
     emptyDir:
       sizeLimit: 1Gi
-  podSpec:
-    extraArgs: {}
-    resources:
-      requests:
-        cpu: 100m
-        memory: 100Mi
-      limits:
-        cpu: 100m
-        memory: 100Mi
+  podTemplate:
+    spec:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 100Mi
+        limits:
+          cpu: 100m
+          memory: 100Mi
+  podDisruptionBudgetTemplate: { }

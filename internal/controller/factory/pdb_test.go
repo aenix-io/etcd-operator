@@ -42,8 +42,8 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 				UID:       "test-uid",
 			},
 			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-				Replicas:            ptr.To(int32(3)),
-				PodDisruptionBudget: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+				Replicas:                    ptr.To(int32(3)),
+				PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
 			},
 		}
 		typeNamespacedName := types.NamespacedName{Name: resourceName, Namespace: "default"}
@@ -61,7 +61,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 
 		It("should create PDB with pre-filled data", func() {
 			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.PodDisruptionBudget.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
+			cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
 			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
 			Expect(err).To(Succeed())
 
@@ -80,7 +80,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 			pdb := &v1.PodDisruptionBudget{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, pdb)).To(Succeed())
 			if Expect(pdb.Spec.MinAvailable).NotTo(BeNil()) {
-				Expect(cluster.Spec.PodDisruptionBudget.Spec.MinAvailable).To(BeNil())
+				Expect(cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
 				Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(2))
 			}
 			Expect(pdb.Spec.MaxUnavailable).To(BeNil())
@@ -88,7 +88,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 
 		It("Should skip deletion of PDB if not filled and not exist", func() {
 			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.PodDisruptionBudget = nil
+			cluster.Spec.PodDisruptionBudgetTemplate = nil
 			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
 			Expect(err).To(Succeed())
 		})
@@ -100,7 +100,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 			pdb := &v1.PodDisruptionBudget{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, pdb)).To(Succeed())
 
-			cluster.Spec.PodDisruptionBudget = nil
+			cluster.Spec.PodDisruptionBudgetTemplate = nil
 			err = CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
 			Expect(err).To(Succeed())
 			err = k8sClient.Get(ctx, typeNamespacedName, pdb)

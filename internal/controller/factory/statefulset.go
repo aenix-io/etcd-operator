@@ -41,17 +41,15 @@ func CreateOrUpdateStatefulSet(
 		Labels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 	}
 
-	if cluster.Spec.PodSpec.PodMetadata != nil {
-		if cluster.Spec.PodSpec.PodMetadata.Name != "" {
-			podMetadata.GenerateName = cluster.Spec.PodSpec.PodMetadata.Name
-		}
-
-		for key, value := range cluster.Spec.PodSpec.PodMetadata.Labels {
-			podMetadata.Labels[key] = value
-		}
-
-		podMetadata.Annotations = cluster.Spec.PodSpec.PodMetadata.Annotations
+	if cluster.Spec.PodTemplate.Name != "" {
+		podMetadata.GenerateName = cluster.Spec.PodTemplate.Name
 	}
+
+	for key, value := range cluster.Spec.PodTemplate.Labels {
+		podMetadata.Labels[key] = value
+	}
+
+	podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
 
 	podEnv := []corev1.EnvVar{
 		{
@@ -71,7 +69,7 @@ func CreateOrUpdateStatefulSet(
 			},
 		},
 	}
-	podEnv = append(podEnv, cluster.Spec.PodSpec.ExtraEnv...)
+	podEnv = append(podEnv, cluster.Spec.PodTemplate.Spec.ExtraEnv...)
 
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -92,15 +90,15 @@ func CreateOrUpdateStatefulSet(
 					Containers: []corev1.Container{
 						{
 							Name:            "etcd",
-							Image:           cluster.Spec.PodSpec.Image,
-							ImagePullPolicy: cluster.Spec.PodSpec.ImagePullPolicy,
+							Image:           cluster.Spec.PodTemplate.Spec.Image,
+							ImagePullPolicy: cluster.Spec.PodTemplate.Spec.ImagePullPolicy,
 							Command:         generateEtcdCommand(),
 							Args:            generateEtcdArgs(cluster),
 							Ports: []corev1.ContainerPort{
 								{Name: "peer", ContainerPort: 2380},
 								{Name: "client", ContainerPort: 2379},
 							},
-							Resources: cluster.Spec.PodSpec.Resources,
+							Resources: cluster.Spec.PodTemplate.Spec.Resources,
 							EnvFrom: []corev1.EnvFromSource{
 								{
 									ConfigMapRef: &corev1.ConfigMapEnvSource{
@@ -118,21 +116,21 @@ func CreateOrUpdateStatefulSet(
 									MountPath: "/var/run/etcd",
 								},
 							},
-							StartupProbe:   getStartupProbe(cluster.Spec.PodSpec.StartupProbe),
-							LivenessProbe:  getLivenessProbe(cluster.Spec.PodSpec.LivenessProbe),
-							ReadinessProbe: getReadinessProbe(cluster.Spec.PodSpec.ReadinessProbe),
+							StartupProbe:   getStartupProbe(cluster.Spec.PodTemplate.Spec.StartupProbe),
+							LivenessProbe:  getLivenessProbe(cluster.Spec.PodTemplate.Spec.LivenessProbe),
+							ReadinessProbe: getReadinessProbe(cluster.Spec.PodTemplate.Spec.ReadinessProbe),
 						},
 					},
-					ImagePullSecrets:              cluster.Spec.PodSpec.ImagePullSecrets,
-					Affinity:                      cluster.Spec.PodSpec.Affinity,
-					NodeSelector:                  cluster.Spec.PodSpec.NodeSelector,
-					TopologySpreadConstraints:     cluster.Spec.PodSpec.TopologySpreadConstraints,
-					Tolerations:                   cluster.Spec.PodSpec.Tolerations,
-					SecurityContext:               cluster.Spec.PodSpec.SecurityContext,
-					PriorityClassName:             cluster.Spec.PodSpec.PriorityClassName,
-					TerminationGracePeriodSeconds: cluster.Spec.PodSpec.TerminationGracePeriodSeconds,
-					SchedulerName:                 cluster.Spec.PodSpec.SchedulerName,
-					RuntimeClassName:              cluster.Spec.PodSpec.RuntimeClassName,
+					ImagePullSecrets:              cluster.Spec.PodTemplate.Spec.ImagePullSecrets,
+					Affinity:                      cluster.Spec.PodTemplate.Spec.Affinity,
+					NodeSelector:                  cluster.Spec.PodTemplate.Spec.NodeSelector,
+					TopologySpreadConstraints:     cluster.Spec.PodTemplate.Spec.TopologySpreadConstraints,
+					Tolerations:                   cluster.Spec.PodTemplate.Spec.Tolerations,
+					SecurityContext:               cluster.Spec.PodTemplate.Spec.SecurityContext,
+					PriorityClassName:             cluster.Spec.PodTemplate.Spec.PriorityClassName,
+					TerminationGracePeriodSeconds: cluster.Spec.PodTemplate.Spec.TerminationGracePeriodSeconds,
+					SchedulerName:                 cluster.Spec.PodTemplate.Spec.SchedulerName,
+					RuntimeClassName:              cluster.Spec.PodTemplate.Spec.RuntimeClassName,
 				},
 			},
 		},
@@ -194,7 +192,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
 	}
 
-	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
+	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
 		if len(value) == 0 {
 			args = append(args, flag)

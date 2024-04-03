@@ -31,12 +31,16 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
-	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
-	PodSpec PodSpec `json:"podSpec,omitempty"`
-	// PodDisruptionBudget describes PDB resource to create for etcd cluster members. Nil to disable.
+	// Options are the extra arguments to pass to the etcd container.
+	// +optional
+	// +kubebuilder:example:={enable-v2: "false", debug: "true"}
+	Options map[string]string `json:"options,omitempty"`
+	// PodTemplate defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
+	PodTemplate PodTemplate `json:"podTemplate,omitempty"`
+	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
 	//+optional
-	PodDisruptionBudget *EmbeddedPodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
-	Storage             StorageSpec                  `json:"storage"`
+	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
+	Storage                     StorageSpec                  `json:"storage"`
 }
 
 const (
@@ -121,6 +125,16 @@ type EmbeddedObjectMetadata struct {
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
 }
 
+type PodTemplate struct {
+	// EmbeddedObjectMetadata contains metadata relevant to an EmbeddedResource
+	// +optional
+	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// Spec defines the desired state of spec for etcd members. If not specified, default values will be used.
+	// +optional
+	Spec PodSpec `json:"spec,omitempty"`
+}
+
 // PodSpec defines the desired state of PodSpec for etcd members.
 // +k8s:openapi-gen=true
 type PodSpec struct {
@@ -136,9 +150,6 @@ type PodSpec struct {
 	// see https://kubernetes.io/docs/concepts/containers/images/#referring-to-an-imagepullsecrets-on-a-pod
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	// PodMetadata contains metadata relevant to a PodSpec.
-	// +optional
-	PodMetadata *EmbeddedObjectMetadata `json:"metadata,omitempty"`
 	// Resources describes the compute resource requirements.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -169,9 +180,6 @@ type PodSpec struct {
 	// RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group, which should be used to run this pod.
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
-	// ExtraArgs are the extra arguments to pass to the etcd container.
-	// +optional
-	ExtraArgs map[string]string `json:"extraArgs,omitempty"`
 	// ExtraEnv are the extra environment variables to pass to the etcd container.
 	// +optional
 	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
