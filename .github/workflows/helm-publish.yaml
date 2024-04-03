@@ -1,0 +1,60 @@
+name: Helm publish
+
+on:
+  push:
+    # Publish semver tags as releases.
+    tags: [ 'v*.*.*' ]
+
+env:
+  REGISTRY: ghcr.io
+  CHARTS_REPOSITORY: ${{ github.repository_owner }}/charts
+  CHART_NAME: etcd-operator
+
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+      # This is used to complete the identity challenge
+      # with sigstore/fulcio when running outside of PRs.
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.1.1
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.1.0
+        with:
+          version: 'v3.14.3'
+
+      - name: Get latest tag
+        run: |
+          TAG=${{ github.ref_name }}
+          echo "Tag for packaging chart is $TAG"
+          echo "LATEST_TAG=${TAG}" >> $GITHUB_ENV
+          echo "LATEST_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
+
+      - name: Helm login registry
+        working-directory: charts
+        run: |
+          helm registry login \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }} \
+            ${{ env.REGISTRY }}/${{ env.CHARTS_REPOSITORY }}
+
+      - name: Helm package chart
+        working-directory: charts
+        run: |
+          helm package ${{ env.CHART_NAME }} \
+            --version ${LATEST_TAG_TRIMMED_V} \
+            --app-version ${LATEST_TAG} \
+            --dependency-update
+
+      - name: Helm push chart
+        working-directory: charts
+        run: |
+          helm push ${{ env.CHART_NAME }}-${LATEST_TAG_TRIMMED_V}.tgz \
+              oci://${{ env.REGISTRY }}/${{ env.CHARTS_REPOSITORY }}

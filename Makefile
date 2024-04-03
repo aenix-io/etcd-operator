@@ -77,6 +77,18 @@ lint: golangci-lint ## Run golangci-lint linter & yamllint
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
+.PHONY: helm-lint
+helm-lint: helm ## Run helm lint over chart
+	$(HELM) lint charts/etcd-operator
+
+.PHONY: helm-schema-run
+helm-schema-run: helm-schema ## Run helm schema over chart
+	$(HELM) schema -input charts/etcd-operator/values.yaml -output charts/etcd-operator/values.schema.json
+
+.PHONY: helm-docs-run
+helm-docs-run: helm-docs ## Run helm schema over chart
+	$(HELM_DOCS)
+
 ##@ Build
 
 .PHONY: build
@@ -185,13 +197,20 @@ LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
+HELM_PLUGINS ?= $(LOCALBIN)/helm-plugins
+export HELM_PLUGINS
+$(HELM_PLUGINS):
+	mkdir -p $(HELM_PLUGINS)
+
 ## Tool Binaries
 KUBECTL ?= kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 KIND ?= $(LOCALBIN)/kind
+HELM ?= $(LOCALBIN)/helm
+HELM_DOCS ?= $(LOCALBIN)/helm-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
@@ -199,8 +218,13 @@ CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
 GOLANGCI_LINT_VERSION ?= v1.54.2
 KIND_VERSION ?= v0.22.0
+HELM_VERSION ?= v3.14.3
+HELM_SCHEMA_VERSION ?= v1.2.2
+HELM_DOCS_VERSION ?= v1.13.1
 
+## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
@@ -226,3 +250,24 @@ golangci-lint: $(LOCALBIN)
 kind: $(LOCALBIN)
 	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/kind@$(KIND_VERSION)
+
+.PHONY: helm
+helm: $(LOCALBIN)
+	@if test -x $(HELM) && ! $(HELM) version | grep -q $(HELM_VERSION); then \
+		rm -f $(HELM); \
+	fi
+	@test -x $(HELM) || { curl -Ss $(HELM_INSTALL_SCRIPT) | sed "s|/usr/local/bin|$(LOCALBIN)|" | PATH="$(LOCALBIN):$(PATH)" bash -s -- --no-sudo --version $(HELM_VERSION); }
+
+.PHONY: helm-schema
+helm-schema: helm $(HELM_PLUGINS)
+	@if ! $(HELM) plugin list | grep schema | grep -q $(subst v,,$(HELM_SCHEMA_VERSION)); then \
+		if $(HELM) plugin list | grep -q schema ; then \
+			$(HELM) plugin uninstall schema; \
+		fi; \
+		$(HELM) plugin install https://github.com/losisin/helm-values-schema-json --version=$(HELM_SCHEMA_VERSION); \
+	fi
+
+.PHONY: helm-docs
+helm-docs: $(LOCALBIN)
+	@test -x $(HELM_DOCS) && $(HELM_DOCS) version | grep -q $(HELM_DOCS_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/norwoodj/helm-docs/cmd/helm-docs@$(HELM_DOCS_VERSION)

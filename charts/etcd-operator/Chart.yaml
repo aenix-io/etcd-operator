@@ -1,0 +1,5 @@
+apiVersion: v2
+name: etcd-operator
+type: application
+version: 0.0.0 # Placeholder, the actual version will be set in the release pipeline.
+appVersion: "v0.0.0" # Placeholder, the actual version will be set in the release pipeline.
