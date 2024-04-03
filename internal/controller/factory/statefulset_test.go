@@ -189,7 +189,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 		It("should successfully override probes", func() {
 			etcdcluster := etcdcluster.DeepCopy()
-			etcdcluster.Spec.PodSpec = etcdaenixiov1alpha1.PodSpec{
+			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
 				LivenessProbe: &v1.Probe{
 					InitialDelaySeconds: 13,
 					PeriodSeconds:       11,
