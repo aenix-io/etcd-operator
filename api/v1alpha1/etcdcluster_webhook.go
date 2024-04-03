@@ -52,8 +52,8 @@ var _ webhook.Defaulter = &EtcdCluster{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *EtcdCluster) Default() {
 	etcdclusterlog.Info("default", "name", r.Name)
-	if len(r.Spec.PodSpec.Image) == 0 {
-		r.Spec.PodSpec.Image = defaultEtcdImage
+	if len(r.Spec.PodTemplate.Spec.Image) == 0 {
+		r.Spec.PodTemplate.Spec.Image = defaultEtcdImage
 	}
 	if r.Spec.Storage.EmptyDir == nil {
 		if len(r.Spec.Storage.VolumeClaimTemplate.Spec.AccessModes) == 0 {
@@ -86,7 +86,7 @@ func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 	if errExtraArgs := validateExtraArgs(r); errExtraArgs != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "podSpec", "extraArgs"),
-			r.Spec.PodSpec.ExtraArgs,
+			r.Spec.PodTemplate.Spec.ExtraArgs,
 			errExtraArgs.Error()))
 	}
 
@@ -130,7 +130,7 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	if errExtraArgs := validateExtraArgs(r); errExtraArgs != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "podSpec", "extraArgs"),
-			r.Spec.PodSpec.ExtraArgs,
+			r.Spec.PodTemplate.Spec.ExtraArgs,
 			errExtraArgs.Error()))
 	}
 
@@ -245,7 +245,7 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 }
 
 func validateExtraArgs(cluster *EtcdCluster) error {
-	if len(cluster.Spec.PodSpec.ExtraArgs) == 0 {
+	if len(cluster.Spec.PodTemplate.Spec.ExtraArgs) == 0 {
 		return nil
 	}
 
@@ -262,7 +262,7 @@ func validateExtraArgs(cluster *EtcdCluster) error {
 
 	errlist := []error{}
 
-	for name := range cluster.Spec.PodSpec.ExtraArgs {
+	for name := range cluster.Spec.PodTemplate.Spec.ExtraArgs {
 		if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
 			errlist = append(errlist, fmt.Errorf("Extra arg should not start with dash and have trailing dash, "+
 				"but it can contain dashes in the middle. flag: %s", name))

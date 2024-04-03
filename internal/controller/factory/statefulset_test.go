@@ -88,20 +88,22 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					Status: v1.PersistentVolumeClaimStatus{},
 				},
 			}
-			etcdcluster.Spec.PodSpec = etcdaenixiov1alpha1.PodSpec{
-				Resources: v1.ResourceRequirements{
-					Requests: v1.ResourceList{
-						v1.ResourceCPU:    resource.MustParse("100m"),
-						v1.ResourceMemory: resource.MustParse("128Mi"),
-					},
-				},
-				PodMetadata: &etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+			etcdcluster.Spec.PodTemplate = etcdaenixiov1alpha1.PodTemplate{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name: "test-pod",
 					Labels: map[string]string{
 						"app": "etcd",
 					},
 					Annotations: map[string]string{
 						"app": "etcd",
+					},
+				},
+				Spec: etcdaenixiov1alpha1.PodSpec{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    resource.MustParse("100m"),
+							v1.ResourceMemory: resource.MustParse("128Mi"),
+						},
 					},
 				},
 			}
@@ -114,18 +116,20 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking the resources")
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).To(Equal(etcdcluster.Spec.PodSpec.Resources.Requests.Cpu()))
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).To(Equal(etcdcluster.Spec.PodSpec.Resources.Requests.Memory()))
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).
+				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Resources.Requests.Cpu()))
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).
+				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Resources.Requests.Memory()))
 
 			By("Checking the pod metadata")
-			Expect(sts.Spec.Template.ObjectMeta.GenerateName).To(Equal(etcdcluster.Spec.PodSpec.PodMetadata.Name))
+			Expect(sts.Spec.Template.ObjectMeta.GenerateName).To(Equal(etcdcluster.Spec.PodTemplate.Name))
 			Expect(sts.Spec.Template.ObjectMeta.Labels).To(Equal(map[string]string{
 				"app.kubernetes.io/name":       "etcd",
 				"app.kubernetes.io/instance":   etcdcluster.Name,
 				"app.kubernetes.io/managed-by": "etcd-operator",
 				"app":                          "etcd",
 			}))
-			Expect(sts.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodSpec.PodMetadata.Annotations))
+			Expect(sts.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodTemplate.Annotations))
 
 			By("Checking the extraArgs")
 			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
@@ -306,8 +310,10 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 			etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
 				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-					PodSpec: etcdaenixiov1alpha1.PodSpec{
-						ExtraArgs: extraArgs,
+					PodTemplate: etcdaenixiov1alpha1.PodTemplate{
+						Spec: etcdaenixiov1alpha1.PodSpec{
+							ExtraArgs: extraArgs,
+						},
 					},
 				},
 			}

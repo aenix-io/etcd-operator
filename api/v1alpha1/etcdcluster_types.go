@@ -31,8 +31,8 @@ type EtcdClusterSpec struct {
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum:=0
 	Replicas *int32 `json:"replicas,omitempty"`
-	// PodSpec defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
-	PodSpec PodSpec `json:"podSpec,omitempty"`
+	// PodTemplate defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
+	PodTemplate PodTemplate `json:"podTemplate,omitempty"`
 	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
 	//+optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
@@ -121,6 +121,16 @@ type EmbeddedObjectMetadata struct {
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
 }
 
+type PodTemplate struct {
+	// EmbeddedObjectMetadata contains metadata relevant to an EmbeddedResource
+	// +optional
+	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	// Spec defines the desired state of spec for etcd members. If not specified, default values will be used.
+	// +optional
+	Spec PodSpec `json:"spec,omitempty"`
+}
+
 // PodSpec defines the desired state of PodSpec for etcd members.
 // +k8s:openapi-gen=true
 type PodSpec struct {
@@ -136,9 +146,6 @@ type PodSpec struct {
 	// see https://kubernetes.io/docs/concepts/containers/images/#referring-to-an-imagepullsecrets-on-a-pod
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	// PodMetadata contains metadata relevant to a PodSpec.
-	// +optional
-	PodMetadata *EmbeddedObjectMetadata `json:"metadata,omitempty"`
 	// Resources describes the compute resource requirements.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`

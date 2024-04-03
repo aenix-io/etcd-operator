@@ -33,7 +33,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
-			Expect(etcdCluster.Spec.PodSpec.Image).To(Equal(defaultEtcdImage))
+			Expect(etcdCluster.Spec.PodTemplate.Spec.Image).To(Equal(defaultEtcdImage))
 			Expect(etcdCluster.Spec.Replicas).To(BeNil(), "User should have an opportunity to create cluster with 0 replicas")
 			Expect(etcdCluster.Spec.Storage.EmptyDir).To(BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
@@ -46,8 +46,10 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
 					Replicas: ptr.To(int32(5)),
-					PodSpec: PodSpec{
-						Image: "myregistry.local/etcd:v1.1.1",
+					PodTemplate: PodTemplate{
+						Spec: PodSpec{
+							Image: "myregistry.local/etcd:v1.1.1",
+						},
 					},
 					PodDisruptionBudgetTemplate: &EmbeddedPodDisruptionBudget{
 						Spec: PodDisruptionBudgetSpec{
@@ -73,7 +75,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			Expect(*etcdCluster.Spec.Replicas).To(Equal(int32(5)))
 			Expect(etcdCluster.Spec.PodDisruptionBudgetTemplate).NotTo(BeNil())
 			Expect(etcdCluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable.IntValue()).To(Equal(2))
-			Expect(etcdCluster.Spec.PodSpec.Image).To(Equal("myregistry.local/etcd:v1.1.1"))
+			Expect(etcdCluster.Spec.PodTemplate.Spec.Image).To(Equal("myregistry.local/etcd:v1.1.1"))
 			Expect(etcdCluster.Spec.Storage.EmptyDir).To(BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
 			if Expect(storage).NotTo(BeNil()) {
