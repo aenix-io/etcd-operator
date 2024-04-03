@@ -94,7 +94,8 @@ func CreateOrUpdateStatefulSet(
 							Name:            "etcd",
 							Image:           cluster.Spec.PodSpec.Image,
 							ImagePullPolicy: cluster.Spec.PodSpec.ImagePullPolicy,
-							Command:         generateEtcdCommand(cluster),
+							Command:         generateEtcdCommand(),
+							Args:            generateEtcdArgs(cluster),
 							Ports: []corev1.ContainerPort{
 								{Name: "peer", ContainerPort: 2380},
 								{Name: "client", ContainerPort: 2379},
@@ -201,9 +202,14 @@ func CreateOrUpdateStatefulSet(
 	return reconcileStatefulSet(ctx, rclient, cluster.Name, statefulSet)
 }
 
-func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
-	command := []string{
+func generateEtcdCommand() []string {
+	return []string{
 		"etcd",
+	}
+}
+
+func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	args := []string{
 		"--name=$(POD_NAME)",
 		"--listen-peer-urls=https://0.0.0.0:2380",
 		// for first version disable TLS for client access
@@ -216,8 +222,15 @@ func generateEtcdCommand(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	for name, value := range cluster.Spec.PodSpec.ExtraArgs {
-		command = append(command, fmt.Sprintf("--%s=%s", name, value))
+		flag := "--" + name
+		if len(value) == 0 {
+			args = append(args, flag)
+
+			continue
+		}
+
+		args = append(args, fmt.Sprintf("%s=%s", flag, value))
 	}
 
-	return command
+	return args
 }
