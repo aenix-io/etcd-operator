@@ -35,15 +35,13 @@ import (
 )
 
 var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
+	const resourceName = "test-resource"
+	ctx := context.Background()
+	typeNamespacedName := types.NamespacedName{
+		Name:      resourceName,
+		Namespace: "default",
+	}
 	Context("When ensuring a statefulset", func() {
-		const resourceName = "test-resource"
-
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
-		}
 		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      resourceName,
@@ -99,10 +97,15 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 				Spec: etcdaenixiov1alpha1.PodSpec{
-					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{
-							v1.ResourceCPU:    resource.MustParse("100m"),
-							v1.ResourceMemory: resource.MustParse("128Mi"),
+					Containers: []v1.Container{
+						{
+							Name: "etcd",
+							Resources: v1.ResourceRequirements{
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("100m"),
+									v1.ResourceMemory: resource.MustParse("128Mi"),
+								},
+							},
 						},
 					},
 				},
@@ -117,9 +120,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			By("Checking the resources")
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).
-				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Resources.Requests.Cpu()))
+				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Cpu()))
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).
-				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Resources.Requests.Memory()))
+				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Memory()))
 
 			By("Checking the pod metadata")
 			Expect(sts.Spec.Template.ObjectMeta.GenerateName).To(Equal(etcdcluster.Spec.PodTemplate.Name))
@@ -190,19 +193,24 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		It("should successfully override probes", func() {
 			etcdcluster := etcdcluster.DeepCopy()
 			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
-				LivenessProbe: &v1.Probe{
-					InitialDelaySeconds: 13,
-					PeriodSeconds:       11,
-				},
-				ReadinessProbe: &v1.Probe{
-					PeriodSeconds: 3,
-				},
-				StartupProbe: &v1.Probe{
-					PeriodSeconds: 7,
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
-							Path: "/test",
-							Port: intstr.FromInt32(2389),
+				Containers: []v1.Container{
+					{
+						Name: "etcd",
+						LivenessProbe: &v1.Probe{
+							InitialDelaySeconds: 13,
+							PeriodSeconds:       11,
+						},
+						ReadinessProbe: &v1.Probe{
+							PeriodSeconds: 3,
+						},
+						StartupProbe: &v1.Probe{
+							PeriodSeconds: 7,
+							ProbeHandler: v1.ProbeHandler{
+								HTTPGet: &v1.HTTPGetAction{
+									Path: "/test",
+									Port: intstr.FromInt32(2389),
+								},
+							},
 						},
 					},
 				},
@@ -515,6 +523,106 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			By("Shouldn't mutate default probe", func() {
 				Expect(defaultProbe).To(Equal(*defaultProbeCopy))
 			})
+		})
+	})
+
+	Context("Generating Pod spec.containers", func() {
+		etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: "default",
+				UID:       "test-uid",
+			},
+			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+				Replicas: ptr.To(int32(3)),
+			},
+		}
+		etcdCluster.Default()
+		It("should generate default containers", func() {
+			containers := generateContainers(etcdCluster)
+			if Expect(containers).To(HaveLen(1)) {
+				Expect(containers[0].StartupProbe).NotTo(BeNil())
+				Expect(containers[0].LivenessProbe).NotTo(BeNil())
+				Expect(containers[0].ReadinessProbe).NotTo(BeNil())
+				if Expect(containers[0].VolumeMounts).To(HaveLen(1)) {
+					Expect(containers[0].VolumeMounts[0].Name).To(Equal("data"))
+					Expect(containers[0].VolumeMounts[0].MountPath).To(Equal("/var/run/etcd"))
+				}
+			}
+		})
+		It("should merge fields without collisions correctly", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts = append(
+				localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts,
+				v1.VolumeMount{
+					Name:      "test",
+					MountPath: "/test/tmp.txt",
+				},
+			)
+			localCluster.Spec.PodTemplate.Spec.Containers[0].EnvFrom = append(
+				localCluster.Spec.PodTemplate.Spec.Containers[0].EnvFrom,
+				v1.EnvFromSource{
+					ConfigMapRef: &v1.ConfigMapEnvSource{
+						LocalObjectReference: v1.LocalObjectReference{Name: "test"},
+					},
+				},
+			)
+			localCluster.Spec.PodTemplate.Spec.Containers[0].Ports = append(
+				localCluster.Spec.PodTemplate.Spec.Containers[0].Ports,
+				v1.ContainerPort{Name: "metrics", ContainerPort: 1111},
+			)
+			localCluster.Spec.PodTemplate.Spec.Containers = append(
+				localCluster.Spec.PodTemplate.Spec.Containers,
+				v1.Container{
+					Name:  "exporter",
+					Image: "etcd-exporter",
+				},
+			)
+
+			containers := generateContainers(localCluster)
+			if Expect(containers).To(HaveLen(2)) {
+				Expect(containers[0].EnvFrom).To(ContainElement(v1.EnvFromSource{
+					ConfigMapRef: &v1.ConfigMapEnvSource{
+						LocalObjectReference: v1.LocalObjectReference{Name: "test"},
+					},
+				}))
+				Expect(containers[0].Ports).To(ContainElement(v1.ContainerPort{Name: "metrics", ContainerPort: 1111}))
+				if Expect(containers[0].VolumeMounts).To(HaveLen(2)) {
+					Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+						Name:      "data",
+						MountPath: "/var/run/etcd",
+					}))
+					Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+						Name:      "test",
+						MountPath: "/test/tmp.txt",
+					}))
+				}
+			}
+		})
+		It("should override user provided field on collision", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts = append(
+				localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts,
+				v1.VolumeMount{
+					Name:      "data",
+					MountPath: "/test/tmp.txt",
+				},
+			)
+			localCluster.Spec.PodTemplate.Spec.Containers[0].Ports = append(
+				localCluster.Spec.PodTemplate.Spec.Containers[0].Ports,
+				v1.ContainerPort{Name: "client", ContainerPort: 1111},
+			)
+
+			containers := generateContainers(localCluster)
+			if Expect(containers).To(HaveLen(1)) {
+				Expect(containers[0].Ports).NotTo(ContainElement(v1.ContainerPort{Name: "client", ContainerPort: 1111}))
+				if Expect(containers[0].VolumeMounts).To(HaveLen(1)) {
+					Expect(containers[0].VolumeMounts).NotTo(ContainElement(v1.VolumeMount{
+						Name:      "data",
+						MountPath: "/tmp",
+					}))
+				}
+			}
 		})
 	})
 })

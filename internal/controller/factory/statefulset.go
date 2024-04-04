@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -51,26 +52,6 @@ func CreateOrUpdateStatefulSet(
 
 	podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
 
-	podEnv := []corev1.EnvVar{
-		{
-			Name: "POD_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.name",
-				},
-			},
-		},
-		{
-			Name: "POD_NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		},
-	}
-	podEnv = append(podEnv, cluster.Spec.PodTemplate.Spec.ExtraEnv...)
-
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
@@ -87,40 +68,7 @@ func CreateOrUpdateStatefulSet(
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: podMetadata,
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:            "etcd",
-							Image:           cluster.Spec.PodTemplate.Spec.Image,
-							ImagePullPolicy: cluster.Spec.PodTemplate.Spec.ImagePullPolicy,
-							Command:         generateEtcdCommand(),
-							Args:            generateEtcdArgs(cluster),
-							Ports: []corev1.ContainerPort{
-								{Name: "peer", ContainerPort: 2380},
-								{Name: "client", ContainerPort: 2379},
-							},
-							Resources: cluster.Spec.PodTemplate.Spec.Resources,
-							EnvFrom: []corev1.EnvFromSource{
-								{
-									ConfigMapRef: &corev1.ConfigMapEnvSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: GetClusterStateConfigMapName(cluster),
-										},
-									},
-								},
-							},
-							Env: podEnv,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "data",
-									ReadOnly:  false,
-									MountPath: "/var/run/etcd",
-								},
-							},
-							StartupProbe:   getStartupProbe(cluster.Spec.PodTemplate.Spec.StartupProbe),
-							LivenessProbe:  getLivenessProbe(cluster.Spec.PodTemplate.Spec.LivenessProbe),
-							ReadinessProbe: getReadinessProbe(cluster.Spec.PodTemplate.Spec.ReadinessProbe),
-						},
-					},
+					Containers:                    generateContainers(cluster),
 					ImagePullSecrets:              cluster.Spec.PodTemplate.Spec.ImagePullSecrets,
 					Affinity:                      cluster.Spec.PodTemplate.Spec.Affinity,
 					NodeSelector:                  cluster.Spec.PodTemplate.Spec.NodeSelector,
@@ -135,21 +83,29 @@ func CreateOrUpdateStatefulSet(
 			},
 		},
 	}
+	statefulSet.Spec.Template.Spec.Volumes = cluster.Spec.PodTemplate.Spec.Volumes
+	dataVolumeIdx := slices.IndexFunc(statefulSet.Spec.Template.Spec.Volumes, func(volume corev1.Volume) bool {
+		return volume.Name == "data"
+	})
+	if dataVolumeIdx == -1 {
+		dataVolumeIdx = len(statefulSet.Spec.Template.Spec.Volumes)
+		statefulSet.Spec.Template.Spec.Volumes = append(
+			statefulSet.Spec.Template.Spec.Volumes,
+			corev1.Volume{Name: "data"},
+		)
+	}
+
 	if cluster.Spec.Storage.EmptyDir != nil {
-		statefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
-			{
-				Name:         "data",
-				VolumeSource: corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir},
-			},
+		statefulSet.Spec.Template.Spec.Volumes[dataVolumeIdx] = corev1.Volume{
+			Name:         "data",
+			VolumeSource: corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir},
 		}
 	} else {
-		statefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
-			{
-				Name: "data",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: GetPVCName(cluster),
-					},
+		statefulSet.Spec.Template.Spec.Volumes[dataVolumeIdx] = corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: GetPVCName(cluster),
 				},
 			},
 		}
@@ -204,6 +160,115 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	return args
+}
+
+func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Container {
+	podEnv := []corev1.EnvVar{
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "POD_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	}
+
+	containers := make([]corev1.Container, 0, len(cluster.Spec.PodTemplate.Spec.Containers))
+	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
+		if c.Name == "etcd" {
+			c.Command = generateEtcdCommand()
+			c.Args = generateEtcdArgs(cluster)
+			c.Ports = mergePorts(c.Ports, []corev1.ContainerPort{
+				{Name: "peer", ContainerPort: 2380},
+				{Name: "client", ContainerPort: 2379},
+			})
+			clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
+			ok := false
+			for _, env := range c.EnvFrom {
+				if env.ConfigMapRef != nil && env.ConfigMapRef.LocalObjectReference.Name == clusterStateConfigMapName {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				c.EnvFrom = append(c.EnvFrom, corev1.EnvFromSource{
+					ConfigMapRef: &corev1.ConfigMapEnvSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: clusterStateConfigMapName,
+						},
+					},
+				})
+			}
+			c.StartupProbe = getStartupProbe(c.StartupProbe)
+			c.LivenessProbe = getLivenessProbe(c.LivenessProbe)
+			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
+			c.Env = mergeEnvs(c.Env, podEnv)
+
+			ok = false
+			for idx, v := range c.VolumeMounts {
+				if v.Name == "data" {
+					c.VolumeMounts[idx].ReadOnly = false
+					c.VolumeMounts[idx].MountPath = "/var/run/etcd"
+
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+					Name:      "data",
+					MountPath: "/var/run/etcd",
+				})
+			}
+		}
+
+		containers = append(containers, c)
+	}
+
+	return containers
+}
+
+// mergePorts uses both "old" and "new" values and replaces collisions by name with "new".
+func mergePorts(old []corev1.ContainerPort, new []corev1.ContainerPort) []corev1.ContainerPort {
+	ports := make(map[string]corev1.ContainerPort, len(old))
+	for _, p := range old {
+		ports[p.Name] = p
+	}
+	for _, p := range new {
+		ports[p.Name] = p
+	}
+
+	mergedPorts := make([]corev1.ContainerPort, 0, len(ports))
+	for _, port := range ports {
+		mergedPorts = append(mergedPorts, port)
+	}
+	return mergedPorts
+}
+
+// mergeEnvs uses both "old" and "new" values and replaces collisions by name with "new".
+func mergeEnvs(old []corev1.EnvVar, new []corev1.EnvVar) []corev1.EnvVar {
+	envs := make(map[string]corev1.EnvVar, len(old))
+	for _, env := range old {
+		envs[env.Name] = env
+	}
+	for _, env := range new {
+		envs[env.Name] = env
+	}
+
+	merged := make([]corev1.EnvVar, 0, len(envs))
+	for _, env := range envs {
+		merged = append(merged, env)
+	}
+	return merged
 }
 
 func getStartupProbe(probe *corev1.Probe) *corev1.Probe {

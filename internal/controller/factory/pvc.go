@@ -22,6 +22,6 @@ func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	if len(cluster.Spec.Storage.VolumeClaimTemplate.Name) > 0 {
 		return cluster.Spec.Storage.VolumeClaimTemplate.Name
 	}
-
+	//nolint:goconst
 	return "data"
 }

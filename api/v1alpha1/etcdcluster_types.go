@@ -141,18 +141,17 @@ type PodSpec struct {
 	// Image is the etcd container image name
 	// +optional
 	Image string `json:"image,omitempty"`
-	// ImagePullPolicy describes a policy for if/when to pull a container image
-	// +kubebuilder:default:=IfNotPresent
+
+	// Containers allows the user to add containers to the pod and change "etcd" container if such options are not
+	// available in the EtcdCluster custom resource.
 	// +optional
-	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	Containers []corev1.Container `json:"containers" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=containers"`
+
 	// ImagePullSecrets An optional list of references to secrets in the same namespace
 	// to use for pulling images from registries
 	// see https://kubernetes.io/docs/concepts/containers/images/#referring-to-an-imagepullsecrets-on-a-pod
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	// Resources describes the compute resource requirements.
-	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Affinity sets the scheduling constraints for the pod.
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
@@ -180,27 +179,9 @@ type PodSpec struct {
 	// RuntimeClassName refers to a RuntimeClass object in the node.k8s.io group, which should be used to run this pod.
 	// +optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
-	// ExtraEnv are the extra environment variables to pass to the etcd container.
+	// Volumes are volumes for being used by the pods. Cannot collide with "data" volume used by etcd.
 	// +optional
-	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
-
-	// LivenessProbe defines liveness probe check for the pod.
-	// If not specified, default probe will be used with HTTP probe handler and path /livez on the port 2379,
-	// with periodSeconds 5.
-	// +optional
-	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
-
-	// ReadinessProbe defines readiness probe check for the pod.
-	// If not specified, default probe will be used with HTTP probe handler and path /readyz on the port 2379,
-	// with periodSeconds 5.
-	// +optional
-	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
-
-	// StartupProbe defines startup probe check for the pod.
-	// If not specified, default probe will be used with HTTP probe handler and path /readyz?serializable=false on the port 2379,
-	// with periodSeconds 5.
-	// +optional
-	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
+	Volumes []corev1.Volume `json:"volumes,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name" protobuf:"bytes,1,rep,name=volumes"`
 }
 
 // StorageSpec defines the configured storage for a etcd members.
