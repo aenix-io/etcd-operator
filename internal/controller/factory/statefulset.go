@@ -192,14 +192,10 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 				{Name: "client", ContainerPort: 2379},
 			})
 			clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
-			ok := false
-			for _, env := range c.EnvFrom {
-				if env.ConfigMapRef != nil && env.ConfigMapRef.LocalObjectReference.Name == clusterStateConfigMapName {
-					ok = true
-					break
-				}
-			}
-			if !ok {
+			envIdx := slices.IndexFunc(c.EnvFrom, func(env corev1.EnvFromSource) bool {
+				return env.ConfigMapRef != nil && env.ConfigMapRef.LocalObjectReference.Name == clusterStateConfigMapName
+			})
+			if envIdx == -1 {
 				c.EnvFrom = append(c.EnvFrom, corev1.EnvFromSource{
 					ConfigMapRef: &corev1.ConfigMapEnvSource{
 						LocalObjectReference: corev1.LocalObjectReference{
@@ -213,21 +209,17 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
 			c.Env = mergeEnvs(c.Env, podEnv)
 
-			ok = false
-			for idx, v := range c.VolumeMounts {
-				if v.Name == "data" {
-					c.VolumeMounts[idx].ReadOnly = false
-					c.VolumeMounts[idx].MountPath = "/var/run/etcd"
-
-					ok = true
-					break
-				}
-			}
-			if !ok {
+			mountIdx := slices.IndexFunc(c.VolumeMounts, func(mount corev1.VolumeMount) bool {
+				return mount.Name == "data"
+			})
+			if mountIdx == -1 {
 				c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 					Name:      "data",
 					MountPath: "/var/run/etcd",
 				})
+			} else {
+				c.VolumeMounts[mountIdx].ReadOnly = false
+				c.VolumeMounts[mountIdx].MountPath = "/var/run/etcd"
 			}
 		}
 
