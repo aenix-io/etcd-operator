@@ -1,0 +1,8 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ca-issuer-crname-crnamespace-peer
+  namespace: etcd-operator-system
+spec:
+  ca:
+    secretName: ca-secret-crname-crnamespace-peer

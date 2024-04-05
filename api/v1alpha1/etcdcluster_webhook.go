@@ -95,6 +95,11 @@ func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 		allErrors = append(allErrors, pdbErr...)
 	}
 
+	securityErr := r.validateSecurity()
+	if securityErr != nil {
+		allErrors = append(allErrors, securityErr...)
+	}
+
 	if errOptions := validateOptions(r); errOptions != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "options"),
@@ -254,6 +259,47 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 	}
 
 	return warnings, nil
+}
+
+func (r *EtcdCluster) validateSecurity() field.ErrorList {
+
+	var allErrors field.ErrorList
+
+	if r.Spec.Security == nil {
+		return nil
+	}
+
+	security := r.Spec.Security
+
+	if security.Peer != nil {
+		if (security.Peer.Ca.SecretName != "" && security.Peer.Cert.SecretName == "") ||
+			(security.Peer.Ca.SecretName == "" && security.Peer.Cert.SecretName != "") {
+
+			allErrors = append(allErrors, field.Invalid(
+				field.NewPath("spec", "security", "peer.ca.secretName", "peer.cert.secretName"),
+				security.Peer,
+				"both peer.ca.secretName and peer.cert.secretName must be filled or empty"),
+			)
+		}
+	}
+
+	if security.ClientServer != nil {
+		if (security.ClientServer.Ca.SecretName != "" && security.ClientServer.Cert.SecretName == "") ||
+			(security.ClientServer.Ca.SecretName == "" && security.ClientServer.Cert.SecretName != "") {
+
+			allErrors = append(allErrors, field.Invalid(
+				field.NewPath("spec", "security", "clientServer.ca.secretName", "clientServer.cert.secretName"),
+				security.ClientServer,
+				"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty"),
+			)
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return allErrors
+	}
+
+	return nil
 }
 
 func validateOptions(cluster *EtcdCluster) error {

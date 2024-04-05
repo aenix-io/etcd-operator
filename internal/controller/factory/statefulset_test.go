@@ -157,7 +157,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz?serializable=false",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -173,7 +173,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -189,7 +189,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/livez",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -259,7 +259,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -275,7 +275,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/livez",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -353,7 +353,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -381,7 +381,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				PeriodSeconds:       3,
 			}))
 		})
-		It("should correctly override partial changes ", func() {
+		It("should correctly override partial changes", func() {
 			probe := getLivenessProbe(&v1.Probe{
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
@@ -390,7 +390,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 7,
@@ -406,7 +406,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -443,7 +443,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 7,
@@ -459,7 +459,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -496,7 +496,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 11,

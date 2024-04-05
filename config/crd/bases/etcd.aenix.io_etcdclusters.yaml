@@ -4571,6 +4571,47 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              security:
+                description: Security describes security settings of etcd (authentication,
+                  certificates, rbac)
+                properties:
+                  clientServer:
+                    properties:
+                      ca:
+                        properties:
+                          secretName:
+                            type: string
+                        type: object
+                      cert:
+                        properties:
+                          secretName:
+                            type: string
+                        type: object
+                      rootClientCert:
+                        properties:
+                          secretName:
+                            type: string
+                        type: object
+                    type: object
+                  peer:
+                    properties:
+                      ca:
+                        properties:
+                          secretName:
+                            type: string
+                        type: object
+                      cert:
+                        properties:
+                          secretName:
+                            type: string
+                        type: object
+                    type: object
+                  rbac:
+                    properties:
+                      enabled:
+                        type: boolean
+                    type: object
+                type: object
               storage:
                 description: |-
                   StorageSpec defines the configured storage for a etcd members.

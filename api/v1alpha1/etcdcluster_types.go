@@ -41,6 +41,9 @@ type EtcdClusterSpec struct {
 	// +optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
 	Storage                     StorageSpec                  `json:"storage"`
+	// Security describes security settings of etcd (authentication, certificates, rbac)
+	// +optional
+	Security *SecuritySpec `json:"security,omitempty"`
 }
 
 const (
@@ -198,6 +201,43 @@ type StorageSpec struct {
 	// A PVC spec to be used by the StatefulSets.
 	// +optional
 	VolumeClaimTemplate EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate,omitempty"`
+}
+
+// SecuritySpec defines security settings for etcd.
+// +k8s:openapi-gen=true
+type SecuritySpec struct {
+	// +optional
+	Peer *PeerSpec `json:"peer,omitempty"`
+	// +optional
+	ClientServer *ClientServerSpec `json:"clientServer,omitempty"`
+	// +optional
+	Rbac RbacSpec `json:"rbac,omitempty"`
+}
+
+type PeerSpec struct {
+	// +optional
+	Ca SecretSpec `json:"ca,omitempty"`
+	// +optional
+	Cert SecretSpec `json:"cert,omitempty"`
+}
+
+type ClientServerSpec struct {
+	// +optional
+	Ca SecretSpec `json:"ca,omitempty"`
+	// +optional
+	Cert SecretSpec `json:"cert,omitempty"`
+	// +optional
+	RootClientCert SecretSpec `json:"rootClientCert,omitempty"`
+}
+
+type SecretSpec struct {
+	// +optional
+	SecretName string `json:"secretName,omitempty"`
+}
+
+type RbacSpec struct {
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.
