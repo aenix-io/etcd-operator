@@ -35,7 +35,6 @@ spec:
     spec:
       imagePullSecrets:
       - name: myregistrykey
-      serviceAccountName: default
       affinity: {}
       nodeSelector: {}
       tolerations: []
@@ -45,7 +44,6 @@ spec:
       terminationGracePeriodSeconds: 30
       schedulerName: "default-scheduler"
       runtimeClassName: "legacy"
-      readinessGates: []
       containers:
       - name: etcd
         image: "quay.io/coreos/etcd:v3.5.12"
@@ -59,14 +57,6 @@ spec:
             memory: 200Mi
       volumes: []
 
-  serviceTemplate:
-    metadata:
-      labels:
-        env: prod
-      annotations:
-        example.com/annotation: "true"
-    spec:
-
   podDisruptionBudgetTemplate:
     metadata:
       labels:
@@ -74,5 +64,5 @@ spec:
       annotations:
         example.com/annotation: "true"
     spec:
-      maxUnavailable: 1
+#      maxUnavailable: 1 # minAvailable is mutually exclusive with maxUnavailable
       minAvailable: 2
