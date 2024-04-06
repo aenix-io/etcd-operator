@@ -32,6 +32,10 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
+const (
+	etcdContainerName = "etcd"
+)
+
 func CreateOrUpdateStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
@@ -194,7 +198,7 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 	volumeMounts := []corev1.VolumeMount{}
 
 	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
-		if c.Name == "etcd" {
+		if c.Name == etcdContainerName {
 
 			volumeMounts = c.VolumeMounts
 
@@ -333,7 +337,7 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 
 	containers := make([]corev1.Container, 0, len(cluster.Spec.PodTemplate.Spec.Containers))
 	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
-		if c.Name == "etcd" {
+		if c.Name == etcdContainerName {
 			c.Command = generateEtcdCommand()
 			c.Args = generateEtcdArgs(cluster)
 			c.Ports = mergePorts(c.Ports, []corev1.ContainerPort{
