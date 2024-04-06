@@ -144,11 +144,13 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			By("Checking the extraArgs")
 			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
 
-			By("Checking the readinessGates")
-			Expect(sts.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
+			By("Checking the readinessGates", func() {
+				Expect(sts.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
+			})
 
-			By("Checking the serviceAccountName")
-			Expect(sts.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
+			By("Checking the serviceAccountName", func() {
+				Expect(sts.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
+			})
 
 			By("Checking the default startup probe", func() {
 				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
