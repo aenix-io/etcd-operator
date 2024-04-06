@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -117,6 +118,24 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
+			etcdcluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
+				ClientServer: &etcdaenixiov1alpha1.ClientServerSpec{
+					Ca: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "server-ca-secret",
+					},
+					Cert: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "server-cert-secret",
+					},
+				},
+				Peer: &etcdaenixiov1alpha1.PeerSpec{
+					Ca: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "peer-ca-secret",
+					},
+					Cert: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "peer-cert-secret",
+					},
+				},
+			}
 
 			sts := &appsv1.StatefulSet{}
 			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
@@ -197,6 +216,45 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					PeriodSeconds:    5,
 					SuccessThreshold: 1,
 					FailureThreshold: 3,
+				}))
+			})
+
+			By("Checking generated security volumes", func() {
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "ca-peer-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "peer-ca-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "peer-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "peer-cert-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "ca-server-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "server-ca-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "server-cert",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "server-cert-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
 				}))
 			})
 
@@ -639,5 +697,51 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				}
 			}
 		})
+		It("should generate security volumes mounts", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
+				ClientServer: &etcdaenixiov1alpha1.ClientServerSpec{
+					Ca: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "client-server-ca-secret",
+					},
+					Cert: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "client-server-cert-secret",
+					},
+				},
+				Peer: &etcdaenixiov1alpha1.PeerSpec{
+					Ca: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "peer-ca-secret",
+					},
+					Cert: etcdaenixiov1alpha1.SecretSpec{
+						SecretName: "peer-cert-secret",
+					},
+				},
+			}
+
+			containers := generateContainers(localCluster)
+
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "ca-peer-cert",
+				MountPath: "/etc/etcd/pki/peer/ca",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "peer-cert",
+				MountPath: "/etc/etcd/pki/peer/cert",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "ca-server-cert",
+				MountPath: "/etc/etcd/pki/server/ca",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "server-cert",
+				MountPath: "/etc/etcd/pki/server/cert",
+				ReadOnly:  true,
+			}))
+
+		})
+
 	})
 })

@@ -290,7 +290,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 			"--trusted-ca-file=/etc/etcd/pki/server/ca/ca.crt",
 			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
 			"--key-file=/etc/etcd/pki/server/cert/tls.key",
-			"--client-cert-auth",
+			"--client-cert-auth=false",
 		}
 	}
 

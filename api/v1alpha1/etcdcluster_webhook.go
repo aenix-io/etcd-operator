@@ -144,6 +144,11 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		warnings = append(warnings, pdbWarnings...)
 	}
 
+	securityErr := r.validateSecurity()
+	if securityErr != nil {
+		allErrors = append(allErrors, securityErr...)
+	}
+
 	if errOptions := validateOptions(r); errOptions != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "options"),
