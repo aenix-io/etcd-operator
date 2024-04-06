@@ -112,7 +112,7 @@ func CreateOrUpdateStatefulSet(
 func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 	volumes := []corev1.Volume{}
 
-	dataVolumeSource := corev1.VolumeSource{}
+	var dataVolumeSource corev1.VolumeSource
 
 	if cluster.Spec.Storage.EmptyDir != nil {
 		dataVolumeSource = corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir}
@@ -292,9 +292,8 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 			"--key-file=/etc/etcd/pki/server/cert/tls.key",
 			"--client-cert-auth=false",
 		}
+		serverProtocol = "https"
 	}
-
-	serverProtocol = "https"
 
 	args = append(args, []string{
 		"--name=$(POD_NAME)",
