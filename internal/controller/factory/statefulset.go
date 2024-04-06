@@ -17,20 +17,21 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-	"fmt"
+  "context"
+  "fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+  appsv1 "k8s.io/api/apps/v1"
+  corev1 "k8s.io/api/core/v1"
+  metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+  "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/apimachinery/pkg/util/intstr"
+  ctrl "sigs.k8s.io/controller-runtime"
+  "sigs.k8s.io/controller-runtime/pkg/client"
 
-	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
-	"github.com/aenix-io/etcd-operator/internal/k8sutils"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+  "sigs.k8s.io/controller-runtime/pkg/log"
+
+  etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+  "github.com/aenix-io/etcd-operator/internal/k8sutils"
 )
 
 const (
@@ -91,7 +92,7 @@ func CreateOrUpdateStatefulSet(
 		Spec: appsv1.StatefulSetSpec{
 			// initialize static fields that cannot be changed across updates.
 			Replicas:            cluster.Spec.Replicas,
-			ServiceName:         cluster.Name,
+			ServiceName:         GetHeadlessServiceName(cluster),
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),

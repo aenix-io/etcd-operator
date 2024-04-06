@@ -97,7 +97,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			service = corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ns.GetName(),
-					Name:      factory.GetClientServiceName(&etcdcluster),
+					Name:      factory.GetServiceName(&etcdcluster),
 				},
 			}
 			DeferCleanup(k8sClient.Delete, &service)

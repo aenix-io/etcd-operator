@@ -37,6 +37,12 @@ type EtcdClusterSpec struct {
 	Options map[string]string `json:"options,omitempty"`
 	// PodTemplate defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
 	PodTemplate PodTemplate `json:"podTemplate,omitempty"`
+	// Service defines the desired state of Service for etcd members. If not specified, default values will be used.
+	// +optional
+	ServiceTemplate *ServiceSpec `json:"serviceTemplate,omitempty"`
+	// HeadlessService defines the desired state of HeadlessService for etcd members. If not specified, default values will be used.
+	// +optional
+	HeadlessServiceTemplate *HeadlessServiceSpec `json:"headlessServiceTemplate,omitempty"`
 	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
 	// +optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
@@ -224,6 +230,21 @@ type PodDisruptionBudgetSpec struct {
 	// Mutually exclusive with MinAvailable
 	// +optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+}
+
+type ServiceSpec struct {
+	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	// +optional
+	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	// Spec defines the behavior of the service.
+	// +optional
+	Spec corev1.ServiceSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+}
+
+type HeadlessServiceSpec struct {
+	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	// +optional
+	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 }
 
 func init() {

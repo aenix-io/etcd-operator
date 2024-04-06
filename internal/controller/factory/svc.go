@@ -27,12 +27,25 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
-func GetClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+func GetServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	if cluster.Spec.ServiceTemplate != nil && cluster.Spec.ServiceTemplate.Name != "" {
+		return cluster.Spec.ServiceTemplate.Name
+	}
+
 	return fmt.Sprintf("%s-client", cluster.Name)
+}
+
+func GetHeadlessServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	if cluster.Spec.HeadlessServiceTemplate != nil && cluster.Spec.HeadlessServiceTemplate.Name != "" {
+		return cluster.Spec.HeadlessServiceTemplate.Name
+	}
+
+	return cluster.Name
 }
 
 func CreateOrUpdateClusterService(
@@ -44,7 +57,7 @@ func CreateOrUpdateClusterService(
 	logger := log.FromContext(ctx)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cluster.Name,
+			Name:      GetHeadlessServiceName(cluster),
 			Namespace: cluster.Namespace,
 			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
@@ -60,6 +73,10 @@ func CreateOrUpdateClusterService(
 		},
 	}
 	logger.V(2).Info("cluster service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
+
+	if cluster.Spec.HeadlessServiceTemplate != nil {
+		svc.ObjectMeta = mergeObjectMeta(svc.ObjectMeta, cluster.Spec.HeadlessServiceTemplate.EmbeddedObjectMetadata)
+	}
 
 	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
@@ -77,7 +94,7 @@ func CreateOrUpdateClientService(
 	logger := log.FromContext(ctx)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetClientServiceName(cluster),
+			Name:      GetServiceName(cluster),
 			Namespace: cluster.Namespace,
 			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
@@ -90,6 +107,23 @@ func CreateOrUpdateClientService(
 		},
 	}
 	logger.V(2).Info("client service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
+
+	if cluster.Spec.ServiceTemplate != nil {
+		svc.ObjectMeta = mergeObjectMeta(svc.ObjectMeta, cluster.Spec.ServiceTemplate.EmbeddedObjectMetadata)
+
+		spec := cluster.Spec.ServiceTemplate.Spec
+		if spec.Ports == nil {
+			spec.Ports = svc.Spec.Ports
+		}
+		if spec.Type == "" {
+			spec.Type = svc.Spec.Type
+		}
+		if spec.Selector == nil || len(spec.Selector) == 0 {
+			spec.Selector = svc.Spec.Selector
+		}
+
+		svc.Spec = spec
+	}
 
 	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
