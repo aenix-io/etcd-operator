@@ -138,10 +138,6 @@ type PodTemplate struct {
 // PodSpec defines the desired state of PodSpec for etcd members.
 // +k8s:openapi-gen=true
 type PodSpec struct {
-	// Image is the etcd container image name
-	// +optional
-	Image string `json:"image,omitempty"`
-
 	// Containers allows the user to add containers to the pod and change "etcd" container if such options are not
 	// available in the EtcdCluster custom resource.
 	// +optional
