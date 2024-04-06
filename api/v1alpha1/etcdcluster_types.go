@@ -38,7 +38,7 @@ type EtcdClusterSpec struct {
 	// PodTemplate defines the desired state of PodSpec for etcd members. If not specified, default values will be used.
 	PodTemplate PodTemplate `json:"podTemplate,omitempty"`
 	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
-	//+optional
+	// +optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
 	Storage                     StorageSpec                  `json:"storage"`
 }
@@ -138,10 +138,6 @@ type PodTemplate struct {
 // PodSpec defines the desired state of PodSpec for etcd members.
 // +k8s:openapi-gen=true
 type PodSpec struct {
-	// Image is the etcd container image name
-	// +optional
-	Image string `json:"image,omitempty"`
-
 	// Containers allows the user to add containers to the pod and change "etcd" container if such options are not
 	// available in the EtcdCluster custom resource.
 	// +optional
@@ -152,6 +148,13 @@ type PodSpec struct {
 	// see https://kubernetes.io/docs/concepts/containers/images/#referring-to-an-imagepullsecrets-on-a-pod
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+	// ServiceAccountName is the name of the ServiceAccount to use to run the etcd pods.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// ReadinessGates is an optional list of conditions that must be true for the pod to be considered ready for
+	// traffic. A pod is considered ready when all of its containers are ready.
+	// +optional
+	ReadinessGates []corev1.PodReadinessGate `json:"readinessGates,omitempty"`
 	// Affinity sets the scheduling constraints for the pod.
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
@@ -225,7 +228,7 @@ type EmbeddedPodDisruptionBudget struct {
 	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	// Spec defines the desired characteristics of a PDB.
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#pod-disruption-budgets
-	//+optional
+	// +optional
 	Spec PodDisruptionBudgetSpec `json:"spec"`
 }
 

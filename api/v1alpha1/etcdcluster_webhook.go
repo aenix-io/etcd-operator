@@ -53,9 +53,6 @@ var _ webhook.Defaulter = &EtcdCluster{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *EtcdCluster) Default() {
 	etcdclusterlog.Info("default", "name", r.Name)
-	if len(r.Spec.PodTemplate.Spec.Image) == 0 {
-		r.Spec.PodTemplate.Spec.Image = defaultEtcdImage
-	}
 	if r.Spec.Storage.EmptyDir == nil {
 		if len(r.Spec.Storage.VolumeClaimTemplate.Spec.AccessModes) == 0 {
 			r.Spec.Storage.VolumeClaimTemplate.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}

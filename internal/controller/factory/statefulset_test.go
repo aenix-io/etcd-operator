@@ -97,6 +97,13 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 				Spec: etcdaenixiov1alpha1.PodSpec{
+					ServiceAccountName: "etcd-operator",
+					ReadinessGates: []v1.PodReadinessGate{
+						{
+							// Some custom readiness gate
+							ConditionType: "target-health.elbv2.k8s.aws",
+						},
+					},
 					Containers: []v1.Container{
 						{
 							Name: "etcd",
@@ -136,6 +143,14 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			By("Checking the extraArgs")
 			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
+
+			By("Checking the readinessGates", func() {
+				Expect(sts.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
+			})
+
+			By("Checking the serviceAccountName", func() {
+				Expect(sts.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
+			})
 
 			By("Checking the default startup probe", func() {
 				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
