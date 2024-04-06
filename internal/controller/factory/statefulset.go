@@ -78,6 +78,8 @@ func CreateOrUpdateStatefulSet(
 					PriorityClassName:             cluster.Spec.PodTemplate.Spec.PriorityClassName,
 					TerminationGracePeriodSeconds: cluster.Spec.PodTemplate.Spec.TerminationGracePeriodSeconds,
 					SchedulerName:                 cluster.Spec.PodTemplate.Spec.SchedulerName,
+					ServiceAccountName:            cluster.Spec.PodTemplate.Spec.ServiceAccountName,
+					ReadinessGates:                cluster.Spec.PodTemplate.Spec.ReadinessGates,
 					RuntimeClassName:              cluster.Spec.PodTemplate.Spec.RuntimeClassName,
 				},
 			},

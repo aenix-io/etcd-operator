@@ -2433,6 +2433,22 @@ spec:
                         description: PriorityClassName is the name of the PriorityClass
                           for this pod.
                         type: string
+                      readinessGates:
+                        description: |-
+                          ReadinessGates is an optional list of conditions that must be true for the pod to be considered ready for
+                          traffic. A pod is considered ready when all of its containers are ready.
+                        items:
+                          description: PodReadinessGate contains the reference to
+                            a pod condition
+                          properties:
+                            conditionType:
+                              description: ConditionType refers to a condition in
+                                the pod's condition list with matching type.
+                              type: string
+                          required:
+                          - conditionType
+                          type: object
+                        type: array
                       runtimeClassName:
                         description: RuntimeClassName refers to a RuntimeClass object
                           in the node.k8s.io group, which should be used to run this
@@ -2618,6 +2634,10 @@ spec:
                                 type: string
                             type: object
                         type: object
+                      serviceAccountName:
+                        description: ServiceAccountName is the name of the ServiceAccount
+                          to use to run the etcd pods.
+                        type: string
                       terminationGracePeriodSeconds:
                         description: TerminationGracePeriodSeconds is the time to
                           wait before forceful pod shutdown.
