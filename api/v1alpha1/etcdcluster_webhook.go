@@ -281,7 +281,7 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 			(security.Peer.Ca.SecretName == "" && security.Peer.Cert.SecretName != "") {
 
 			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "security", "peer.ca.secretName", "peer.cert.secretName"),
+				field.NewPath("spec", "security", "peer"),
 				security.Peer,
 				"both peer.ca.secretName and peer.cert.secretName must be filled or empty"),
 			)
@@ -293,7 +293,7 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 			(security.ClientServer.Ca.SecretName == "" && security.ClientServer.Cert.SecretName != "") {
 
 			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "security", "clientServer.ca.secretName", "clientServer.cert.secretName"),
+				field.NewPath("spec", "security", "clientServer"),
 				security.ClientServer,
 				"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty"),
 			)

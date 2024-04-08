@@ -153,7 +153,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "peer.ca.secretName", "peer.cert.secretName"),
+					field.NewPath("spec", "security", "peer"),
 					localCluster.Spec.Security.Peer,
 					"both peer.ca.secretName and peer.cert.secretName must be filled or empty",
 				)
@@ -173,7 +173,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "peer.ca.secretName", "peer.cert.secretName"),
+					field.NewPath("spec", "security", "peer"),
 					localCluster.Spec.Security.Peer,
 					"both peer.ca.secretName and peer.cert.secretName must be filled or empty",
 				)
@@ -183,7 +183,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 		})
 
-		It("Should reject if only one secret in peer section is defined", func() {
+		It("Should reject if only one secret in clientServer section is defined", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Security.ClientServer = &ClientServerSpec{
 				Ca: SecretSpec{
@@ -193,7 +193,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "clientServer.ca.secretName", "clientServer.cert.secretName"),
+					field.NewPath("spec", "security", "clientServer"),
 					localCluster.Spec.Security.ClientServer,
 					"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty",
 				)
@@ -203,7 +203,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 		})
 
-		It("Should reject if only one secret in peer section is defined", func() {
+		It("Should reject if only one secret in clientServer section is defined", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Security.ClientServer = &ClientServerSpec{
 				Cert: SecretSpec{
@@ -213,7 +213,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "clientServer.ca.secretName", "clientServer.cert.secretName"),
+					field.NewPath("spec", "security", "clientServer"),
 					localCluster.Spec.Security.ClientServer,
 					"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty",
 				)
