@@ -125,6 +125,10 @@ spec:
   - test-client.default.svc.cluster.local
   - localhost
   - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
   issuerRef:
     name: ca-issuer-server
 ---
@@ -156,6 +160,10 @@ spec:
   - test-2.test.default.svc.cluster.local
   - localhost
   - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
   issuerRef:
     name: ca-issuer-peer
 ---
@@ -171,6 +179,10 @@ spec:
   - "signing"
   - "key encipherment"
   - "client auth"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
   issuerRef:
     name: ca-issuer-server
     kind: Issuer
