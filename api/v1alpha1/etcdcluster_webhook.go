@@ -289,13 +289,13 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 	}
 
 	if security.ClientServer != nil {
-		if (security.ClientServer.Ca.SecretName != "" && security.ClientServer.Cert.SecretName == "") ||
-			(security.ClientServer.Ca.SecretName == "" && security.ClientServer.Cert.SecretName != "") {
+		if (security.ClientServer.Ca.SecretName != "" && security.ClientServer.ServerCert.SecretName == "") ||
+			(security.ClientServer.Ca.SecretName == "" && security.ClientServer.ServerCert.SecretName != "") {
 
 			allErrors = append(allErrors, field.Invalid(
 				field.NewPath("spec", "security", "clientServer"),
 				security.ClientServer,
-				"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty"),
+				"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty"),
 			)
 		}
 	}

@@ -210,8 +210,6 @@ type SecuritySpec struct {
 	Peer *PeerSpec `json:"peer,omitempty"`
 	// +optional
 	ClientServer *ClientServerSpec `json:"clientServer,omitempty"`
-	// +optional
-	Rbac RbacSpec `json:"rbac,omitempty"`
 }
 
 type PeerSpec struct {
@@ -225,7 +223,7 @@ type ClientServerSpec struct {
 	// +optional
 	Ca SecretSpec `json:"ca,omitempty"`
 	// +optional
-	Cert SecretSpec `json:"cert,omitempty"`
+	ServerCert SecretSpec `json:"serverCert,omitempty"`
 	// +optional
 	RootClientCert SecretSpec `json:"rootClientCert,omitempty"`
 }

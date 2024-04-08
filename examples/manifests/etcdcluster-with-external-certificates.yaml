@@ -14,7 +14,7 @@ spec:
     clientServer:
       ca:
         secretName: ca-server-secret
-      cert:
+      serverCert:
         secretName: server-secret
 ---
 apiVersion: cert-manager.io/v1

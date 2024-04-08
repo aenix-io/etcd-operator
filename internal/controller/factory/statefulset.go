@@ -182,7 +182,7 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 					Name: "server-cert",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: cluster.Spec.Security.ClientServer.Cert.SecretName,
+							SecretName: cluster.Spec.Security.ClientServer.ServerCert.SecretName,
 						},
 					},
 				},

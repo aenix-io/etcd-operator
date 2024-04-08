@@ -195,7 +195,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				expectedFieldErr := field.Invalid(
 					field.NewPath("spec", "security", "clientServer"),
 					localCluster.Spec.Security.ClientServer,
-					"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty",
+					"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty",
 				)
 				if Expect(err).To(HaveLen(1)) {
 					Expect(*(err[0])).To(Equal(*expectedFieldErr))
@@ -206,7 +206,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should reject if only one secret in clientServer section is defined", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Security.ClientServer = &ClientServerSpec{
-				Cert: SecretSpec{
+				ServerCert: SecretSpec{
 					SecretName: "test-server-cert",
 				},
 			}
@@ -215,7 +215,7 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				expectedFieldErr := field.Invalid(
 					field.NewPath("spec", "security", "clientServer"),
 					localCluster.Spec.Security.ClientServer,
-					"both clientServer.ca.secretName and clientServer.cert.secretName must be filled or empty",
+					"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty",
 				)
 				if Expect(err).To(HaveLen(1)) {
 					Expect(*(err[0])).To(Equal(*expectedFieldErr))

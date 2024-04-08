@@ -4582,12 +4582,12 @@ spec:
                           secretName:
                             type: string
                         type: object
-                      cert:
+                      rootClientCert:
                         properties:
                           secretName:
                             type: string
                         type: object
-                      rootClientCert:
+                      serverCert:
                         properties:
                           secretName:
                             type: string
@@ -4605,11 +4605,6 @@ spec:
                           secretName:
                             type: string
                         type: object
-                    type: object
-                  rbac:
-                    properties:
-                      enabled:
-                        type: boolean
                     type: object
                 type: object
               storage:

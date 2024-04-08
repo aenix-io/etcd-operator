@@ -123,7 +123,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					Ca: etcdaenixiov1alpha1.SecretSpec{
 						SecretName: "server-ca-secret",
 					},
-					Cert: etcdaenixiov1alpha1.SecretSpec{
+					ServerCert: etcdaenixiov1alpha1.SecretSpec{
 						SecretName: "server-cert-secret",
 					},
 				},
@@ -704,7 +704,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					Ca: etcdaenixiov1alpha1.SecretSpec{
 						SecretName: "client-server-ca-secret",
 					},
-					Cert: etcdaenixiov1alpha1.SecretSpec{
+					ServerCert: etcdaenixiov1alpha1.SecretSpec{
 						SecretName: "client-server-cert-secret",
 					},
 				},
