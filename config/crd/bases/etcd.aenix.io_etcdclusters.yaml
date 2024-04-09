@@ -4575,36 +4575,25 @@ spec:
                 description: Security describes security settings of etcd (authentication,
                   certificates, rbac)
                 properties:
-                  clientServer:
+                  operatorManaged:
                     properties:
-                      ca:
-                        properties:
-                          secretName:
-                            type: string
-                        type: object
-                      rootClientCert:
-                        properties:
-                          secretName:
-                            type: string
-                        type: object
-                      serverCert:
-                        properties:
-                          secretName:
-                            type: string
+                      operatorManagedSpec:
+                        additionalProperties:
+                          type: string
                         type: object
                     type: object
-                  peer:
+                  userManaged:
                     properties:
-                      ca:
-                        properties:
-                          secretName:
-                            type: string
-                        type: object
-                      cert:
-                        properties:
-                          secretName:
-                            type: string
-                        type: object
+                      clientCertificate:
+                        type: string
+                      clientTrustedCACertificate:
+                        type: string
+                      peerCertificate:
+                        type: string
+                      peerTrustedCACertificate:
+                        type: string
+                      serverCertificate:
+                        type: string
                     type: object
                 type: object
               storage:

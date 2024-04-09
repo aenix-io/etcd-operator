@@ -207,36 +207,53 @@ type StorageSpec struct {
 // +k8s:openapi-gen=true
 type SecuritySpec struct {
 	// +optional
-	Peer *PeerSpec `json:"peer,omitempty"`
+	UserManaged UserManagedSpec `json:"userManaged,omitempty"`
 	// +optional
-	ClientServer *ClientServerSpec `json:"clientServer,omitempty"`
+	OperatorManaged OperatorManagedSpec `json:"operatorManaged,omitempty"`
 }
 
-type PeerSpec struct {
+type UserManagedSpec struct {
 	// +optional
-	Ca SecretSpec `json:"ca,omitempty"`
+	PeerTrustedCACertificate string `json:"peerTrustedCACertificate,omitempty"`
 	// +optional
-	Cert SecretSpec `json:"cert,omitempty"`
+	PeerCertificate string `json:"peerCertificate,omitempty"`
+	// +optional
+	ServerCertificate string `json:"serverCertificate,omitempty"`
+	// +optional
+	ClientTrustedCACertificate string `json:"clientTrustedCACertificate,omitempty"`
+	// +optional
+	ClientCertificate string `json:"clientCertificate,omitempty"`
 }
 
-type ClientServerSpec struct {
-	// +optional
-	Ca SecretSpec `json:"ca,omitempty"`
-	// +optional
-	ServerCert SecretSpec `json:"serverCert,omitempty"`
-	// +optional
-	RootClientCert SecretSpec `json:"rootClientCert,omitempty"`
+type OperatorManagedSpec struct {
+	OperatorManagedSpec map[string]string `json:"operatorManagedSpec,omitempty"`
 }
 
-type SecretSpec struct {
-	// +optional
-	SecretName string `json:"secretName,omitempty"`
-}
+// type PeerSpec struct {
+// 	// +optional
+// 	Ca SecretSpec `json:"ca,omitempty"`
+// 	// +optional
+// 	Cert SecretSpec `json:"cert,omitempty"`
+// }
 
-type RbacSpec struct {
-	// +optional
-	Enabled bool `json:"enabled,omitempty"`
-}
+// type ClientServerSpec struct {
+// 	// +optional
+// 	Ca SecretSpec `json:"ca,omitempty"`
+// 	// +optional
+// 	ServerCert SecretSpec `json:"serverCert,omitempty"`
+// 	// +optional
+// 	RootClientCert SecretSpec `json:"rootClientCert,omitempty"`
+// }
+
+// type SecretSpec struct {
+// 	// +optional
+// 	SecretName string `json:"secretName,omitempty"`
+// }
+
+// type RbacSpec struct {
+// 	// +optional
+// 	Enabled bool `json:"enabled,omitempty"`
+// }
 
 // EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.
 // It contains TypeMeta and a reduced ObjectMeta.
