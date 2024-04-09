@@ -276,28 +276,24 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 
 	security := r.Spec.Security
 
-	if security.Peer != nil {
-		if (security.Peer.Ca.SecretName != "" && security.Peer.Cert.SecretName == "") ||
-			(security.Peer.Ca.SecretName == "" && security.Peer.Cert.SecretName != "") {
+	if (security.TLS.PeerSecret != "" && security.TLS.PeerTrustedCASecret == "") ||
+		(security.TLS.PeerSecret == "" && security.TLS.PeerTrustedCASecret != "") {
 
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "security", "peer"),
-				security.Peer,
-				"both peer.ca.secretName and peer.cert.secretName must be filled or empty"),
-			)
-		}
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "security", "tls"),
+			security.TLS,
+			"both spec.security.tls.peerSecret and spec.security.tls.peerTrustedCASecret must be filled or empty"),
+		)
 	}
 
-	if security.ClientServer != nil {
-		if (security.ClientServer.Ca.SecretName != "" && security.ClientServer.ServerCert.SecretName == "") ||
-			(security.ClientServer.Ca.SecretName == "" && security.ClientServer.ServerCert.SecretName != "") {
+	if (security.TLS.ClientSecret != "" && security.TLS.ClientTrustedCASecret == "") ||
+		(security.TLS.ClientSecret == "" && security.TLS.ClientTrustedCASecret != "") {
 
-			allErrors = append(allErrors, field.Invalid(
-				field.NewPath("spec", "security", "clientServer"),
-				security.ClientServer,
-				"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty"),
-			)
-		}
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "security", "tls"),
+			security.TLS,
+			"both spec.security.tls.clientSecret and spec.security.tls.clientTrustedCASecret must be filled or empty"),
+		)
 	}
 
 	if len(allErrors) > 0 {

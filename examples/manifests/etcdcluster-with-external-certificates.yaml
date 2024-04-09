@@ -5,17 +5,14 @@ metadata:
   name: test
   namespace: default
 spec:
+  storage: {}
   security:
-    peer:
-      ca:
-        secretName: ca-peer-secret
-      cert:
-        secretName: peer-secret
-    clientServer:
-      ca:
-        secretName: ca-server-secret
-      serverCert:
-        secretName: server-secret
+    tls:
+      peerTrustedCASecret: ca-peer-secret
+      peerSecret: peer-secret
+      serverSecret: server-secret
+      clientTrustedCASecret: ca-client-secret
+      clientSecret: client-secret
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
@@ -78,6 +75,32 @@ spec:
     group: cert-manager.io
 ---
 apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-certificate-client
+  namespace: default
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: ca-certificate-client
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: ca-client-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: ca-issuer-peer
@@ -96,9 +119,18 @@ spec:
     secretName: ca-server-secret
 ---
 apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ca-issuer-client
+  namespace: default
+spec:
+  ca:
+    secretName: ca-client-secret
+---
+apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: certificate-server
+  name: server-certificate
   namespace: default
 spec:
   secretName: server-secret
@@ -135,7 +167,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: certificate-peer
+  name: peer-certificate
   namespace: default
 spec:
   secretName: peer-secret
@@ -170,7 +202,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: client-certificate-server
+  name: client-certificate
   namespace: default
 spec:
   commonName: root
@@ -184,5 +216,5 @@ spec:
     algorithm: RSA
     size: 4096
   issuerRef:
-    name: ca-issuer-server
+    name: ca-issuer-client
     kind: Issuer
