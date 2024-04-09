@@ -90,7 +90,7 @@ helm-docs-run: helm-docs ## Run helm schema over chart
 	$(HELM_DOCS)
 
 .PHONY: helm-crd-copy
-helm-crd-copy: yq ## Copy CRDs from kustomize to helm-chart
+helm-crd-copy: yq kustomize ## Copy CRDs from kustomize to helm-chart
 	@$(eval TMP := $(shell mktemp -d))
 	@$(KUSTOMIZE) build config/default > $(TMP)/manifest.yaml && cd $(TMP) && $(YQ) -s '.kind + "-" + .metadata.name' --no-doc manifest.yaml && cd $(OLDPWD)
 	@mv $(TMP)/CustomResourceDefinition-etcdclusters.etcd.aenix.io charts/etcd-operator/crds/etcd-cluster.yaml
