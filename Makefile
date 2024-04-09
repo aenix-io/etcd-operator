@@ -89,6 +89,13 @@ helm-schema-run: helm-schema ## Run helm schema over chart
 helm-docs-run: helm-docs ## Run helm schema over chart
 	$(HELM_DOCS)
 
+.PHONY: helm-crd-copy
+helm-crd-copy: yq kustomize ## Copy CRDs from kustomize to helm-chart
+	@$(eval TMP := $(shell mktemp -d))
+	@$(KUSTOMIZE) build config/default > $(TMP)/manifest.yaml && cd $(TMP) && $(YQ) -s '.kind + "-" + .metadata.name' --no-doc manifest.yaml && cd $(OLDPWD)
+	@mv $(TMP)/CustomResourceDefinition-etcdclusters.etcd.aenix.io charts/etcd-operator/crds/etcd-cluster.yaml
+	@rm -rf $(TMP)
+
 ##@ Build
 
 .PHONY: build
@@ -211,6 +218,7 @@ GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
+YQ = $(LOCALBIN)/yq
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
@@ -221,6 +229,7 @@ KIND_VERSION ?= v0.22.0
 HELM_VERSION ?= v3.14.3
 HELM_SCHEMA_VERSION ?= v1.2.2
 HELM_DOCS_VERSION ?= v1.13.1
+YQ_VERSION ?= v4.42.1
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -271,3 +280,8 @@ helm-schema: helm $(HELM_PLUGINS)
 helm-docs: $(LOCALBIN)
 	@test -x $(HELM_DOCS) && $(HELM_DOCS) version | grep -q $(HELM_DOCS_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/norwoodj/helm-docs/cmd/helm-docs@$(HELM_DOCS_VERSION)
+
+.PHONY: yq
+yq: $(LOCALBIN)
+	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
