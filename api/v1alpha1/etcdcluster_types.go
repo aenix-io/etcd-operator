@@ -211,6 +211,7 @@ type SecuritySpec struct {
 	UserManaged UserManagedCertsSpec `json:"userManaged,omitempty"`
 }
 
+// UserManagedCertsSpec defines user-managed certificates names.
 type UserManagedCertsSpec struct {
 	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret.
 	// +optional
