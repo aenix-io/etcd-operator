@@ -2,7 +2,9 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION ?= 1.29.0
+# renovate: datasource=github-tags depName=kubernetes/kubernetes
+ENVTEST_K8S_VERSION ?= v1.29.0
+ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -62,7 +64,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
@@ -145,7 +147,9 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
+# renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION ?= v0.72.0
+# renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
 ifndef ignore-not-found
@@ -221,14 +225,22 @@ HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
 
 ## Tool Versions
+# renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
+# renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
+# renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.54.2
+# renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.22.0
+# renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.14.3
+# renovate: datasource=github-tags depName=losisin/helm-values-schema-json
 HELM_SCHEMA_VERSION ?= v1.2.2
+# renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
+# renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.42.1
 
 ## Tool install scripts

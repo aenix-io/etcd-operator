@@ -16,8 +16,8 @@ jobs:
         k8s_version: [1.27.1,1.28.0,1.29.0]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v4.1.1
+      - uses: actions/setup-go@v5.0.0
         with:
           go-version: 1.22.1
       - run: ENVTEST_K8S_VERSION=${{ matrix.k8s_version }} make test
