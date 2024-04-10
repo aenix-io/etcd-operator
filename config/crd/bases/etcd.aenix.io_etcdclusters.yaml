@@ -4575,7 +4575,7 @@ spec:
                 description: Security describes security settings of etcd (authentication,
                   certificates, rbac)
                 properties:
-                  userManaged:
+                  tls:
                     description: Section for user-managed tls certificates
                     properties:
                       clientSecret:

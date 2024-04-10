@@ -144,14 +144,14 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 		VolumeSource: dataVolumeSource,
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.PeerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
 		volumes = append(volumes,
 			[]corev1.Volume{
 				{
 					Name: "peer-trusted-ca-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: cluster.Spec.Security.UserManaged.PeerTrustedCASecret,
+							SecretName: cluster.Spec.Security.TLS.PeerTrustedCASecret,
 						},
 					},
 				},
@@ -159,35 +159,35 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 					Name: "peer-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: cluster.Spec.Security.UserManaged.PeerSecret,
+							SecretName: cluster.Spec.Security.TLS.PeerSecret,
 						},
 					},
 				},
 			}...)
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ServerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
 		volumes = append(volumes,
 			[]corev1.Volume{
 				{
 					Name: "server-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: cluster.Spec.Security.UserManaged.ServerSecret,
+							SecretName: cluster.Spec.Security.TLS.ServerSecret,
 						},
 					},
 				},
 			}...)
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ClientSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
 		volumes = append(volumes,
 			[]corev1.Volume{
 				{
 					Name: "client-trusted-ca-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: cluster.Spec.Security.UserManaged.ClientTrustedCASecret,
+							SecretName: cluster.Spec.Security.TLS.ClientTrustedCASecret,
 						},
 					},
 				},
@@ -224,7 +224,7 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.PeerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
 		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
 			{
 				Name:      "peer-trusted-ca-certificate",
@@ -239,7 +239,7 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 		}...)
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ServerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
 		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
 			{
 				Name:      "server-certificate",
@@ -249,7 +249,7 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 		}...)
 	}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ClientSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
 
 		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
 			{
@@ -285,7 +285,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 	peerTlsSettings := []string{"--peer-auto-tls"}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.PeerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
 		peerTlsSettings = []string{
 			"--peer-trusted-ca-file=/etc/etcd/pki/peer/ca/ca.crt",
 			"--peer-cert-file=/etc/etcd/pki/peer/cert/tls.crt",
@@ -297,7 +297,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	serverTlsSettings := []string{}
 	serverProtocol := "http"
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ServerSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
 		serverTlsSettings = []string{
 			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
 			"--key-file=/etc/etcd/pki/server/cert/tls.key",
@@ -307,7 +307,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 	clientTlsSettings := []string{}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.UserManaged.ClientSecret != "" {
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
 		clientTlsSettings = []string{
 			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
 			"--client-cert-auth",

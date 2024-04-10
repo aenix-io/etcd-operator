@@ -119,7 +119,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				},
 			}
 			etcdcluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
-				UserManaged: etcdaenixiov1alpha1.UserManagedCertsSpec{
+				TLS: etcdaenixiov1alpha1.TLSSpec{
 					PeerTrustedCASecret:   "peer-ca-secret",
 					PeerSecret:            "peer-cert-secret",
 					ServerSecret:          "server-cert-secret",
@@ -691,7 +691,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		It("should generate security volumes mounts", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
-				UserManaged: etcdaenixiov1alpha1.UserManagedCertsSpec{
+				TLS: etcdaenixiov1alpha1.TLSSpec{
 					PeerTrustedCASecret:   "peer-ca-secret",
 					PeerSecret:            "peer-cert-secret",
 					ServerSecret:          "server-cert-secret",

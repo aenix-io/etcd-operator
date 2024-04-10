@@ -208,11 +208,11 @@ type StorageSpec struct {
 type SecuritySpec struct {
 	// Section for user-managed tls certificates
 	// +optional
-	UserManaged UserManagedCertsSpec `json:"userManaged,omitempty"`
+	TLS TLSSpec `json:"tls,omitempty"`
 }
 
-// UserManagedCertsSpec defines user-managed certificates names.
-type UserManagedCertsSpec struct {
+// TLSSpec defines user-managed certificates names.
+type TLSSpec struct {
 	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret.
 	// +optional
 	PeerTrustedCASecret string `json:"peerTrustedCASecret,omitempty"`

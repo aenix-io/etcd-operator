@@ -145,15 +145,15 @@ var _ = Describe("EtcdCluster Webhook", func() {
 
 		It("Should reject if only one peer secret is defined", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.Security.UserManaged = UserManagedCertsSpec{
+			localCluster.Spec.Security.TLS = TLSSpec{
 				PeerTrustedCASecret: "test-peer-ca-cert",
 			}
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "userManaged"),
-					localCluster.Spec.Security.UserManaged,
-					"both spec.security.userManaged.PeerSecret and spec.security.userManaged.PeerTrustedCASecret must be filled or empty",
+					field.NewPath("spec", "security", "tls"),
+					localCluster.Spec.Security.TLS,
+					"both spec.security.tls.peerSecret and spec.security.tls.peerTrustedCASecret must be filled or empty",
 				)
 				if Expect(err).To(HaveLen(1)) {
 					Expect(*(err[0])).To(Equal(*expectedFieldErr))
@@ -163,15 +163,15 @@ var _ = Describe("EtcdCluster Webhook", func() {
 
 		It("Should reject if only one peer secret is defined", func() {
 			localCluster := etcdCluster.DeepCopy()
-			localCluster.Spec.Security.UserManaged = UserManagedCertsSpec{
+			localCluster.Spec.Security.TLS = TLSSpec{
 				PeerSecret: "test-peer-cert",
 			}
 			err := localCluster.validateSecurity()
 			if Expect(err).NotTo(BeNil()) {
 				expectedFieldErr := field.Invalid(
-					field.NewPath("spec", "security", "userManaged"),
-					localCluster.Spec.Security.UserManaged,
-					"both spec.security.userManaged.PeerSecret and spec.security.userManaged.PeerTrustedCASecret must be filled or empty",
+					field.NewPath("spec", "security", "tls"),
+					localCluster.Spec.Security.TLS,
+					"both spec.security.tls.peerSecret and spec.security.tls.peerTrustedCASecret must be filled or empty",
 				)
 				if Expect(err).To(HaveLen(1)) {
 					Expect(*(err[0])).To(Equal(*expectedFieldErr))
@@ -179,25 +179,41 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 		})
 
-		// It("Should reject if only one secret in peer section is defined", func() {
-		// 	localCluster := etcdCluster.DeepCopy()
-		// 	localCluster.Spec.Security.Peer = &PeerSpec{
-		// 		Cert: SecretSpec{
-		// 			SecretName: "test-peer-cert",
-		// 		},
-		// 	}
-		// 	err := localCluster.validateSecurity()
-		// 	if Expect(err).NotTo(BeNil()) {
-		// 		expectedFieldErr := field.Invalid(
-		// 			field.NewPath("spec", "security", "peer"),
-		// 			localCluster.Spec.Security.Peer,
-		// 			"both peer.ca.secretName and peer.cert.secretName must be filled or empty",
-		// 		)
-		// 		if Expect(err).To(HaveLen(1)) {
-		// 			Expect(*(err[0])).To(Equal(*expectedFieldErr))
-		// 		}
-		// 	}
-		// })
+		It("Should reject if only one client secret is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security.TLS = TLSSpec{
+				ClientTrustedCASecret: "test-client-ca-cert",
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security", "tls"),
+					localCluster.Spec.Security.TLS,
+					"both spec.security.tls.clientSecret and spec.security.tls.clientTrustedCASecret must be filled or empty",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+
+		It("Should reject if only one client secret is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security.TLS = TLSSpec{
+				ClientTrustedCASecret: "test-client-cert",
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security", "tls"),
+					localCluster.Spec.Security.TLS,
+					"both spec.security.tls.clientSecret and spec.security.tls.clientTrustedCASecret must be filled or empty",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
 
 		// It("Should reject if only one secret in clientServer section is defined", func() {
 		// 	localCluster := etcdCluster.DeepCopy()
