@@ -221,14 +221,22 @@ HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
 
 ## Tool Versions
+# renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
+# renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.14.0
 ENVTEST_VERSION ?= latest
+# renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.54.2
+# renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.22.0
+# renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.14.3
+# renovate: datasource=github-tags depName=losisin/helm-values-schema-json
 HELM_SCHEMA_VERSION ?= v1.2.2
+# renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
+# renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.42.1
 
 ## Tool install scripts
