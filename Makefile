@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-# renovate: datasource=github-tags depName=kubernetes/kubernetes
+# renovate: datasource=github-tags depName=kubernetes/kubernetes versioning=regex:^(?<major>\\d+)(\\.(?<minor>\\d+))?(\\.(?<patch>\\d+))?$
 ENVTEST_K8S_VERSION ?= 1.29.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
