@@ -206,54 +206,29 @@ type StorageSpec struct {
 // SecuritySpec defines security settings for etcd.
 // +k8s:openapi-gen=true
 type SecuritySpec struct {
+	// Section for user-managed tls certificates
 	// +optional
-	UserManaged UserManagedSpec `json:"userManaged,omitempty"`
-	// +optional
-	OperatorManaged OperatorManagedSpec `json:"operatorManaged,omitempty"`
+	UserManaged UserManagedCertsSpec `json:"userManaged,omitempty"`
 }
 
-type UserManagedSpec struct {
+type UserManagedCertsSpec struct {
+	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret.
 	// +optional
-	PeerTrustedCACertificate string `json:"peerTrustedCACertificate,omitempty"`
+	PeerTrustedCASecret string `json:"peerTrustedCASecret,omitempty"`
+	// Certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt and tls.key fields in the secret.
 	// +optional
-	PeerCertificate string `json:"peerCertificate,omitempty"`
+	PeerSecret string `json:"peerSecret,omitempty"`
+	// Server certificate secret to secure client-server communication. Is provided to the client who connects to etcd by client port (2379 by default).
+	// It is expected to have tls.crt and tls.key fields in the secret.
 	// +optional
-	ServerCertificate string `json:"serverCertificate,omitempty"`
+	ServerSecret string `json:"serverSecret,omitempty"`
+	// Trusted CA for client certificates that are provided by client to etcd. It is expected to have tls.crt field in the secret.
 	// +optional
-	ClientTrustedCACertificate string `json:"clientTrustedCACertificate,omitempty"`
+	ClientTrustedCASecret string `json:"clientTrustedCASecret,omitempty"`
+	// Client certificate for etcd-operator to do maintenance. It is expected to have tls.crt and tls.key fields in the secret.
 	// +optional
-	ClientCertificate string `json:"clientCertificate,omitempty"`
+	ClientSecret string `json:"clientSecret,omitempty"`
 }
-
-type OperatorManagedSpec struct {
-	OperatorManagedSpec map[string]string `json:"operatorManagedSpec,omitempty"`
-}
-
-// type PeerSpec struct {
-// 	// +optional
-// 	Ca SecretSpec `json:"ca,omitempty"`
-// 	// +optional
-// 	Cert SecretSpec `json:"cert,omitempty"`
-// }
-
-// type ClientServerSpec struct {
-// 	// +optional
-// 	Ca SecretSpec `json:"ca,omitempty"`
-// 	// +optional
-// 	ServerCert SecretSpec `json:"serverCert,omitempty"`
-// 	// +optional
-// 	RootClientCert SecretSpec `json:"rootClientCert,omitempty"`
-// }
-
-// type SecretSpec struct {
-// 	// +optional
-// 	SecretName string `json:"secretName,omitempty"`
-// }
-
-// type RbacSpec struct {
-// 	// +optional
-// 	Enabled bool `json:"enabled,omitempty"`
-// }
 
 // EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.
 // It contains TypeMeta and a reduced ObjectMeta.

@@ -276,23 +276,23 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 
 	security := r.Spec.Security
 
-	if (security.UserManaged.PeerCertificate != "" && security.UserManaged.PeerTrustedCACertificate == "") ||
-		(security.UserManaged.PeerCertificate == "" && security.UserManaged.PeerTrustedCACertificate != "") {
+	if (security.UserManaged.PeerSecret != "" && security.UserManaged.PeerTrustedCASecret == "") ||
+		(security.UserManaged.PeerSecret == "" && security.UserManaged.PeerTrustedCASecret != "") {
 
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "security", "userManaged"),
 			security.UserManaged,
-			"both spec.security.userManaged.peerCertificate and spec.security.userManaged.peerTrustedCACertificate must be filled or empty"),
+			"both spec.security.userManaged.PeerSecret and spec.security.userManaged.PeerTrustedCASecret must be filled or empty"),
 		)
 	}
 
-	if (security.UserManaged.ClientCertificate != "" && security.UserManaged.ClientTrustedCACertificate == "") ||
-		(security.UserManaged.ClientCertificate == "" && security.UserManaged.ClientTrustedCACertificate != "") {
+	if (security.UserManaged.ClientSecret != "" && security.UserManaged.ClientTrustedCASecret == "") ||
+		(security.UserManaged.ClientSecret == "" && security.UserManaged.ClientTrustedCASecret != "") {
 
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "security", "userManaged"),
 			security.UserManaged,
-			"both spec.security.userManaged.clientCertificate and spec.security.userManaged.clientTrustedCACertificate must be filled or empty"),
+			"both spec.security.userManaged.ClientSecret and spec.security.userManaged.ClientTrustedCASecret must be filled or empty"),
 		)
 	}
 

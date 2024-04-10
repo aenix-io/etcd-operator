@@ -143,25 +143,41 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			Expect(err).To(BeNil())
 		})
 
-		// It("Should reject if only one secret in peer section is defined", func() {
-		// 	localCluster := etcdCluster.DeepCopy()
-		// 	localCluster.Spec.Security.Peer = &PeerSpec{
-		// 		Ca: SecretSpec{
-		// 			SecretName: "test-peer-ca-cert",
-		// 		},
-		// 	}
-		// 	err := localCluster.validateSecurity()
-		// 	if Expect(err).NotTo(BeNil()) {
-		// 		expectedFieldErr := field.Invalid(
-		// 			field.NewPath("spec", "security", "peer"),
-		// 			localCluster.Spec.Security.Peer,
-		// 			"both peer.ca.secretName and peer.cert.secretName must be filled or empty",
-		// 		)
-		// 		if Expect(err).To(HaveLen(1)) {
-		// 			Expect(*(err[0])).To(Equal(*expectedFieldErr))
-		// 		}
-		// 	}
-		// })
+		It("Should reject if only one peer secret is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security.UserManaged = UserManagedCertsSpec{
+				PeerTrustedCASecret: "test-peer-ca-cert",
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security", "userManaged"),
+					localCluster.Spec.Security.UserManaged,
+					"both spec.security.userManaged.PeerSecret and spec.security.userManaged.PeerTrustedCASecret must be filled or empty",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
+
+		It("Should reject if only one peer secret is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security.UserManaged = UserManagedCertsSpec{
+				PeerSecret: "test-peer-cert",
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security", "userManaged"),
+					localCluster.Spec.Security.UserManaged,
+					"both spec.security.userManaged.PeerSecret and spec.security.userManaged.PeerTrustedCASecret must be filled or empty",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+		})
 
 		// It("Should reject if only one secret in peer section is defined", func() {
 		// 	localCluster := etcdCluster.DeepCopy()
