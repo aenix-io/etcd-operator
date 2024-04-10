@@ -99,30 +99,26 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// set cluster readiness condition
 	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
-	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) {
-		// we should change from "waiting for first quorum establishment" to "StatefulSet ready / not ready"
-		// only after sts gets ready first time
-		if clusterReady {
-			factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-				WithStatus(true).
-				WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
-				WithMessage(string(etcdaenixiov1alpha1.EtcdReadyCondPosMessage)).
-				Complete())
-		}
-	} else {
-		reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
-		message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
-		if clusterReady {
-			reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
-			message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
-		}
-
-		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-			WithStatus(clusterReady).
-			WithReason(string(reason)).
-			WithMessage(string(message)).
-			Complete())
+	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) && !clusterReady {
+		// if we are still "waiting for first quorum establishment" and the StatefulSet
+		// isn't ready yet, don't update the EtcdConditionReady, but circuit-break.
+		return r.updateStatus(ctx, instance)
 	}
+
+	// otherwise, EtcdConditionReady is set to true/false with the reason that the
+	// StatefulSet is or isn't ready.
+	reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
+	message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+	if clusterReady {
+		reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
+		message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
+	}
+
+	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
+		WithStatus(clusterReady).
+		WithReason(string(reason)).
+		WithMessage(string(message)).
+		Complete())
 	return r.updateStatus(ctx, instance)
 }
 
