@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   update_release_draft:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - uses: release-drafter/release-drafter@v6
+      - uses: release-drafter/release-drafter@v6.0.0
         with:
           disable-releaser: github.ref != 'refs/heads/main'
           config-name: release-drafter.yml
