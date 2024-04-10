@@ -214,47 +214,6 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				}
 			}
 		})
-
-		// It("Should reject if only one secret in clientServer section is defined", func() {
-		// 	localCluster := etcdCluster.DeepCopy()
-		// 	localCluster.Spec.Security.ClientServer = &ClientServerSpec{
-		// 		Ca: SecretSpec{
-		// 			SecretName: "test-ca-server-cert",
-		// 		},
-		// 	}
-		// 	err := localCluster.validateSecurity()
-		// 	if Expect(err).NotTo(BeNil()) {
-		// 		expectedFieldErr := field.Invalid(
-		// 			field.NewPath("spec", "security", "clientServer"),
-		// 			localCluster.Spec.Security.ClientServer,
-		// 			"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty",
-		// 		)
-		// 		if Expect(err).To(HaveLen(1)) {
-		// 			Expect(*(err[0])).To(Equal(*expectedFieldErr))
-		// 		}
-		// 	}
-		// })
-
-		// It("Should reject if only one secret in clientServer section is defined", func() {
-		// 	localCluster := etcdCluster.DeepCopy()
-		// 	localCluster.Spec.Security.ClientServer = &ClientServerSpec{
-		// 		ServerCert: SecretSpec{
-		// 			SecretName: "test-server-cert",
-		// 		},
-		// 	}
-		// 	err := localCluster.validateSecurity()
-		// 	if Expect(err).NotTo(BeNil()) {
-		// 		expectedFieldErr := field.Invalid(
-		// 			field.NewPath("spec", "security", "clientServer"),
-		// 			localCluster.Spec.Security.ClientServer,
-		// 			"both clientServer.ca.secretName and ClientServer.ServerCert.secretName must be filled or empty",
-		// 		)
-		// 		if Expect(err).To(HaveLen(1)) {
-		// 			Expect(*(err[0])).To(Equal(*expectedFieldErr))
-		// 		}
-		// 	}
-		// })
-
 	})
 
 	Context("Validate PDB", func() {
