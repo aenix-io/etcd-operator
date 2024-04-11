@@ -241,7 +241,7 @@ HELM_SCHEMA_VERSION ?= v1.2.2
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
-YQ_VERSION ?= v4.42.1
+YQ_VERSION ?= v4.43.1
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
