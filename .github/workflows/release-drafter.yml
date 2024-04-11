@@ -3,18 +3,9 @@ name: Release Drafter
 on:
   workflow_dispatch:
   pull_request_target:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - unlabeled
   push:
     branches:
       - main
-
-permissions:
-  contents: write
-  pull-requests: write
 
 jobs:
   update_release_draft:
