@@ -148,7 +148,7 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.72.0
+PROMETHEUS_OPERATOR_VERSION ?= v0.73.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
