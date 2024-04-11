@@ -12,5 +12,16 @@
       ],
       "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}"
     }
+  ],
+  "packageRules": [
+    {
+      "description": "Automerge grouped non-major updates",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "grouped non-major updates",
+      "matchPackagePatterns": ["*"],
+      "schedule": ["* * * * 6"],
+      "labels": ["ok-to-test"],
+      "automerge": true
+    }
   ]
 }
