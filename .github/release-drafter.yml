@@ -51,6 +51,7 @@ autolabeler:
   - label: 'dependencies'
     branch:
       - '/deps\/.+/'
+      - '/renovate\/.+/'
   - label: 'documentation'
     files:
       - '**/*.md'
