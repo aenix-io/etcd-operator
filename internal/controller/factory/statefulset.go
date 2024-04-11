@@ -32,6 +32,10 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
+const (
+	etcdContainerName = "etcd"
+)
+
 func CreateOrUpdateStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
@@ -51,6 +55,20 @@ func CreateOrUpdateStatefulSet(
 	}
 
 	podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
+
+	volumeClaimTemplates := []corev1.PersistentVolumeClaim{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        GetPVCName(cluster),
+				Labels:      cluster.Spec.Storage.VolumeClaimTemplate.Labels,
+				Annotations: cluster.Spec.Storage.VolumeClaimTemplate.Annotations,
+			},
+			Spec:   cluster.Spec.Storage.VolumeClaimTemplate.Spec,
+			Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
+		},
+	}
+
+	volumes := generateVolumes(cluster)
 
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -81,47 +99,11 @@ func CreateOrUpdateStatefulSet(
 					ServiceAccountName:            cluster.Spec.PodTemplate.Spec.ServiceAccountName,
 					ReadinessGates:                cluster.Spec.PodTemplate.Spec.ReadinessGates,
 					RuntimeClassName:              cluster.Spec.PodTemplate.Spec.RuntimeClassName,
+					Volumes:                       volumes,
 				},
 			},
+			VolumeClaimTemplates: volumeClaimTemplates,
 		},
-	}
-	statefulSet.Spec.Template.Spec.Volumes = cluster.Spec.PodTemplate.Spec.Volumes
-	dataVolumeIdx := slices.IndexFunc(statefulSet.Spec.Template.Spec.Volumes, func(volume corev1.Volume) bool {
-		return volume.Name == "data"
-	})
-	if dataVolumeIdx == -1 {
-		dataVolumeIdx = len(statefulSet.Spec.Template.Spec.Volumes)
-		statefulSet.Spec.Template.Spec.Volumes = append(
-			statefulSet.Spec.Template.Spec.Volumes,
-			corev1.Volume{Name: "data"},
-		)
-	}
-
-	if cluster.Spec.Storage.EmptyDir != nil {
-		statefulSet.Spec.Template.Spec.Volumes[dataVolumeIdx] = corev1.Volume{
-			Name:         "data",
-			VolumeSource: corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir},
-		}
-	} else {
-		statefulSet.Spec.Template.Spec.Volumes[dataVolumeIdx] = corev1.Volume{
-			Name: "data",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: GetPVCName(cluster),
-				},
-			},
-		}
-		statefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        GetPVCName(cluster),
-					Labels:      cluster.Spec.Storage.VolumeClaimTemplate.Labels,
-					Annotations: cluster.Spec.Storage.VolumeClaimTemplate.Annotations,
-				},
-				Spec:   cluster.Spec.Storage.VolumeClaimTemplate.Spec,
-				Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
-			},
-		}
 	}
 
 	if err := ctrl.SetControllerReference(cluster, statefulSet, rscheme); err != nil {
@@ -131,6 +113,156 @@ func CreateOrUpdateStatefulSet(
 	return reconcileStatefulSet(ctx, rclient, cluster.Name, statefulSet)
 }
 
+func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
+	volumes := []corev1.Volume{}
+
+	var dataVolumeSource corev1.VolumeSource
+
+	if cluster.Spec.Storage.EmptyDir != nil {
+		dataVolumeSource = corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir}
+	} else {
+		dataVolumeSource = corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: GetPVCName(cluster),
+			},
+		}
+	}
+
+	dataVolumeIdx := slices.IndexFunc(cluster.Spec.PodTemplate.Spec.Volumes, func(volume corev1.Volume) bool {
+		return volume.Name == "data"
+	})
+	if dataVolumeIdx == -1 {
+		dataVolumeIdx = len(cluster.Spec.PodTemplate.Spec.Volumes)
+		volumes = append(
+			volumes,
+			corev1.Volume{},
+		)
+	}
+
+	volumes[dataVolumeIdx] = corev1.Volume{
+		Name:         "data",
+		VolumeSource: dataVolumeSource,
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
+		volumes = append(volumes,
+			[]corev1.Volume{
+				{
+					Name: "peer-trusted-ca-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: cluster.Spec.Security.TLS.PeerTrustedCASecret,
+						},
+					},
+				},
+				{
+					Name: "peer-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: cluster.Spec.Security.TLS.PeerSecret,
+						},
+					},
+				},
+			}...)
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
+		volumes = append(volumes,
+			[]corev1.Volume{
+				{
+					Name: "server-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: cluster.Spec.Security.TLS.ServerSecret,
+						},
+					},
+				},
+			}...)
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
+		volumes = append(volumes,
+			[]corev1.Volume{
+				{
+					Name: "client-trusted-ca-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: cluster.Spec.Security.TLS.ClientTrustedCASecret,
+						},
+					},
+				},
+			}...)
+	}
+
+	return volumes
+
+}
+
+func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.VolumeMount {
+
+	volumeMounts := []corev1.VolumeMount{}
+
+	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
+		if c.Name == etcdContainerName {
+
+			volumeMounts = c.VolumeMounts
+
+			mountIdx := slices.IndexFunc(volumeMounts, func(mount corev1.VolumeMount) bool {
+				return mount.Name == "data"
+			})
+			if mountIdx == -1 {
+				volumeMounts = append(volumeMounts, corev1.VolumeMount{
+					Name:      "data",
+					ReadOnly:  false,
+					MountPath: "/var/run/etcd",
+				})
+			} else {
+				volumeMounts[mountIdx].ReadOnly = false
+				volumeMounts[mountIdx].MountPath = "/var/run/etcd"
+			}
+		}
+
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
+		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
+			{
+				Name:      "peer-trusted-ca-certificate",
+				ReadOnly:  true,
+				MountPath: "/etc/etcd/pki/peer/ca",
+			},
+			{
+				Name:      "peer-certificate",
+				ReadOnly:  true,
+				MountPath: "/etc/etcd/pki/peer/cert",
+			},
+		}...)
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
+		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
+			{
+				Name:      "server-certificate",
+				ReadOnly:  true,
+				MountPath: "/etc/etcd/pki/server/cert",
+			},
+		}...)
+	}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
+
+		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
+			{
+				Name:      "client-trusted-ca-certificate",
+				ReadOnly:  true,
+				MountPath: "/etc/etcd/pki/client/ca",
+			},
+		}...)
+	}
+
+	return volumeMounts
+}
+
 func generateEtcdCommand() []string {
 	return []string{
 		"etcd",
@@ -138,17 +270,7 @@ func generateEtcdCommand() []string {
 }
 
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
-	args := []string{
-		"--name=$(POD_NAME)",
-		"--listen-peer-urls=https://0.0.0.0:2380",
-		// for first version disable TLS for client access
-		"--listen-client-urls=http://0.0.0.0:2379",
-		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
-		"--data-dir=/var/run/etcd/default.etcd",
-		"--auto-tls",
-		"--peer-auto-tls",
-		fmt.Sprintf("--advertise-client-urls=http://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", cluster.Name),
-	}
+	args := []string{}
 
 	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
@@ -160,6 +282,51 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 		args = append(args, fmt.Sprintf("%s=%s", flag, value))
 	}
+
+	peerTlsSettings := []string{"--peer-auto-tls"}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
+		peerTlsSettings = []string{
+			"--peer-trusted-ca-file=/etc/etcd/pki/peer/ca/ca.crt",
+			"--peer-cert-file=/etc/etcd/pki/peer/cert/tls.crt",
+			"--peer-key-file=/etc/etcd/pki/peer/cert/tls.key",
+			"--peer-client-cert-auth",
+		}
+	}
+
+	serverTlsSettings := []string{}
+	serverProtocol := "http"
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
+		serverTlsSettings = []string{
+			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
+			"--key-file=/etc/etcd/pki/server/cert/tls.key",
+		}
+		serverProtocol = "https"
+	}
+
+	clientTlsSettings := []string{}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
+		clientTlsSettings = []string{
+			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
+			"--client-cert-auth",
+		}
+	}
+
+	args = append(args, []string{
+		"--name=$(POD_NAME)",
+		"--listen-metrics-urls=http://0.0.0.0:2381",
+		"--listen-peer-urls=https://0.0.0.0:2380",
+		fmt.Sprintf("--listen-client-urls=%s://0.0.0.0:2379", serverProtocol),
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
+		"--data-dir=/var/run/etcd/default.etcd",
+		fmt.Sprintf("--advertise-client-urls=%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", serverProtocol, cluster.Name),
+	}...)
+
+	args = append(args, peerTlsSettings...)
+	args = append(args, serverTlsSettings...)
+	args = append(args, clientTlsSettings...)
 
 	return args
 }
@@ -186,7 +353,7 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 
 	containers := make([]corev1.Container, 0, len(cluster.Spec.PodTemplate.Spec.Containers))
 	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
-		if c.Name == "etcd" {
+		if c.Name == etcdContainerName {
 			c.Command = generateEtcdCommand()
 			c.Args = generateEtcdArgs(cluster)
 			c.Ports = mergePorts(c.Ports, []corev1.ContainerPort{
@@ -210,19 +377,7 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			c.LivenessProbe = getLivenessProbe(c.LivenessProbe)
 			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
 			c.Env = mergeEnvs(c.Env, podEnv)
-
-			mountIdx := slices.IndexFunc(c.VolumeMounts, func(mount corev1.VolumeMount) bool {
-				return mount.Name == "data"
-			})
-			if mountIdx == -1 {
-				c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-					Name:      "data",
-					MountPath: "/var/run/etcd",
-				})
-			} else {
-				c.VolumeMounts[mountIdx].ReadOnly = false
-				c.VolumeMounts[mountIdx].MountPath = "/var/run/etcd"
-			}
+			c.VolumeMounts = generateVolumeMounts(cluster)
 		}
 
 		containers = append(containers, c)
@@ -270,7 +425,7 @@ func getStartupProbe(probe *corev1.Probe) *corev1.Probe {
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/readyz?serializable=false",
-				Port: intstr.FromInt32(2379),
+				Port: intstr.FromInt32(2381),
 			},
 		},
 		PeriodSeconds: 5,
@@ -283,7 +438,7 @@ func getReadinessProbe(probe *corev1.Probe) *corev1.Probe {
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/readyz",
-				Port: intstr.FromInt32(2379),
+				Port: intstr.FromInt32(2381),
 			},
 		},
 		PeriodSeconds: 5,
@@ -296,7 +451,7 @@ func getLivenessProbe(probe *corev1.Probe) *corev1.Probe {
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/livez",
-				Port: intstr.FromInt32(2379),
+				Port: intstr.FromInt32(2381),
 			},
 		},
 		PeriodSeconds: 5,

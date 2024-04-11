@@ -41,6 +41,9 @@ type EtcdClusterSpec struct {
 	// +optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
 	Storage                     StorageSpec                  `json:"storage"`
+	// Security describes security settings of etcd (authentication, certificates, rbac)
+	// +optional
+	Security *SecuritySpec `json:"security,omitempty"`
 }
 
 const (
@@ -198,6 +201,34 @@ type StorageSpec struct {
 	// A PVC spec to be used by the StatefulSets.
 	// +optional
 	VolumeClaimTemplate EmbeddedPersistentVolumeClaim `json:"volumeClaimTemplate,omitempty"`
+}
+
+// SecuritySpec defines security settings for etcd.
+// +k8s:openapi-gen=true
+type SecuritySpec struct {
+	// Section for user-managed tls certificates
+	// +optional
+	TLS TLSSpec `json:"tls,omitempty"`
+}
+
+// TLSSpec defines user-managed certificates names.
+type TLSSpec struct {
+	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret.
+	// +optional
+	PeerTrustedCASecret string `json:"peerTrustedCASecret,omitempty"`
+	// Certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt and tls.key fields in the secret.
+	// +optional
+	PeerSecret string `json:"peerSecret,omitempty"`
+	// Server certificate secret to secure client-server communication. Is provided to the client who connects to etcd by client port (2379 by default).
+	// It is expected to have tls.crt and tls.key fields in the secret.
+	// +optional
+	ServerSecret string `json:"serverSecret,omitempty"`
+	// Trusted CA for client certificates that are provided by client to etcd. It is expected to have tls.crt field in the secret.
+	// +optional
+	ClientTrustedCASecret string `json:"clientTrustedCASecret,omitempty"`
+	// Client certificate for etcd-operator to do maintenance. It is expected to have tls.crt and tls.key fields in the secret.
+	// +optional
+	ClientSecret string `json:"clientSecret,omitempty"`
 }
 
 // EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.

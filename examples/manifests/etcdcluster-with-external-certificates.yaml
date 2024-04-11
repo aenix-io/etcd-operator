@@ -1,0 +1,220 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: test
+  namespace: default
+spec:
+  storage: {}
+  security:
+    tls:
+      peerTrustedCASecret: ca-peer-secret
+      peerSecret: peer-secret
+      serverSecret: server-secret
+      clientTrustedCASecret: ca-client-secret
+      clientSecret: client-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: default
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-certificate-peer
+  namespace: default
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: ca-peer
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: ca-peer-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-certificate-server
+  namespace: default
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: ca-server
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: ca-server-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-certificate-client
+  namespace: default
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: ca-certificate-client
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: ca-client-secret
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ca-issuer-peer
+  namespace: default
+spec:
+  ca:
+    secretName: ca-peer-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ca-issuer-server
+  namespace: default
+spec:
+  ca:
+    secretName: ca-server-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ca-issuer-client
+  namespace: default
+spec:
+  ca:
+    secretName: ca-client-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: server-certificate
+  namespace: default
+spec:
+  secretName: server-secret
+  isCA: false
+  usages:
+    - server auth
+    - signing
+    - key encipherment
+  dnsNames:
+  - test-0
+  - test-0.test
+  - test-0.test.default.svc
+  - test-0.test.default.svc.cluster.local
+  - test-1
+  - test-1.test
+  - test-1.test.default.svc
+  - test-1.test.default.svc.cluster.local
+  - test-2
+  - test-2.test
+  - test-2.test.default.svc
+  - test-2.test.default.svc.cluster.local
+  - test-client
+  - test-client.default.svc
+  - test-client.default.svc.cluster.local
+  - localhost
+  - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: ca-issuer-server
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: peer-certificate
+  namespace: default
+spec:
+  secretName: peer-secret
+  isCA: false
+  usages:
+    - server auth
+    - client auth
+    - signing
+    - key encipherment
+  dnsNames:
+  - test-0
+  - test-0.test
+  - test-0.test.default.svc
+  - test-0.test.default.svc.cluster.local
+  - test-1
+  - test-1.test
+  - test-1.test.default.svc
+  - test-1.test.default.svc.cluster.local
+  - test-2
+  - test-2.test
+  - test-2.test.default.svc
+  - test-2.test.default.svc.cluster.local
+  - localhost
+  - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: ca-issuer-peer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: client-certificate
+  namespace: default
+spec:
+  commonName: root
+  secretName: client-secret
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "client auth"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: ca-issuer-client
+    kind: Issuer

@@ -95,6 +95,11 @@ func (r *EtcdCluster) ValidateCreate() (admission.Warnings, error) {
 		allErrors = append(allErrors, pdbErr...)
 	}
 
+	securityErr := r.validateSecurity()
+	if securityErr != nil {
+		allErrors = append(allErrors, securityErr...)
+	}
+
 	if errOptions := validateOptions(r); errOptions != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "options"),
@@ -137,6 +142,11 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	}
 	if len(pdbWarnings) > 0 {
 		warnings = append(warnings, pdbWarnings...)
+	}
+
+	securityErr := r.validateSecurity()
+	if securityErr != nil {
+		allErrors = append(allErrors, securityErr...)
 	}
 
 	if errOptions := validateOptions(r); errOptions != nil {
@@ -254,6 +264,43 @@ func (r *EtcdCluster) validatePdb() (admission.Warnings, field.ErrorList) {
 	}
 
 	return warnings, nil
+}
+
+func (r *EtcdCluster) validateSecurity() field.ErrorList {
+
+	var allErrors field.ErrorList
+
+	if r.Spec.Security == nil {
+		return nil
+	}
+
+	security := r.Spec.Security
+
+	if (security.TLS.PeerSecret != "" && security.TLS.PeerTrustedCASecret == "") ||
+		(security.TLS.PeerSecret == "" && security.TLS.PeerTrustedCASecret != "") {
+
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "security", "tls"),
+			security.TLS,
+			"both spec.security.tls.peerSecret and spec.security.tls.peerTrustedCASecret must be filled or empty"),
+		)
+	}
+
+	if (security.TLS.ClientSecret != "" && security.TLS.ClientTrustedCASecret == "") ||
+		(security.TLS.ClientSecret == "" && security.TLS.ClientTrustedCASecret != "") {
+
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "security", "tls"),
+			security.TLS,
+			"both spec.security.tls.clientSecret and spec.security.tls.clientTrustedCASecret must be filled or empty"),
+		)
+	}
+
+	if len(allErrors) > 0 {
+		return allErrors
+	}
+
+	return nil
 }
 
 func validateOptions(cluster *EtcdCluster) error {

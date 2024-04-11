@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -117,6 +118,15 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
+			etcdcluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
+				TLS: etcdaenixiov1alpha1.TLSSpec{
+					PeerTrustedCASecret:   "peer-ca-secret",
+					PeerSecret:            "peer-cert-secret",
+					ServerSecret:          "server-cert-secret",
+					ClientTrustedCASecret: "client-ca-secret",
+					ClientSecret:          "client-secret",
+				},
+			}
 
 			sts := &appsv1.StatefulSet{}
 			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
@@ -157,7 +167,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz?serializable=false",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -173,7 +183,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -189,7 +199,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/livez",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -197,6 +207,45 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					PeriodSeconds:    5,
 					SuccessThreshold: 1,
 					FailureThreshold: 3,
+				}))
+			})
+
+			By("Checking generated security volumes", func() {
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "peer-trusted-ca-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "peer-ca-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "peer-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "peer-cert-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "server-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "server-cert-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
+				}))
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+					Name: "client-trusted-ca-certificate",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName:  "client-ca-secret",
+							DefaultMode: ptr.To(int32(420)),
+						},
+					},
 				}))
 			})
 
@@ -259,7 +308,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/readyz",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -275,7 +324,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ProbeHandler: v1.ProbeHandler{
 						HTTPGet: &v1.HTTPGetAction{
 							Path:   "/livez",
-							Port:   intstr.FromInt32(2379),
+							Port:   intstr.FromInt32(2381),
 							Scheme: v1.URISchemeHTTP,
 						},
 					},
@@ -353,7 +402,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -381,7 +430,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				PeriodSeconds:       3,
 			}))
 		})
-		It("should correctly override partial changes ", func() {
+		It("should correctly override partial changes", func() {
 			probe := getLivenessProbe(&v1.Probe{
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
@@ -390,7 +439,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 7,
@@ -406,7 +455,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -443,7 +492,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 7,
@@ -459,7 +508,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				PeriodSeconds: 5,
@@ -496,7 +545,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				ProbeHandler: v1.ProbeHandler{
 					HTTPGet: &v1.HTTPGetAction{
 						Path: "/livez",
-						Port: intstr.FromInt32(2379),
+						Port: intstr.FromInt32(2381),
 					},
 				},
 				InitialDelaySeconds: 11,
@@ -639,5 +688,41 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				}
 			}
 		})
+		It("should generate security volumes mounts", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
+				TLS: etcdaenixiov1alpha1.TLSSpec{
+					PeerTrustedCASecret:   "peer-ca-secret",
+					PeerSecret:            "peer-cert-secret",
+					ServerSecret:          "server-cert-secret",
+					ClientTrustedCASecret: "client-ca-secret",
+					ClientSecret:          "client-secret",
+				},
+			}
+
+			containers := generateContainers(localCluster)
+
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "peer-trusted-ca-certificate",
+				MountPath: "/etc/etcd/pki/peer/ca",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "peer-certificate",
+				MountPath: "/etc/etcd/pki/peer/cert",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "server-certificate",
+				MountPath: "/etc/etcd/pki/server/cert",
+				ReadOnly:  true,
+			}))
+			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+				Name:      "client-trusted-ca-certificate",
+				MountPath: "/etc/etcd/pki/client/ca",
+				ReadOnly:  true,
+			}))
+		})
+
 	})
 })
