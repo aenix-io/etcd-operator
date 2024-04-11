@@ -38,7 +38,7 @@
 | kubeRbacProxy.args[3] | string | `"--v=0"` |  |
 | kubeRbacProxy.image.pullPolicy | string | `"IfNotPresent"` |  |
 | kubeRbacProxy.image.repository | string | `"gcr.io/kubebuilder/kube-rbac-proxy"` |  |
-| kubeRbacProxy.image.tag | string | `"v0.15.0"` |  |
+| kubeRbacProxy.image.tag | string | `"v0.16.0"` |  |
 | kubeRbacProxy.livenessProbe | object | `{}` |  |
 | kubeRbacProxy.readinessProbe | object | `{}` |  |
 | kubeRbacProxy.resources.limits.cpu | string | `"500m"` |  |
