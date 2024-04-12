@@ -1,6 +1,6 @@
 module github.com/aenix-io/etcd-operator
 
-go 1.21
+go 1.22.2
 
 require (
 	github.com/onsi/ginkgo/v2 v2.17.1
