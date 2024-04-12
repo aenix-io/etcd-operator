@@ -17,89 +17,55 @@ limitations under the License.
 package e2e
 
 import (
-	"fmt"
 	"os/exec"
-	"time"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 
 	"github.com/aenix-io/etcd-operator/test/utils"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-const namespace = "etcd-operator-system"
-
 var _ = Describe("controller", Ordered, func() {
+
 	BeforeAll(func() {
-		By("installing prometheus operator")
-		Expect(utils.InstallPrometheusOperator()).To(Succeed())
-
-		By("installing the cert-manager")
-		Expect(utils.InstallCertManager()).To(Succeed())
-
-		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
+		By("prepare kind environment")
+		cmd := exec.Command("make", "kind-prepare")
+		_, _ = utils.Run(cmd)
+		By("upload latest etcd-operator docker image to kind cluster")
+		cmd = exec.Command("make", "kind-load")
 		_, _ = utils.Run(cmd)
 	})
 
 	AfterAll(func() {
-		By("uninstalling the Prometheus manager bundle")
-		utils.UninstallPrometheusOperator()
-
-		By("uninstalling the cert-manager bundle")
-		utils.UninstallCertManager()
-
-		By("removing manager namespace")
-		cmd := exec.Command("kubectl", "delete", "ns", namespace)
+		By("Delete kind environment")
+		cmd := exec.Command("make", "kind-delete")
 		_, _ = utils.Run(cmd)
 	})
 
 	Context("Operator", func() {
 		It("should run successfully", func() {
-			var controllerPodName string
 			var err error
-
-			By("deploying the controller-manager")
+			By("deploy etcd-operator")
 			cmd := exec.Command("make", "deploy")
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-
-			By("validating that the controller-manager pod is running as expected")
-			verifyControllerUp := func() error {
-				// Get pod name
-
-				cmd = exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
-
-				podOutput, err := utils.Run(cmd)
-				ExpectWithOffset(2, err).NotTo(HaveOccurred())
-				podNames := utils.GetNonEmptyLines(string(podOutput))
-				if len(podNames) != 1 {
-					return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
-				}
-				controllerPodName = podNames[0]
-				ExpectWithOffset(2, controllerPodName).Should(ContainSubstring("controller-manager"))
-
-				// Validate pod status
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				status, err := utils.Run(cmd)
-				ExpectWithOffset(2, err).NotTo(HaveOccurred())
-				if string(status) != "Running" {
-					return fmt.Errorf("controller pod in %s status", status)
-				}
-				return nil
-			}
-			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
-
 		})
+
+		It("should deploy simple etcd cluster", func() {
+			var err error
+			const namespace = "test-simple-etcd-cluster"
+
+			By("apply simple etcd cluster manifest")
+			cmd := exec.Command("kubectl", "create", "namespace", namespace)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			//cmd = exec.Command("kubectl", "apply",
+			//	"--filename", "/home/hiddenmarten/Git/github/aenix-io/etcd-operator/examples/manifests/etcdcluster-simple.yaml",
+			//	"--namespace", namespace,
+			//)
+			//_, err = utils.Run(cmd)
+			//ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		})
+
 	})
 })

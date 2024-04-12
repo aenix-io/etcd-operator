@@ -21,12 +21,12 @@ Using this way, you don't be able to debug the controller locally. After every c
     make kind-prepare
     ```
 
-2. Install CRDs into kind cluster
+2. Build image and load it into kind cluster
     ```shell
-    make install
+    make kind-load
     ```
 
-3. Build image and load it into kind cluster, deploy etcd-operator, RBAC, webhook certs
+3. Deploy CRDs, etcd-operator, RBAC, webhook certs into kind cluster
     ```shell
     make deploy
     ```
