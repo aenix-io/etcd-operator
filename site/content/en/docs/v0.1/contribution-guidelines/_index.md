@@ -15,6 +15,7 @@ Using this way, you don't be able to debug the controller locally. After every c
 
 #### Pre-requisites
 - Any docker-like container tool, "docker" by default. For more information in Makefile, search for: `CONTAINER_TOOL`.
+- [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
 
 **Steps**
 1. Create and prepare kind cluster:
