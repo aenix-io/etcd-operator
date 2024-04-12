@@ -136,9 +136,9 @@ spec:
   secretName: server-secret
   isCA: false
   usages:
-    - server auth
-    - signing
-    - key encipherment
+    - "server auth"
+    - "signing"
+    - "key encipherment"
   dnsNames:
   - test-0
   - test-0.test
@@ -152,9 +152,6 @@ spec:
   - test-2.test
   - test-2.test.default.svc
   - test-2.test.default.svc.cluster.local
-  - test-client
-  - test-client.default.svc
-  - test-client.default.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:
@@ -173,10 +170,10 @@ spec:
   secretName: peer-secret
   isCA: false
   usages:
-    - server auth
-    - client auth
-    - signing
-    - key encipherment
+    - "server auth"
+    - "client auth"
+    - "signing"
+    - "key encipherment"
   dnsNames:
   - test-0
   - test-0.test
