@@ -21,5 +21,6 @@ jobs:
       - uses: tale/kubectl-action@v1.4.0
         with:
           kubectl-version: v1.29.3
-          base64-kube-config: ""
+          # Empty kubeconfig file
+          base64-kube-config: "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCnByZWZlcmVuY2VzOiB7fQo="
       - run: make test-e2e
