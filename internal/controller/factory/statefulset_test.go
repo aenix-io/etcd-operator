@@ -28,7 +28,6 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -74,17 +73,17 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 						Name: "etcd-data",
 					},
-					Spec: v1.PersistentVolumeClaimSpec{
-						AccessModes: []v1.PersistentVolumeAccessMode{
-							v1.ReadWriteOnce,
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{
+							corev1.ReadWriteOnce,
 						},
-						Resources: v1.VolumeResourceRequirements{
-							Requests: v1.ResourceList{
-								v1.ResourceStorage: resource.MustParse("1Gi"),
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
 							},
 						},
 					},
-					Status: v1.PersistentVolumeClaimStatus{},
+					Status: corev1.PersistentVolumeClaimStatus{},
 				},
 			}
 			etcdcluster.Spec.PodTemplate = etcdaenixiov1alpha1.PodTemplate{
@@ -99,19 +98,19 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				},
 				Spec: etcdaenixiov1alpha1.PodSpec{
 					ServiceAccountName: "etcd-operator",
-					ReadinessGates: []v1.PodReadinessGate{
+					ReadinessGates: []corev1.PodReadinessGate{
 						{
 							// Some custom readiness gate
 							ConditionType: "target-health.elbv2.k8s.aws",
 						},
 					},
-					Containers: []v1.Container{
+					Containers: []corev1.Container{
 						{
 							Name: "etcd",
-							Resources: v1.ResourceRequirements{
-								Requests: v1.ResourceList{
-									v1.ResourceCPU:    resource.MustParse("100m"),
-									v1.ResourceMemory: resource.MustParse("128Mi"),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
 								},
 							},
 						},
@@ -163,12 +162,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the default startup probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz?serializable=false",
 							Port:   intstr.FromInt32(2381),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					TimeoutSeconds:   1,
@@ -179,12 +178,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the default readiness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz",
 							Port:   intstr.FromInt32(2381),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					TimeoutSeconds:   1,
@@ -195,12 +194,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the default liveness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/livez",
 							Port:   intstr.FromInt32(2381),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					TimeoutSeconds:   1,
@@ -211,7 +210,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking generated security volumes", func() {
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 					Name: "peer-trusted-ca-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
@@ -220,7 +219,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						},
 					},
 				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 					Name: "peer-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
@@ -229,7 +228,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						},
 					},
 				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 					Name: "server-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
@@ -238,7 +237,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						},
 					},
 				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(v1.Volume{
+				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
 					Name: "client-trusted-ca-certificate",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
@@ -257,20 +256,20 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		It("should successfully override probes", func() {
 			etcdcluster := etcdcluster.DeepCopy()
 			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
-				Containers: []v1.Container{
+				Containers: []corev1.Container{
 					{
 						Name: "etcd",
-						LivenessProbe: &v1.Probe{
+						LivenessProbe: &corev1.Probe{
 							InitialDelaySeconds: 13,
 							PeriodSeconds:       11,
 						},
-						ReadinessProbe: &v1.Probe{
+						ReadinessProbe: &corev1.Probe{
 							PeriodSeconds: 3,
 						},
-						StartupProbe: &v1.Probe{
+						StartupProbe: &corev1.Probe{
 							PeriodSeconds: 7,
-							ProbeHandler: v1.ProbeHandler{
-								HTTPGet: &v1.HTTPGetAction{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
 									Path: "/test",
 									Port: intstr.FromInt32(2389),
 								},
@@ -288,12 +287,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Checking the updated startup probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/test",
 							Port:   intstr.FromInt32(2389),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					TimeoutSeconds:   1,
@@ -304,12 +303,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the updated readiness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz",
 							Port:   intstr.FromInt32(2381),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					TimeoutSeconds:   1,
@@ -320,12 +319,12 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the updated liveness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&v1.Probe{
-					ProbeHandler: v1.ProbeHandler{
-						HTTPGet: &v1.HTTPGetAction{
+				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/livez",
 							Port:   intstr.FromInt32(2381),
-							Scheme: v1.URISchemeHTTP,
+							Scheme: corev1.URISchemeHTTP,
 						},
 					},
 					InitialDelaySeconds: 13,
@@ -346,7 +345,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			etcdcluster := etcdcluster.DeepCopy()
 			size := resource.MustParse("1Gi")
 			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
-				EmptyDir: &v1.EmptyDirVolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{
 					SizeLimit: &size,
 				},
 			}
@@ -398,9 +397,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	Context("When getting liveness probe", func() {
 		It("should correctly get default values", func() {
 			probe := getLivenessProbe(nil)
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/livez",
 						Port: intstr.FromInt32(2381),
 					},
@@ -409,9 +408,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override all values", func() {
-			probe := getLivenessProbe(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			probe := getLivenessProbe(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/liveznew",
 						Port: intstr.FromInt32(2390),
 					},
@@ -419,9 +418,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/liveznew",
 						Port: intstr.FromInt32(2390),
 					},
@@ -431,13 +430,13 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override partial changes", func() {
-			probe := getLivenessProbe(&v1.Probe{
+			probe := getLivenessProbe(&corev1.Probe{
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/livez",
 						Port: intstr.FromInt32(2381),
 					},
@@ -451,9 +450,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	Context("When getting startup probe", func() {
 		It("should correctly get default values", func() {
 			probe := getStartupProbe(nil)
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
 						Port: intstr.FromInt32(2381),
 					},
@@ -462,9 +461,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override all values", func() {
-			probe := getStartupProbe(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			probe := getStartupProbe(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/readyz",
 						Port: intstr.FromInt32(2390),
 					},
@@ -472,9 +471,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/readyz",
 						Port: intstr.FromInt32(2390),
 					},
@@ -484,13 +483,13 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override partial changes", func() {
-			probe := getStartupProbe(&v1.Probe{
+			probe := getStartupProbe(&corev1.Probe{
 				InitialDelaySeconds: 7,
 				PeriodSeconds:       3,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/readyz?serializable=false",
 						Port: intstr.FromInt32(2381),
 					},
@@ -504,9 +503,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	Context("When getting liveness probe", func() {
 		It("should correctly get default values", func() {
 			probe := getLivenessProbe(nil)
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/livez",
 						Port: intstr.FromInt32(2381),
 					},
@@ -515,9 +514,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override all values", func() {
-			probe := getLivenessProbe(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			probe := getLivenessProbe(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/liveznew",
 						Port: intstr.FromInt32(2371),
 					},
@@ -525,9 +524,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				InitialDelaySeconds: 11,
 				PeriodSeconds:       13,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/liveznew",
 						Port: intstr.FromInt32(2371),
 					},
@@ -537,13 +536,13 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 		It("should correctly override partial changes", func() {
-			probe := getLivenessProbe(&v1.Probe{
+			probe := getLivenessProbe(&corev1.Probe{
 				InitialDelaySeconds: 11,
 				PeriodSeconds:       13,
 			})
-			Expect(probe).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			Expect(probe).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/livez",
 						Port: intstr.FromInt32(2381),
 					},
@@ -555,9 +554,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	})
 	Context("When merge with default probe", func() {
 		It("should correctly merge probe with default", func() {
-			defaultProbe := v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					HTTPGet: &v1.HTTPGetAction{
+			defaultProbe := corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
 						Path: "/livez",
 						Port: intstr.FromInt32(2379),
 					},
@@ -566,18 +565,18 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 			defaultProbeCopy := defaultProbe.DeepCopy()
 
-			probe := &v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					Exec: &v1.ExecAction{
+			probe := &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					Exec: &corev1.ExecAction{
 						Command: []string{"test"},
 					},
 				},
 				InitialDelaySeconds: 11,
 			}
 			result := mergeWithDefaultProbe(probe, defaultProbe)
-			Expect(result).To(Equal(&v1.Probe{
-				ProbeHandler: v1.ProbeHandler{
-					Exec: &v1.ExecAction{
+			Expect(result).To(Equal(&corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					Exec: &corev1.ExecAction{
 						Command: []string{"test"},
 					},
 				},
@@ -618,26 +617,26 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts = append(
 				localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts,
-				v1.VolumeMount{
+				corev1.VolumeMount{
 					Name:      "test",
 					MountPath: "/test/tmp.txt",
 				},
 			)
 			localCluster.Spec.PodTemplate.Spec.Containers[0].EnvFrom = append(
 				localCluster.Spec.PodTemplate.Spec.Containers[0].EnvFrom,
-				v1.EnvFromSource{
-					ConfigMapRef: &v1.ConfigMapEnvSource{
-						LocalObjectReference: v1.LocalObjectReference{Name: "test"},
+				corev1.EnvFromSource{
+					ConfigMapRef: &corev1.ConfigMapEnvSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "test"},
 					},
 				},
 			)
 			localCluster.Spec.PodTemplate.Spec.Containers[0].Ports = append(
 				localCluster.Spec.PodTemplate.Spec.Containers[0].Ports,
-				v1.ContainerPort{Name: "metrics", ContainerPort: 1111},
+				corev1.ContainerPort{Name: "metrics", ContainerPort: 1111},
 			)
 			localCluster.Spec.PodTemplate.Spec.Containers = append(
 				localCluster.Spec.PodTemplate.Spec.Containers,
-				v1.Container{
+				corev1.Container{
 					Name:  "exporter",
 					Image: "etcd-exporter",
 				},
@@ -645,18 +644,18 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			containers := generateContainers(localCluster)
 			if Expect(containers).To(HaveLen(2)) {
-				Expect(containers[0].EnvFrom).To(ContainElement(v1.EnvFromSource{
-					ConfigMapRef: &v1.ConfigMapEnvSource{
-						LocalObjectReference: v1.LocalObjectReference{Name: "test"},
+				Expect(containers[0].EnvFrom).To(ContainElement(corev1.EnvFromSource{
+					ConfigMapRef: &corev1.ConfigMapEnvSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "test"},
 					},
 				}))
-				Expect(containers[0].Ports).To(ContainElement(v1.ContainerPort{Name: "metrics", ContainerPort: 1111}))
+				Expect(containers[0].Ports).To(ContainElement(corev1.ContainerPort{Name: "metrics", ContainerPort: 1111}))
 				if Expect(containers[0].VolumeMounts).To(HaveLen(2)) {
-					Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+					Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 						Name:      "data",
 						MountPath: "/var/run/etcd",
 					}))
-					Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+					Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 						Name:      "test",
 						MountPath: "/test/tmp.txt",
 					}))
@@ -667,21 +666,21 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts = append(
 				localCluster.Spec.PodTemplate.Spec.Containers[0].VolumeMounts,
-				v1.VolumeMount{
+				corev1.VolumeMount{
 					Name:      "data",
 					MountPath: "/test/tmp.txt",
 				},
 			)
 			localCluster.Spec.PodTemplate.Spec.Containers[0].Ports = append(
 				localCluster.Spec.PodTemplate.Spec.Containers[0].Ports,
-				v1.ContainerPort{Name: "client", ContainerPort: 1111},
+				corev1.ContainerPort{Name: "client", ContainerPort: 1111},
 			)
 
 			containers := generateContainers(localCluster)
 			if Expect(containers).To(HaveLen(1)) {
-				Expect(containers[0].Ports).NotTo(ContainElement(v1.ContainerPort{Name: "client", ContainerPort: 1111}))
+				Expect(containers[0].Ports).NotTo(ContainElement(corev1.ContainerPort{Name: "client", ContainerPort: 1111}))
 				if Expect(containers[0].VolumeMounts).To(HaveLen(1)) {
-					Expect(containers[0].VolumeMounts).NotTo(ContainElement(v1.VolumeMount{
+					Expect(containers[0].VolumeMounts).NotTo(ContainElement(corev1.VolumeMount{
 						Name:      "data",
 						MountPath: "/tmp",
 					}))
@@ -702,22 +701,22 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			containers := generateContainers(localCluster)
 
-			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+			Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "peer-trusted-ca-certificate",
 				MountPath: "/etc/etcd/pki/peer/ca",
 				ReadOnly:  true,
 			}))
-			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+			Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "peer-certificate",
 				MountPath: "/etc/etcd/pki/peer/cert",
 				ReadOnly:  true,
 			}))
-			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+			Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "server-certificate",
 				MountPath: "/etc/etcd/pki/server/cert",
 				ReadOnly:  true,
 			}))
-			Expect(containers[0].VolumeMounts).To(ContainElement(v1.VolumeMount{
+			Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "client-trusted-ca-certificate",
 				MountPath: "/etc/etcd/pki/client/ca",
 				ReadOnly:  true,
