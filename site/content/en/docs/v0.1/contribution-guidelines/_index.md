@@ -14,7 +14,7 @@ more.
 Using this way, you don't be able to debug the controller locally. After every change you will have to redeploy changes.
 
 #### Pre-requisites
-- Any docker-like container tool, "docker" by default. For more information search for: `CONTAINER_TOOL` in Makefile.
+- Any docker-like container tool, "docker" by default. For more information search for: `CONTAINER_TOOL` in Makefile
 - [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
 
 **Steps**
