@@ -97,7 +97,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						"app": "etcd",
 					},
 				},
-				Spec: etcdaenixiov1alpha1.PodSpec{
+				Spec: corev1.PodSpec{
 					ServiceAccountName: "etcd-operator",
 					ReadinessGates: []v1.PodReadinessGate{
 						{
@@ -256,7 +256,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 		It("should successfully override probes", func() {
 			etcdcluster := etcdcluster.DeepCopy()
-			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
+			etcdcluster.Spec.PodTemplate.Spec = corev1.PodSpec{
 				Containers: []v1.Container{
 					{
 						Name: "etcd",

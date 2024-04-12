@@ -57,6 +57,11 @@ var _ = Describe("EtcdCluster Controller", func() {
 						Namespace: "default",
 					},
 					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+						PodTemplate: etcdaenixiov1alpha1.PodTemplate{
+							Spec: v1.PodSpec{
+								Containers: []v1.Container{},
+							},
+						},
 						Replicas: ptr.To(int32(3)),
 						Storage: etcdaenixiov1alpha1.StorageSpec{
 							EmptyDir: &v1.EmptyDirVolumeSource{},
