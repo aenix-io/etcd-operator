@@ -33,8 +33,7 @@ Using this way, you don't be able to debug the controller locally. After every c
 
 4. To deploy your code changes, redeploy etcd-operator with new image:
     ```shell
-    make kind-load
-    make redeploy
+    make kind-load && make redeploy
     ```
 
 5. To clean up after all, delete kind cluster:
