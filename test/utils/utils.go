@@ -17,10 +17,17 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"log"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
 )
@@ -67,4 +74,68 @@ func GetProjectDir() (string, error) {
 	}
 	wd = strings.Replace(wd, "/test/e2e", "", -1)
 	return wd, nil
+}
+
+// GetFreePort asks the kernel for a free open port that is ready to use.
+func GetFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer func(l *net.TCPListener) {
+				err := l.Close()
+				if err != nil {
+					log.Fatal(err)
+				}
+			}(l)
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
+
+// GetEtcdClient creates client for interacting with etcd.
+func GetEtcdClient(endpoints []string) *clientv3.Client {
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return cli
+}
+
+// IsEtcdClusterHealthy checks etcd cluster health.
+func IsEtcdClusterHealthy(endpoints []string) bool {
+	// Should be changed when etcd is healthy
+	health := false
+
+	// Configure client
+	client := GetEtcdClient(endpoints)
+	defer func(client *clientv3.Client) {
+		err := client.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(client)
+
+	// Prepare the maintenance client
+	maint := clientv3.NewMaintenance(client)
+
+	// Context for the call
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Perform the status call to check health
+	for i := range endpoints {
+		resp, err := maint.Status(ctx, endpoints[i])
+		if err != nil {
+			log.Fatalf("Failed to get endpoint health: %v", err)
+		} else {
+			fmt.Printf("Endpoint is healthy: %s\n", resp.Version)
+			health = true
+		}
+	}
+	return health
 }

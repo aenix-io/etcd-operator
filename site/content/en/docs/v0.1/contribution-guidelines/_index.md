@@ -31,8 +31,9 @@ Using this way, you don't be able to debug the controller locally. After every c
     make deploy
     ```
 
-4. To deploy your code changes, redeploy etcd-operator:
+4. To deploy your code changes, redeploy etcd-operator with new image:
     ```shell
+    make kind-load
     make redeploy
     ```
 

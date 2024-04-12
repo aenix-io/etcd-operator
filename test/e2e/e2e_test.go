@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"os/exec"
+	"strconv"
 
 	"github.com/aenix-io/etcd-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -27,12 +28,19 @@ import (
 var _ = Describe("controller", Ordered, func() {
 
 	BeforeAll(func() {
+		var err error
 		By("prepare kind environment")
 		cmd := exec.Command("make", "kind-prepare")
-		_, _ = utils.Run(cmd)
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 		By("upload latest etcd-operator docker image to kind cluster")
 		cmd = exec.Command("make", "kind-load")
-		_, _ = utils.Run(cmd)
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		By("deploy etcd-operator")
+		cmd = exec.Command("make", "deploy")
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	})
 
 	AfterAll(func() {
@@ -41,31 +49,46 @@ var _ = Describe("controller", Ordered, func() {
 		_, _ = utils.Run(cmd)
 	})
 
-	Context("Operator", func() {
-		It("should run successfully", func() {
-			var err error
-			By("deploy etcd-operator")
-			cmd := exec.Command("make", "deploy")
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
-
-		It("should deploy simple etcd cluster", func() {
+	Context("Simple", func() {
+		It("should deploy etcd cluster", func() {
 			var err error
 			const namespace = "test-simple-etcd-cluster"
 
-			By("apply simple etcd cluster manifest")
+			By("create namespace")
 			cmd := exec.Command("kubectl", "create", "namespace", namespace)
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-			//cmd = exec.Command("kubectl", "apply",
-			//	"--filename", "/home/hiddenmarten/Git/github/aenix-io/etcd-operator/examples/manifests/etcdcluster-simple.yaml",
-			//	"--namespace", namespace,
-			//)
-			//_, err = utils.Run(cmd)
-			//ExpectWithOffset(1, err).NotTo(HaveOccurred())
-		})
+			By("apply simple etcd cluster manifest")
+			dir, _ := utils.GetProjectDir()
+			cmd = exec.Command("kubectl", "apply",
+				"--filename", dir+"/examples/manifests/etcdcluster-simple.yaml",
+				"--namespace", namespace,
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
+			By("wait for statefulset is ready")
+			cmd = exec.Command("kubectl", "wait",
+				"statefulset/test", "--for='jsonpath={.status.availableReplicas}=3'",
+				"--namespace", namespace,
+				"--timeout", "5m",
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("port-forward service to localhost")
+			port, _ := utils.GetFreePort()
+			cmd = exec.Command("kubectl", "port-forward",
+				"service/test-client", strconv.Itoa(port)+":2379",
+				"--namespace", namespace,
+				"&",
+			)
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("check etcd cluster is healthy")
+			Expect(utils.IsEtcdClusterHealthy([]string{"localhost:" + strconv.Itoa(port)})).To(BeTrue())
+		})
 	})
 })
