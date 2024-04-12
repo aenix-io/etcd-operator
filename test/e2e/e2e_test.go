@@ -19,13 +19,14 @@ package e2e
 import (
 	"os/exec"
 	"strconv"
+	"sync"
 
 	"github.com/aenix-io/etcd-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("controller", Ordered, func() {
+var _ = Describe("etcd-operator", Ordered, func() {
 
 	BeforeAll(func() {
 		var err error
@@ -53,6 +54,8 @@ var _ = Describe("controller", Ordered, func() {
 		It("should deploy etcd cluster", func() {
 			var err error
 			const namespace = "test-simple-etcd-cluster"
+			var wg sync.WaitGroup
+			wg.Add(1)
 
 			By("create namespace")
 			cmd := exec.Command("kubectl", "create", "namespace", namespace)
@@ -70,7 +73,8 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("wait for statefulset is ready")
 			cmd = exec.Command("kubectl", "wait",
-				"statefulset/test", "--for='jsonpath={.status.availableReplicas}=3'",
+				"statefulset/test",
+				"--for", "jsonpath={.status.availableReplicas}=3",
 				"--namespace", namespace,
 				"--timeout", "5m",
 			)
@@ -79,16 +83,21 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("port-forward service to localhost")
 			port, _ := utils.GetFreePort()
-			cmd = exec.Command("kubectl", "port-forward",
-				"service/test-client", strconv.Itoa(port)+":2379",
-				"--namespace", namespace,
-				"&",
-			)
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				cmd = exec.Command("kubectl", "port-forward",
+					"service/test-client", strconv.Itoa(port)+":2379",
+					"--namespace", namespace,
+				)
+				_, err = utils.Run(cmd)
+			}()
 
 			By("check etcd cluster is healthy")
-			Expect(utils.IsEtcdClusterHealthy([]string{"localhost:" + strconv.Itoa(port)})).To(BeTrue())
+			endpoints := []string{"localhost:" + strconv.Itoa(port)}
+			for i := 0; i < 3; i++ {
+				Expect(utils.IsEtcdClusterHealthy(endpoints)).To(BeTrue())
+			}
 		})
 	})
 })
