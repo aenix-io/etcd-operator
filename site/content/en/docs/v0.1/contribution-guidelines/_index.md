@@ -14,7 +14,7 @@ more.
 Using this way, you don't be able to debug the controller locally. After every change you will have to redeploy changes.
 
 #### Pre-requisites
-- Any docker-like container tool, "docker" by default. For more information search for: `CONTAINER_TOOL` in Makefile
+- Any docker-like container tool, "docker" by default. For more information search for: `CONTAINER_TOOL` in Makefile.
 - [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
 
 **Steps**
@@ -23,12 +23,12 @@ Using this way, you don't be able to debug the controller locally. After every c
     make kind-prepare
     ```
 
-2. Build image and load it into kind cluster
+2. Build image and load it into kind cluster:
     ```shell
     make kind-load
     ```
 
-3. Deploy CRDs, etcd-operator, RBAC, webhook certs into kind cluster
+3. Deploy CRDs, etcd-operator, RBAC, webhook certs into kind cluster:
     ```shell
     make deploy
     ```
