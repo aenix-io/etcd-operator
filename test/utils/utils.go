@@ -133,8 +133,10 @@ func IsEtcdClusterHealthy(endpoints []string) bool {
 		if err != nil {
 			log.Fatalf("Failed to get endpoint health: %v", err)
 		} else {
-			fmt.Printf("Endpoint is healthy: %s\n", resp.Version)
-			health = true
+			if resp.Errors == nil {
+				fmt.Printf("Endpoint is healthy: %s\n", resp.Version)
+				health = true
+			}
 		}
 	}
 	return health
