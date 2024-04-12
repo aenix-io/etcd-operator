@@ -12,8 +12,9 @@ more.
 
 ### Easy way
 Using this way, you don't be able to debug the controller locally. After every change you will have to redeploy changes.
+
 #### Pre-requisites
-- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+- Any docker-like container tool, "docker" by default. For more information in Makefile, search for: `CONTAINER_TOOL`.
 
 **Steps**
 1. Create and prepare kind cluster:
