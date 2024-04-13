@@ -9,16 +9,16 @@ on:
 
 jobs:
   test:
-    name: test ${{ matrix.k8s.attribute }}
+    name: test on k8s ${{ matrix.k8s.attribute }} version
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     strategy:
       matrix:
         k8s:
           - version: 1.27.1
-            attribute: latest-2
+            attribute: penultimate
           - version: 1.28.0
-            attribute: latest-1
+            attribute: previous
           - version: 1.29.0
             attribute: latest
     runs-on: ubuntu-22.04
