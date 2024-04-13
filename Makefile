@@ -137,12 +137,12 @@ build-dist-manifests: manifests generate kustomize yq ## Generate a consolidated
 	mkdir -p dist
 	@if [ -d "config/crd" ]; then \
 		$(KUSTOMIZE) build config/crd > dist/etcd-operator.yaml; \
-		$(KUSTOMIZE) build config/crd > dist/etcd-operator.crd.yaml; \
+		$(KUSTOMIZE) build config/crd > dist/etcd-operator.crds.yaml; \
 	fi
 	echo "---" >> dist/etcd-operator.yaml # Add a document separator before appending
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
 	$(KUSTOMIZE) build config/default >> dist/etcd-operator.yaml
-	$(KUSTOMIZE) build config/default | $(YQ) eval 'select(.kind != "CustomResourceDefinition")' -  > dist/etcd-operator.non-crd.yaml
+	$(KUSTOMIZE) build config/default | $(YQ) eval 'select(.kind != "CustomResourceDefinition")' -  > dist/etcd-operator.non-crds.yaml
 
 ##@ Deployment
 

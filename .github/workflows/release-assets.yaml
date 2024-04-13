@@ -33,14 +33,14 @@ jobs:
       - uses: svenstaro/upload-release-action@2.9.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/etcd-operator.crd.yaml
-          asset_name: etcd-operator.crd.yaml
+          file: dist/etcd-operator.crds.yaml
+          asset_name: etcd-operator.crds.yaml
           tag: ${{ github.ref }}
           overwrite: true
       - uses: svenstaro/upload-release-action@2.9.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/etcd-operator.non-crd.yaml
-          asset_name: etcd-operator.non-crd.yaml
+          file: dist/etcd-operator.non-crds.yaml
+          asset_name: etcd-operator.non-crds.yaml
           tag: ${{ github.ref }}
           overwrite: true
