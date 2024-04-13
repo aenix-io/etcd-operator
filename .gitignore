@@ -6,6 +6,7 @@
 *.so
 *.dylib
 bin
+dist
 testbin/*
 Dockerfile.cross
 
