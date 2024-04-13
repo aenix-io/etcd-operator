@@ -9,15 +9,22 @@ on:
 
 jobs:
   test:
+    name: "test (attribute: ${ matrix.attribute })"
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     strategy:
       matrix:
-        k8s_version: [1.27.1,1.28.0,1.29.0]
+        k8s:
+          - version: 1.27.1
+            attribute: latest-2
+          - version: 1.28.0
+            attribute: latest-1
+          - version: 1.29.0
+            attribute: latest
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4.1.1
       - uses: actions/setup-go@v5.0.0
         with:
           go-version: 1.22.2
-      - run: ENVTEST_K8S_VERSION=${{ matrix.k8s_version }} make test
+      - run: ENVTEST_K8S_VERSION=${{ matrix.k8s.version }} make test
