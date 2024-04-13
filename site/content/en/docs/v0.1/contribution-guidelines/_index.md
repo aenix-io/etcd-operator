@@ -12,8 +12,10 @@ more.
 
 ### Easy way
 Using this way, you don't be able to debug the controller locally. After every change you will have to redeploy changes.
+
 #### Pre-requisites
-- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation)
+- Any docker-like container tool, "docker" by default. For more information search for: `CONTAINER_TOOL` in Makefile.
+- [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
 
 **Steps**
 1. Create and prepare kind cluster:
@@ -21,19 +23,19 @@ Using this way, you don't be able to debug the controller locally. After every c
     make kind-prepare
     ```
 
-2. Install CRDs into kind cluster
+2. Build image and load it into kind cluster:
     ```shell
-    make install
+    make kind-load
     ```
 
-3. Build image and load it into kind cluster, deploy etcd-operator, RBAC, webhook certs
+3. Deploy CRDs, etcd-operator, RBAC, webhook certs into kind cluster:
     ```shell
     make deploy
     ```
 
-4. To deploy your code changes, redeploy etcd-operator:
+4. To deploy your code changes, load a new image and redeploy etcd-operator:
     ```shell
-    make redeploy
+    make kind-load && make redeploy
     ```
 
 5. To clean up after all, delete kind cluster:
