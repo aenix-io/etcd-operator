@@ -49,31 +49,14 @@ type certificate struct {
 
 type certificates map[string]certConfigurator
 
-type etcdConfigurator interface {
-	ContainerName() string
-	VolumeName() string
-	MountPath() string
-	DirName() string
-	DataPath() string
-}
-
-type etcd struct {
-	containerName string
-	volumeName    string
-	mountPath     string
-	dirName       string
-}
+const (
+	etcdContainerName = "etcd"
+	etcdVolumeName    = "data"
+	etcdDataMountPath = "/var/run/etcd"
+	ectdDataDirName   = "default.etcd"
+)
 
 var (
-	config = etcd{
-		containerName: "etcd",
-		volumeName:    "data",
-		mountPath:     "/var/run/etcd",
-		dirName:       "default.etcd",
-	}
-
-	etcdConfig etcdConfigurator = config
-
 	etcdCertificates = certificates{
 		"peer-trusted-ca-certificate": getCertificateConfig("peer-trusted-ca-certificate",
 			"/etc/etcd/pki/peer/ca", "ca.crt", ""),
@@ -170,18 +153,12 @@ func CreateOrUpdateStatefulSet(
 
 func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 	volumes := []corev1.Volume{}
+
 	dataVolume := generateDataVolume(cluster)
+	volumes = append(volumes, dataVolume)
 
 	secretVolumes := generateSecretVolumes(cluster)
-
-	volumesMap := map[string]corev1.Volume{
-		etcdConfig.VolumeName(): dataVolume,
-	}
-	for name, volume := range secretVolumes {
-		volumesMap[name] = volume
-	}
-
-	for _, volume := range volumesMap {
+	for _, volume := range secretVolumes {
 		volumes = append(volumes, volume)
 	}
 
@@ -241,7 +218,7 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 
 	containers := make([]corev1.Container, 0, len(cluster.Spec.PodTemplate.Spec.Containers))
 	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
-		if c.Name == etcdConfig.ContainerName() {
+		if c.Name == etcdContainerName {
 			c.Command = generateEtcdCommand()
 			c.Args = generateEtcdArgs(cluster)
 			c.Ports = mergePorts(c.Ports, []corev1.ContainerPort{
@@ -267,8 +244,8 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
 			c.Env = mergeEnvs(c.Env, podEnv)
 
-			dataVolumeMounts := updateOrAddDataVolumeMount(c.VolumeMounts, etcdConfig.VolumeName(),
-				etcdConfig.MountPath(), false)
+			dataVolumeMounts := updateOrAddDataVolumeMount(c.VolumeMounts, etcdVolumeName,
+				etcdDataMountPath, false)
 			c.VolumeMounts = generateVolumeMounts(cluster, dataVolumeMounts)
 		}
 
@@ -407,26 +384,6 @@ func getCertificateConfig(name, mountPath, crtFile, keyFile string) certificate 
 	}
 }
 
-func (e etcd) ContainerName() string {
-	return e.containerName
-}
-
-func (e etcd) VolumeName() string {
-	return e.volumeName
-}
-
-func (e etcd) MountPath() string {
-	return e.mountPath
-}
-
-func (e etcd) DirName() string {
-	return e.dirName
-}
-
-func (e etcd) DataPath() string {
-	return filepath.Join(e.mountPath, e.dirName)
-}
-
 func hasTLSConfigInSpec(cluster *etcdaenixiov1alpha1.EtcdCluster, secretType string) bool {
 	if cluster.Spec.Security == nil {
 		return false
@@ -449,7 +406,7 @@ func baseEtcdFlags() []string {
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
-		"--data-dir=" + etcdConfig.DataPath(),
+		"--data-dir=" + ectdDataDirName,
 	}
 }
 
@@ -561,7 +518,7 @@ func generateDataVolume(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Volume 
 	}
 
 	return corev1.Volume{
-		Name:         etcdConfig.VolumeName(),
+		Name:         etcdVolumeName,
 		VolumeSource: dataVolumeSource,
 	}
 }
