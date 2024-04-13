@@ -163,9 +163,10 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize kind-load ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply -f -
+	$(KUBECTL) wait deployment.apps/etcd-operator-controller-manager --for condition=Available --namespace $(NAMESPACE) --timeout 5m
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -196,8 +197,10 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 kind-prepare: kind-create
 	# Install prometheus operator
 	$(KUBECTL) apply --server-side -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
+	$(KUBECTL) wait deployment.apps/prometheus-operator --for condition=Available --namespace default --timeout 5m
 	# Install cert-manager operator
 	$(KUBECTL) apply --server-side -f "https://github.com/jetstack/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml"
+	$(KUBECTL) wait deployment.apps/cert-manager-webhook --for condition=Available --namespace cert-manager --timeout 5m
 
 ##@ Dependencies
 
