@@ -23,21 +23,21 @@ jobs:
           echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
           echo "RELEASE_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
       - run: make build-dist-manifests IMG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${RELEASE_TAG}
-      - uses: svenstaro/upload-release-action@v2.9.0
+      - uses: svenstaro/upload-release-action@2.9.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/etcd-operator.yaml
           asset_name: etcd-operator.yaml
           tag: ${{ github.ref }}
           overwrite: true
-      - uses: svenstaro/upload-release-action@v2.9.0
+      - uses: svenstaro/upload-release-action@2.9.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/etcd-operator.crd.yaml
           asset_name: etcd-operator.crd.yaml
           tag: ${{ github.ref }}
           overwrite: true
-      - uses: svenstaro/upload-release-action@v2.9.0
+      - uses: svenstaro/upload-release-action@2.9.0
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: dist/etcd-operator.non-crd.yaml
