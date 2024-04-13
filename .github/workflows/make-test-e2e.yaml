@@ -9,8 +9,18 @@ on:
 
 jobs:
   test-e2e:
+    name: test-e2e on k8s ${{ matrix.k8s.attribute }} version
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
+    strategy:
+      matrix:
+        k8s:
+          - version: 1.27.1
+            attribute: penultimate
+          - version: 1.28.0
+            attribute: previous
+          - version: 1.29.0
+            attribute: latest
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4.1.1
@@ -23,4 +33,4 @@ jobs:
           kubectl-version: v1.29.3
           # Empty kubeconfig file
           base64-kube-config: "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCnByZWZlcmVuY2VzOiB7fQo="
-      - run: make test-e2e
+      - run: ENVTEST_K8S_VERSION=${{ matrix.k8s.version }} make test-e2e
