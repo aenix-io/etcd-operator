@@ -8,7 +8,7 @@ on:
       - main
 
 jobs:
-  release-draft:
+  release-drafter:
     runs-on: ubuntu-22.04
     steps:
       - uses: release-drafter/release-drafter@v6.0.0
