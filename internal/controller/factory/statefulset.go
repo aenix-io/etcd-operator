@@ -75,10 +75,14 @@ var (
 	etcdConfig etcdConfigurator = config
 
 	etcdCertificates = certificates{
-		"peer-trusted-ca-certificate":   getCertificateConfig("peer-trusted-ca-certificate", "/etc/etcd/pki/peer/ca", "ca.crt", ""),
-		"peer-certificate":              getCertificateConfig("peer-certificate", "/etc/etcd/pki/peer/cert", "tls.crt", "tls.key"),
-		"server-certificate":            getCertificateConfig("server-certificate", "/etc/etcd/pki/server/cert", "tls.crt", "tls.key"),
-		"client-trusted-ca-certificate": getCertificateConfig("client-trusted-ca-certificate", "/etc/etcd/pki/client/ca", "ca.crt", ""),
+		"peer-trusted-ca-certificate": getCertificateConfig("peer-trusted-ca-certificate",
+			"/etc/etcd/pki/peer/ca", "ca.crt", ""),
+		"peer-certificate": getCertificateConfig("peer-certificate",
+			"/etc/etcd/pki/peer/cert", "tls.crt", "tls.key"),
+		"server-certificate": getCertificateConfig("server-certificate",
+			"/etc/etcd/pki/server/cert", "tls.crt", "tls.key"),
+		"client-trusted-ca-certificate": getCertificateConfig("client-trusted-ca-certificate",
+			"/etc/etcd/pki/client/ca", "ca.crt", ""),
 	}
 
 	peerTrustedCACertificate   = etcdCertificates["peer-trusted-ca-certificate"]
@@ -165,48 +169,18 @@ func CreateOrUpdateStatefulSet(
 }
 
 func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
-	volumesMap := make(map[string]corev1.Volume)
+	volumes := []corev1.Volume{}
+	dataVolume := generateDataVolume(cluster)
 
-	var dataVolumeSource corev1.VolumeSource
-	if cluster.Spec.Storage.EmptyDir != nil {
-		dataVolumeSource = corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir}
-	} else {
-		dataVolumeSource = corev1.VolumeSource{
-			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-				ClaimName: GetPVCName(cluster),
-			},
-		}
+	secretVolumes := generateSecretVolumes(cluster)
+
+	volumesMap := map[string]corev1.Volume{
+		etcdConfig.VolumeName(): dataVolume,
 	}
-	volumesMap[etcdConfig.VolumeName()] = corev1.Volume{
-		Name:         etcdConfig.VolumeName(),
-		VolumeSource: dataVolumeSource,
+	for name, volume := range secretVolumes {
+		volumesMap[name] = volume
 	}
 
-	if cluster.Spec.Security != nil {
-		addSecretVolume := func(name, secretName string) {
-			volumesMap[name] = corev1.Volume{
-				Name: name,
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: secretName,
-					},
-				},
-			}
-		}
-
-		if cluster.Spec.Security.TLS.PeerSecret != "" {
-			addSecretVolume(peerTrustedCACertificate.Name(), cluster.Spec.Security.TLS.PeerTrustedCASecret)
-			addSecretVolume(peerCertificate.Name(), cluster.Spec.Security.TLS.PeerSecret)
-		}
-		if cluster.Spec.Security.TLS.ServerSecret != "" {
-			addSecretVolume(serverCertificate.Name(), cluster.Spec.Security.TLS.ServerSecret)
-		}
-		if cluster.Spec.Security.TLS.ClientSecret != "" {
-			addSecretVolume(clientTrustedCACertificate.Name(), cluster.Spec.Security.TLS.ClientTrustedCASecret)
-		}
-	}
-
-	var volumes []corev1.Volume
 	for _, volume := range volumesMap {
 		volumes = append(volumes, volume)
 	}
@@ -214,67 +188,12 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 	return volumes
 }
 
-func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.VolumeMount {
-	volumeMounts := []corev1.VolumeMount{}
-
-	security := cluster.Spec.Security
-	if security != nil {
-		if security.TLS.PeerSecret != "" {
-			volumeMounts = append(volumeMounts, []corev1.VolumeMount{
-				{
-					Name:      peerTrustedCACertificate.Name(),
-					ReadOnly:  true,
-					MountPath: peerTrustedCACertificate.MountPath(),
-				},
-				{
-					Name:      peerCertificate.Name(),
-					ReadOnly:  true,
-					MountPath: peerCertificate.MountPath(),
-				},
-			}...)
-		}
-
-		if security.TLS.ServerSecret != "" {
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      serverCertificate.Name(),
-				ReadOnly:  true,
-				MountPath: serverCertificate.MountPath(),
-			})
-		}
-
-		if security.TLS.ClientSecret != "" {
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      clientTrustedCACertificate.Name(),
-				ReadOnly:  true,
-				MountPath: clientTrustedCACertificate.MountPath(),
-			})
-		}
-	}
-
-	// Iterate over containers to find the etcd container
-	for _, c := range cluster.Spec.PodTemplate.Spec.Containers {
-		if c.Name == etcdConfig.ContainerName() {
-			// Look for existing dataVolumeName volume mount
-			found := false
-			for i := range volumeMounts {
-				if volumeMounts[i].Name == etcdConfig.VolumeName() {
-					volumeMounts[i].ReadOnly = false
-					volumeMounts[i].MountPath = etcdConfig.MountPath()
-					found = true
-					break
-				}
-			}
-			// If dataVolumeName volume mount not found, add it
-			if !found {
-				volumeMounts = append(volumeMounts, corev1.VolumeMount{
-					Name:      etcdConfig.VolumeName(),
-					ReadOnly:  false,
-					MountPath: etcdConfig.MountPath(),
-				})
-			}
-			break // No need to continue loop after finding etcd container
-		}
-	}
+func generateVolumeMounts(
+	cluster *etcdaenixiov1alpha1.EtcdCluster,
+	dataVolumeMount []corev1.VolumeMount,
+) []corev1.VolumeMount {
+	tlsVolumeMounts := generateTLSSecretVolumeMounts(cluster)
+	volumeMounts := mergeVolumeMounts(tlsVolumeMounts, dataVolumeMount)
 
 	return volumeMounts
 }
@@ -286,58 +205,15 @@ func generateEtcdCommand() []string {
 }
 
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
-	args := []string{}
+	args := baseEtcdFlags()
 
-	// Helper function to check TLS settings presence
-	hasTLS := func(secret string) bool {
-		return cluster.Spec.Security != nil && secret != ""
-	}
-
-	// Determine client protocol (http or https)
-	clientProtocol := "http"
-	if hasTLS(cluster.Spec.Security.TLS.ServerSecret) {
-		clientProtocol = "https"
-	}
-
-	args = append(args,
-		"--name=$(POD_NAME)",
-		"--listen-metrics-urls=http://0.0.0.0:2381",
-		"--listen-peer-urls=https://0.0.0.0:2380",
-		"--data-dir="+etcdConfig.DataPath(),
-	)
-
-	// Determine listen client URLs
-	listenClientURL := fmt.Sprintf("%s://0.0.0.0:2379", clientProtocol)
-	args = append(args, "--listen-client-urls="+listenClientURL)
-
-	// Determine advertise client URLs and initial advertise peer URLs
-	advertiseClientURL := fmt.Sprintf("%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", clientProtocol, cluster.Name)
-	initialAdvertisePeerURL := fmt.Sprintf("https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name)
-	args = append(args,
-		"--advertise-client-urls="+advertiseClientURL,
-		"--initial-advertise-peer-urls="+initialAdvertisePeerURL,
-	)
-
-	// Append TLS settings if enabled
-	if hasTLS(cluster.Spec.Security.TLS.PeerSecret) {
-		args = append(args,
-			"--peer-trusted-ca-file="+peerTrustedCACertificate.CrtFilePath(),
-			"--peer-cert-file="+peerCertificate.CrtFilePath(),
-			"--peer-key-file="+peerCertificate.KeyFilePath(),
-			"--peer-client-cert-auth",
-		)
-	}
-	if hasTLS(cluster.Spec.Security.TLS.ServerSecret) {
-		args = append(args,
-			"--cert-file="+serverCertificate.CrtFilePath(),
-			"--key-file="+serverCertificate.KeyFilePath(),
-		)
-	}
-	if hasTLS(cluster.Spec.Security.TLS.ClientSecret) {
-		args = append(args,
-			"--trusted-ca-file="+clientTrustedCACertificate.CrtFilePath(),
-			"--client-cert-auth",
-		)
+	// Append TLS flags
+	args = append(args, etcdTLSFlags(cluster)...)
+	// Append URLs flags
+	args = append(args, etcdURLsFlags(cluster)...)
+	// Append extra flags
+	if cluster.Spec.Options != nil {
+		args = append(args, etcdExtraFlags(cluster.Spec.Options)...)
 	}
 
 	return args
@@ -374,7 +250,8 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			})
 			clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
 			envIdx := slices.IndexFunc(c.EnvFrom, func(env corev1.EnvFromSource) bool {
-				return env.ConfigMapRef != nil && env.ConfigMapRef.LocalObjectReference.Name == clusterStateConfigMapName
+				return env.ConfigMapRef != nil &&
+					env.ConfigMapRef.LocalObjectReference.Name == clusterStateConfigMapName
 			})
 			if envIdx == -1 {
 				c.EnvFrom = append(c.EnvFrom, corev1.EnvFromSource{
@@ -389,7 +266,10 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			c.LivenessProbe = getLivenessProbe(c.LivenessProbe)
 			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
 			c.Env = mergeEnvs(c.Env, podEnv)
-			c.VolumeMounts = generateVolumeMounts(cluster)
+
+			dataVolumeMounts := updateOrAddDataVolumeMount(c.VolumeMounts, etcdConfig.VolumeName(),
+				etcdConfig.MountPath(), false)
+			c.VolumeMounts = generateVolumeMounts(cluster, dataVolumeMounts)
 		}
 
 		containers = append(containers, c)
@@ -545,4 +425,218 @@ func (e etcd) DirName() string {
 
 func (e etcd) DataPath() string {
 	return filepath.Join(e.mountPath, e.dirName)
+}
+
+func hasTLSConfigInSpec(cluster *etcdaenixiov1alpha1.EtcdCluster, secretType string) bool {
+	if cluster.Spec.Security == nil {
+		return false
+	}
+
+	switch secretType {
+	case "PeerSecret":
+		return cluster.Spec.Security.TLS.PeerSecret != ""
+	case "ServerSecret":
+		return cluster.Spec.Security.TLS.ServerSecret != ""
+	case "ClientSecret":
+		return cluster.Spec.Security.TLS.ClientSecret != ""
+	default:
+		return false
+	}
+}
+
+func baseEtcdFlags() []string {
+	return []string{
+		"--name=$(POD_NAME)",
+		"--listen-metrics-urls=http://0.0.0.0:2381",
+		"--listen-peer-urls=https://0.0.0.0:2380",
+		"--data-dir=" + etcdConfig.DataPath(),
+	}
+}
+
+func etcdTLSFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	args := []string{}
+
+	if hasTLSConfigInSpec(cluster, "PeerSecret") {
+		args = append(args,
+			"--peer-trusted-ca-file="+peerTrustedCACertificate.CrtFilePath(),
+			"--peer-cert-file="+peerCertificate.CrtFilePath(),
+			"--peer-key-file="+peerCertificate.KeyFilePath(),
+			"--peer-client-cert-auth",
+		)
+	}
+	if hasTLSConfigInSpec(cluster, "ServerSecret") {
+		args = append(args,
+			"--cert-file="+serverCertificate.CrtFilePath(),
+			"--key-file="+serverCertificate.KeyFilePath(),
+		)
+	}
+	if hasTLSConfigInSpec(cluster, "ClientSecret") {
+		args = append(args,
+			"--trusted-ca-file="+clientTrustedCACertificate.CrtFilePath(),
+			"--client-cert-auth",
+		)
+	}
+	return args
+}
+
+func etcdURLsFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	args := []string{}
+
+	clientProtocol := "http"
+	if hasTLSConfigInSpec(cluster, "ServerSecret") {
+		clientProtocol = "https"
+	}
+
+	listenClientURL := fmt.Sprintf("%s://0.0.0.0:2379", clientProtocol)
+	advertiseClientURL := fmt.Sprintf("%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379",
+		clientProtocol, cluster.Name)
+	initialAdvertisePeerURL := fmt.Sprintf("https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name)
+
+	args = append(args, "--listen-client-urls="+listenClientURL)
+	args = append(args, "--advertise-client-urls="+advertiseClientURL)
+	args = append(args, "--initial-advertise-peer-urls="+initialAdvertisePeerURL)
+
+	return args
+}
+
+func etcdExtraFlags(options map[string]string) []string {
+	args := []string{}
+
+	for name, value := range options {
+		flag := "--" + name
+		if len(value) == 0 {
+			args = append(args, flag)
+		} else {
+			args = append(args, fmt.Sprintf("%s=%s", flag, value))
+		}
+	}
+	return args
+}
+
+func generateSecretVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]corev1.Volume {
+	volumesMap := make(map[string]corev1.Volume)
+
+	addSecretVolume := func(name, secretName string) {
+		volumesMap[name] = createSecretVolume(name, secretName)
+	}
+
+	if cluster.Spec.Security != nil {
+		if cluster.Spec.Security.TLS.PeerSecret != "" {
+			addSecretVolume(peerTrustedCACertificate.Name(), cluster.Spec.Security.TLS.PeerTrustedCASecret)
+			addSecretVolume(peerCertificate.Name(), cluster.Spec.Security.TLS.PeerSecret)
+		}
+		if cluster.Spec.Security.TLS.ServerSecret != "" {
+			addSecretVolume(serverCertificate.Name(), cluster.Spec.Security.TLS.ServerSecret)
+		}
+		if cluster.Spec.Security.TLS.ClientSecret != "" {
+			addSecretVolume(clientTrustedCACertificate.Name(), cluster.Spec.Security.TLS.ClientTrustedCASecret)
+		}
+	}
+
+	return volumesMap
+}
+
+func createSecretVolume(name, secretName string) corev1.Volume {
+	return corev1.Volume{
+		Name: name,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: secretName,
+			},
+		},
+	}
+}
+
+func generateDataVolume(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Volume {
+	var dataVolumeSource corev1.VolumeSource
+
+	if cluster.Spec.Storage.EmptyDir != nil {
+		dataVolumeSource = corev1.VolumeSource{EmptyDir: cluster.Spec.Storage.EmptyDir}
+	} else {
+		dataVolumeSource = corev1.VolumeSource{
+			PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: GetPVCName(cluster),
+			},
+		}
+	}
+
+	return corev1.Volume{
+		Name:         etcdConfig.VolumeName(),
+		VolumeSource: dataVolumeSource,
+	}
+}
+
+func updateOrAddDataVolumeMount(volumeMounts []corev1.VolumeMount,
+	volumeName, mountPath string, readOnly bool) []corev1.VolumeMount {
+	found := false
+
+	for i := range volumeMounts {
+		if volumeMounts[i].Name == volumeName {
+			volumeMounts[i].ReadOnly = readOnly
+			volumeMounts[i].MountPath = mountPath
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      volumeName,
+			ReadOnly:  readOnly,
+			MountPath: mountPath,
+		})
+	}
+
+	return volumeMounts
+}
+
+func generateTLSSecretVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.VolumeMount {
+	volumeMounts := []corev1.VolumeMount{}
+
+	if hasTLSConfigInSpec(cluster, "") {
+		return volumeMounts
+	}
+
+	if hasTLSConfigInSpec(cluster, "PeerSecret") {
+		volumeMounts = append(volumeMounts, []corev1.VolumeMount{
+			{
+				Name:      peerTrustedCACertificate.Name(),
+				ReadOnly:  true,
+				MountPath: peerTrustedCACertificate.MountPath(),
+			},
+			{
+				Name:      peerCertificate.Name(),
+				ReadOnly:  true,
+				MountPath: peerCertificate.MountPath(),
+			},
+		}...)
+	}
+
+	if hasTLSConfigInSpec(cluster, "ServerSecret") {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      serverCertificate.Name(),
+			ReadOnly:  true,
+			MountPath: serverCertificate.MountPath(),
+		})
+	}
+
+	if hasTLSConfigInSpec(cluster, "ClientSecret") {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      clientTrustedCACertificate.Name(),
+			ReadOnly:  true,
+			MountPath: clientTrustedCACertificate.MountPath(),
+		})
+	}
+
+	return volumeMounts
+}
+
+func mergeVolumeMounts(lists ...[]corev1.VolumeMount) []corev1.VolumeMount {
+	var volumeMounts []corev1.VolumeMount
+
+	for _, list := range lists {
+		volumeMounts = append(volumeMounts, list...)
+	}
+
+	return volumeMounts
 }
