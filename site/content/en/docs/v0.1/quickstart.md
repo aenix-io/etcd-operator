@@ -9,7 +9,7 @@ Follow these instructions to install, run, and test etcd with etcd-operator in a
 Pre-requisites:
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 - Kubernetes cluster and `kubectl` configured to use it
-- If you don't have a Kubernetes cluster, you can use [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) to create a local one
+  - If you don't have a Kubernetes cluster, you can use [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) to create a local one
 - [cert-manager](https://cert-manager.io/docs/installation/) installed in the cluster
 
 1. Install etcd-operator:
