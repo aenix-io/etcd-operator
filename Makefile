@@ -148,7 +148,7 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.73.0
+PROMETHEUS_OPERATOR_VERSION ?= v0.73.1
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
@@ -240,7 +240,7 @@ KIND_VERSION ?= v0.22.0
 # renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.14.4
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.2.2
+HELM_SCHEMA_VERSION ?= v1.2.4
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
