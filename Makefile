@@ -135,14 +135,10 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-dist-manifests
 build-dist-manifests: manifests generate kustomize yq ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	@if [ -d "config/crd" ]; then \
-		$(KUSTOMIZE) build config/crd > dist/etcd-operator.yaml; \
-		$(KUSTOMIZE) build config/crd > dist/etcd-operator.crds.yaml; \
-	fi
-	echo "---" >> dist/etcd-operator.yaml # Add a document separator before appending
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
-	$(KUSTOMIZE) build config/default >> dist/etcd-operator.yaml
+	$(KUSTOMIZE) build config/default > dist/etcd-operator.yaml
 	$(KUSTOMIZE) build config/default | $(YQ) eval 'select(.kind != "CustomResourceDefinition")' -  > dist/etcd-operator.non-crds.yaml
+	$(KUSTOMIZE) build config/default | $(YQ) eval 'select(.kind == "CustomResourceDefinition")' -  > dist/etcd-operator.crds.yaml
 
 ##@ Deployment
 
