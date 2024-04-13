@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: "test (attribute: ${ matrix.attribute })"
+    name: test ${ matrix.attribute }
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     strategy:
