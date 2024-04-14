@@ -687,7 +687,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				}
 			}
 		})
-		It("should generate security volumes mounts", func() {
+		It("should generate security volumes mounts and cert args", func() {
 			localCluster := etcdCluster.DeepCopy()
 			localCluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
 				TLS: etcdaenixiov1alpha1.TLSSpec{
@@ -700,6 +700,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 
 			containers := generateContainers(localCluster)
+			args := generateEtcdArgs(localCluster)
 
 			Expect(containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
 				Name:      "peer-trusted-ca-certificate",
@@ -720,6 +721,39 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				Name:      "client-trusted-ca-certificate",
 				MountPath: "/etc/etcd/pki/client/ca",
 				ReadOnly:  true,
+			}))
+
+			Expect(args).To(ContainElements([]string{
+				"--name=$(POD_NAME)",
+				"--listen-metrics-urls=http://0.0.0.0:2381",
+				"--listen-peer-urls=https://0.0.0.0:2380",
+				"--data-dir=/var/run/etcd/default.etcd",
+				"--listen-client-urls=https://0.0.0.0:2379",
+				"--advertise-client-urls=https://$(POD_NAME).test-resource.$(POD_NAMESPACE).svc:2379",
+				"--initial-advertise-peer-urls=https://$(POD_NAME).test-resource.$(POD_NAMESPACE).svc:2380",
+				"--peer-trusted-ca-file=/etc/etcd/pki/peer/ca/ca.crt",
+				"--peer-cert-file=/etc/etcd/pki/peer/cert/tls.crt",
+				"--peer-key-file=/etc/etcd/pki/peer/cert/tls.key",
+				"--peer-client-cert-auth",
+				"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
+				"--key-file=/etc/etcd/pki/server/cert/tls.key",
+				"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
+				"--client-cert-auth",
+			}))
+		})
+		It("should generate correct default args", func() {
+			localCluster := etcdCluster.DeepCopy()
+			args := generateEtcdArgs(localCluster)
+
+			Expect(args).To(ContainElements([]string{
+				"--name=$(POD_NAME)",
+				"--listen-metrics-urls=http://0.0.0.0:2381",
+				"--listen-peer-urls=https://0.0.0.0:2380",
+				"--data-dir=/var/run/etcd/default.etcd",
+				"--peer-auto-tls",
+				"--listen-client-urls=http://0.0.0.0:2379",
+				"--advertise-client-urls=http://$(POD_NAME).test-resource.$(POD_NAMESPACE).svc:2379",
+				"--initial-advertise-peer-urls=https://$(POD_NAME).test-resource.$(POD_NAMESPACE).svc:2380",
 			}))
 		})
 

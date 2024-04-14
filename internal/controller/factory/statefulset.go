@@ -72,6 +72,8 @@ var (
 	peerCertificate            = etcdCertificates["peer-certificate"]
 	serverCertificate          = etcdCertificates["server-certificate"]
 	clientTrustedCACertificate = etcdCertificates["client-trusted-ca-certificate"]
+
+	etcdDataFullPath = filepath.Join(etcdDataMountPath, ectdDataDirName)
 )
 
 func CreateOrUpdateStatefulSet(
@@ -404,7 +406,7 @@ func baseEtcdFlags() []string {
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
-		"--data-dir=" + ectdDataDirName,
+		"--data-dir=" + etcdDataFullPath,
 	}
 }
 
@@ -435,6 +437,7 @@ func etcdTLSFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 			"--client-cert-auth",
 		)
 	}
+
 	return args
 }
 
