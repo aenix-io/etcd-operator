@@ -108,7 +108,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 
 		It("should successfully ensure headless service with custom metadata", func(ctx SpecContext) {
 			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.HeadlessServiceSpec{
+			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedeMetadataResourse{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name:        "headless-name",
 					Labels:      map[string]string{"label": "value"},
