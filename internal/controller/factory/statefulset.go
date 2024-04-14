@@ -418,6 +418,10 @@ func etcdTLSFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 			"--peer-key-file="+peerCertificate.KeyFilePath(),
 			"--peer-client-cert-auth",
 		)
+	} else {
+		args = append(args,
+			"--peer-auto-tls",
+		)
 	}
 	if hasTLSConfigInSpec(cluster, "ServerSecret") {
 		args = append(args,
