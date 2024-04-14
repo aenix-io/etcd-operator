@@ -42,7 +42,7 @@ type EtcdClusterSpec struct {
 	ServiceTemplate *ServiceSpec `json:"serviceTemplate,omitempty"`
 	// HeadlessService defines the desired state of HeadlessService for etcd members. If not specified, default values will be used.
 	// +optional
-	HeadlessServiceTemplate *EmbeddedeMetadataResourse `json:"headlessServiceTemplate,omitempty"`
+	HeadlessServiceTemplate *EmbeddedMetadataResource `json:"headlessServiceTemplate,omitempty"`
 	// PodDisruptionBudgetTemplate describes PDB resource to create for etcd cluster members. Nil to disable.
 	// +optional
 	PodDisruptionBudgetTemplate *EmbeddedPodDisruptionBudget `json:"podDisruptionBudgetTemplate,omitempty"`
@@ -241,7 +241,7 @@ type ServiceSpec struct {
 	Spec corev1.ServiceSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
 
-type EmbeddedeMetadataResourse struct {
+type EmbeddedMetadataResource struct {
 	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
 	// +optional
 	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
