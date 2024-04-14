@@ -167,8 +167,9 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 
 func generateVolumeMounts(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
-	dataVolumeMount []corev1.VolumeMount,
+	containerVolumeMounts []corev1.VolumeMount,
 ) []corev1.VolumeMount {
+	dataVolumeMount := updateOrAddEtcdDataVolumeMount(containerVolumeMounts)
 	tlsVolumeMounts := generateTLSSecretVolumeMounts(cluster)
 	volumeMounts := mergeVolumeMounts(tlsVolumeMounts, dataVolumeMount)
 
@@ -243,10 +244,7 @@ func generateContainers(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Conta
 			c.LivenessProbe = getLivenessProbe(c.LivenessProbe)
 			c.ReadinessProbe = getReadinessProbe(c.ReadinessProbe)
 			c.Env = mergeEnvs(c.Env, podEnv)
-
-			dataVolumeMounts := updateOrAddDataVolumeMount(c.VolumeMounts, etcdVolumeName,
-				etcdDataMountPath, false)
-			c.VolumeMounts = generateVolumeMounts(cluster, dataVolumeMounts)
+			c.VolumeMounts = generateVolumeMounts(cluster, c.VolumeMounts)
 		}
 
 		containers = append(containers, c)
@@ -523,14 +521,14 @@ func generateDataVolume(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Volume 
 	}
 }
 
-func updateOrAddDataVolumeMount(volumeMounts []corev1.VolumeMount,
-	volumeName, mountPath string, readOnly bool) []corev1.VolumeMount {
+func updateOrAddEtcdDataVolumeMount(volumeMounts []corev1.VolumeMount) []corev1.VolumeMount {
+	readOnly := false
 	found := false
 
 	for i := range volumeMounts {
-		if volumeMounts[i].Name == volumeName {
+		if volumeMounts[i].Name == etcdVolumeName {
 			volumeMounts[i].ReadOnly = readOnly
-			volumeMounts[i].MountPath = mountPath
+			volumeMounts[i].MountPath = etcdDataMountPath
 			found = true
 			break
 		}
@@ -538,9 +536,9 @@ func updateOrAddDataVolumeMount(volumeMounts []corev1.VolumeMount,
 
 	if !found {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      volumeName,
+			Name:      etcdVolumeName,
 			ReadOnly:  readOnly,
-			MountPath: mountPath,
+			MountPath: etcdDataMountPath,
 		})
 	}
 
