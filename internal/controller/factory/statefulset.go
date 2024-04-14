@@ -109,6 +109,7 @@ func CreateOrUpdateStatefulSet(
 	}
 
 	volumes := generateVolumes(cluster)
+	containers := generateContainers(cluster)
 
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -126,7 +127,7 @@ func CreateOrUpdateStatefulSet(
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: podMetadata,
 				Spec: corev1.PodSpec{
-					Containers:                    generateContainers(cluster),
+					Containers:                    containers,
 					ImagePullSecrets:              cluster.Spec.PodTemplate.Spec.ImagePullSecrets,
 					Affinity:                      cluster.Spec.PodTemplate.Spec.Affinity,
 					NodeSelector:                  cluster.Spec.PodTemplate.Spec.NodeSelector,
@@ -352,18 +353,22 @@ func hasProbeHandlerAction(probe corev1.Probe) bool {
 	return probe.HTTPGet != nil || probe.TCPSocket != nil || probe.Exec != nil || probe.GRPC != nil
 }
 
+// Name returns the name of the certificate.
 func (c certificate) Name() string {
 	return c.certName
 }
 
+// MountPath returns the mount path associated with the certificate.
 func (c certificate) MountPath() string {
 	return c.mountPath
 }
 
+// CrtFilePath returns the file path of the certificate's CRT file.
 func (c certificate) CrtFilePath() string {
 	return c.buildFilePath(c.crtFile)
 }
 
+// KeyFilePath returns the file path of the certificate's key file, if available.
 func (c certificate) KeyFilePath() string {
 	if c.keyFile == "" {
 		return ""
@@ -371,10 +376,12 @@ func (c certificate) KeyFilePath() string {
 	return c.buildFilePath(c.keyFile)
 }
 
+// buildFilePath constructs the full file path using the certificate's mount path.
 func (c certificate) buildFilePath(fileName string) string {
 	return filepath.Join(c.mountPath, fileName)
 }
 
+// getCertificateConfig returns a certificate configuration object with the provided details.
 func getCertificateConfig(name, mountPath, crtFile, keyFile string) certificate {
 	return certificate{
 		certName:  name,
@@ -384,6 +391,7 @@ func getCertificateConfig(name, mountPath, crtFile, keyFile string) certificate 
 	}
 }
 
+// hasTLSConfigInSpec checks if a specific type of TLS secret is configured in the cluster specification.
 func hasTLSConfigInSpec(cluster *etcdaenixiov1alpha1.EtcdCluster, secretType string) bool {
 	if cluster.Spec.Security == nil {
 		return false
@@ -401,6 +409,7 @@ func hasTLSConfigInSpec(cluster *etcdaenixiov1alpha1.EtcdCluster, secretType str
 	}
 }
 
+// baseEtcdFlags returns a list of base flags for configuring etcd.
 func baseEtcdFlags() []string {
 	return []string{
 		"--name=$(POD_NAME)",
@@ -410,6 +419,7 @@ func baseEtcdFlags() []string {
 	}
 }
 
+// etcdTLSFlags generates TLS-related flags for etcd based on the cluster's TLS configuration.
 func etcdTLSFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
@@ -441,6 +451,7 @@ func etcdTLSFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	return args
 }
 
+// etcdURLsFlags generates URL-related flags for etcd depending on the TLS cluster configuration.
 func etcdURLsFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
@@ -461,6 +472,7 @@ func etcdURLsFlags(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	return args
 }
 
+// etcdExtraFlags generates additional flags for etcd based on the provided in spec options.
 func etcdExtraFlags(options map[string]string) []string {
 	args := []string{}
 
@@ -475,6 +487,7 @@ func etcdExtraFlags(options map[string]string) []string {
 	return args
 }
 
+// generateSecretVolumes generates secret volumes based on TLS configuration in the etcd cluster spec.
 func generateSecretVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]corev1.Volume {
 	volumesMap := make(map[string]corev1.Volume)
 
@@ -498,6 +511,7 @@ func generateSecretVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]
 	return volumesMap
 }
 
+// createSecretVolume return a volume object for a given secret.
 func createSecretVolume(name, secretName string) corev1.Volume {
 	return corev1.Volume{
 		Name: name,
@@ -509,6 +523,7 @@ func createSecretVolume(name, secretName string) corev1.Volume {
 	}
 }
 
+// generateDataVolume generates the etcd data volume.
 func generateDataVolume(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Volume {
 	var dataVolumeSource corev1.VolumeSource
 
@@ -528,20 +543,21 @@ func generateDataVolume(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Volume 
 	}
 }
 
+// updateOrAddEtcdDataVolumeMount updates or adds the volume mount for etcd data volume.
 func updateOrAddEtcdDataVolumeMount(volumeMounts []corev1.VolumeMount) []corev1.VolumeMount {
 	readOnly := false
-	found := false
 
-	for i := range volumeMounts {
-		if volumeMounts[i].Name == etcdVolumeName {
-			volumeMounts[i].ReadOnly = readOnly
-			volumeMounts[i].MountPath = etcdDataMountPath
-			found = true
-			break
-		}
-	}
+	// Check if the volume mount with etcdVolumeName already exists
+	idx := slices.IndexFunc(volumeMounts, func(vm corev1.VolumeMount) bool {
+		return vm.Name == etcdVolumeName
+	})
 
-	if !found {
+	if idx >= 0 {
+		// Volume mount with etcdVolumeName found, update it
+		volumeMounts[idx].ReadOnly = readOnly
+		volumeMounts[idx].MountPath = etcdDataMountPath
+	} else {
+		// Volume mount with etcdVolumeName not found, append new volume mount
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      etcdVolumeName,
 			ReadOnly:  readOnly,
@@ -552,6 +568,7 @@ func updateOrAddEtcdDataVolumeMount(volumeMounts []corev1.VolumeMount) []corev1.
 	return volumeMounts
 }
 
+// generateTLSSecretVolumeMounts generates volume mounts for TLS secrets.
 func generateTLSSecretVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.VolumeMount {
 	volumeMounts := []corev1.VolumeMount{}
 
@@ -593,6 +610,7 @@ func generateTLSSecretVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []c
 	return volumeMounts
 }
 
+// mergeVolumeMounts merges multiple lists of volume mounts into a single list.
 func mergeVolumeMounts(lists ...[]corev1.VolumeMount) []corev1.VolumeMount {
 	var volumeMounts []corev1.VolumeMount
 
