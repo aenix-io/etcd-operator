@@ -17,34 +17,20 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"fmt"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"log"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
 )
-
-const (
-	prometheusOperatorVersion = "v0.73.0"
-	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
-		"releases/download/%s/bundle.yaml"
-
-	certmanagerVersion = "v1.14.4"
-	certmanagerURLTmpl = "https://github.com/jetstack/cert-manager/releases/download/%s/cert-manager.yaml"
-)
-
-func warnError(err error) {
-	fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
-}
-
-// InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
-func InstallPrometheusOperator() error {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "create", "-f", url)
-	_, err := Run(cmd)
-	return err
-}
 
 // Run executes the provided command within this context
 func Run(cmd *exec.Cmd) ([]byte, error) {
@@ -64,55 +50,6 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	}
 
 	return output, nil
-}
-
-// UninstallPrometheusOperator uninstalls the prometheus
-func UninstallPrometheusOperator() {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
-	}
-}
-
-// UninstallCertManager uninstalls the cert manager
-func UninstallCertManager() {
-	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
-	}
-}
-
-// InstallCertManager installs the cert manager bundle.
-func InstallCertManager() error {
-	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		return err
-	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
-		"--for", "condition=Available",
-		"--namespace", "cert-manager",
-		"--timeout", "5m",
-	)
-
-	_, err := Run(cmd)
-	return err
-}
-
-// LoadImageToKindCluster loads a local docker image to the kind cluster
-func LoadImageToKindClusterWithName(name string) error {
-	cluster := "kind"
-	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
-		cluster = v
-	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.Command("kind", kindOptions...)
-	_, err := Run(cmd)
-	return err
 }
 
 // GetNonEmptyLines converts given command output string into individual objects
@@ -137,4 +74,70 @@ func GetProjectDir() (string, error) {
 	}
 	wd = strings.Replace(wd, "/test/e2e", "", -1)
 	return wd, nil
+}
+
+// GetFreePort asks the kernel for a free open port that is ready to use.
+func GetFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer func(l *net.TCPListener) {
+				err := l.Close()
+				if err != nil {
+					log.Fatal(err)
+				}
+			}(l)
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
+
+// GetEtcdClient creates client for interacting with etcd.
+func GetEtcdClient(endpoints []string) *clientv3.Client {
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	return cli
+}
+
+// IsEtcdClusterHealthy checks etcd cluster health.
+func IsEtcdClusterHealthy(endpoints []string) bool {
+	// Should be changed when etcd is healthy
+	health := false
+
+	// Configure client
+	client := GetEtcdClient(endpoints)
+	defer func(client *clientv3.Client) {
+		err := client.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(client)
+
+	// Prepare the maintenance client
+	maint := clientv3.NewMaintenance(client)
+
+	// Context for the call
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Perform the status call to check health
+	for i := range endpoints {
+		resp, err := maint.Status(ctx, endpoints[i])
+		if err != nil {
+			log.Fatalf("Failed to get endpoint health: %v", err)
+		} else {
+			if resp.Errors == nil {
+				fmt.Printf("Endpoint is healthy: %s\n", resp.Version)
+				health = true
+			}
+		}
+	}
+	return health
 }
