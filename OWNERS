@@ -2,10 +2,11 @@
 
 approvers:
   - Kirill-Garbar   # Kirill Garbar <kirill@garbar.pro>
-  - hiddenmarten    # Oleg Kunitsyn
+  - hiddenmarten    # Oleg Kunitsyn <hiddenmarten@gmail.com>
   - kvaps           # Andrei Kvapil <kvapss@gmail.com> <andrei.kvapil@aenix.io>
   - sergeyshevch    # Sergey Shevchenko <sergeyshevchdevelop@gmail.com>
   - sircthulhu      # Kirill <Stitch14@yandex.ru>
+  - lllamnyp        # Timofey Larkin <lllamnyp@gmail.com>
 reviewers:
   - AlexGluck       # Alex Gluck
   - Uburro          # Grigorii Rochev
