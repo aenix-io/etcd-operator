@@ -1,0 +1,216 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: etcd
+  namespace: kamaji-system
+spec:
+  storage: {}
+  security:
+    tls:
+      peerTrustedCASecret: etcd-peer-ca-tls
+      peerSecret: etcd-peer-tls
+      serverSecret: etcd-server-tls
+      clientTrustedCASecret: etcd-ca-tls
+      clientSecret: etcd-client-tls
+---
+apiVersion: kamaji.clastix.io/v1alpha1
+kind: DataStore
+metadata:
+  name: default
+spec:
+  driver: etcd
+  endpoints:
+  - etcd-0.etcd.kamaji-system.svc:2379
+  - etcd-1.etcd.kamaji-system.svc:2379
+  - etcd-2.etcd.kamaji-system.svc:2379
+  tlsConfig:
+    certificateAuthority:
+      certificate:
+        secretReference:
+          keyPath: tls.crt
+          name: etcd-ca-tls
+          namespace: kamaji-system
+      privateKey:
+        secretReference:
+          keyPath: tls.key
+          name: etcd-ca-tls
+          namespace: kamaji-system
+    clientCertificate:
+      certificate:
+        secretReference:
+          keyPath: tls.crt
+          name: etcd-client-tls
+          namespace: kamaji-system
+      privateKey:
+        secretReference:
+          keyPath: tls.key
+          name: etcd-client-tls
+          namespace: kamaji-system
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: etcd-selfsigning-issuer
+  namespace: kamaji-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-peer-ca
+  namespace: kamaji-system
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: etcd-peer-ca
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: etcd-peer-ca-tls
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: etcd-selfsigning-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-ca
+  namespace: kamaji-system
+spec:
+  isCA: true
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "cert sign"
+  commonName: etcd-ca
+  subject:
+    organizations:
+      - ACME Inc.
+    organizationalUnits:
+      - Widgets
+  secretName: etcd-ca-tls
+  privateKey:
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: etcd-selfsigning-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: etcd-peer-issuer
+  namespace: kamaji-system
+spec:
+  ca:
+    secretName: etcd-peer-ca-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: etcd-issuer
+  namespace: kamaji-system
+spec:
+  ca:
+    secretName: etcd-ca-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-server
+  namespace: kamaji-system
+spec:
+  secretName: etcd-server-tls
+  isCA: false
+  usages:
+    - "server auth"
+    - "signing"
+    - "key encipherment"
+  dnsNames:
+  - etcd-0
+  - etcd-0.etcd
+  - etcd-0.etcd.kamaji-system.svc
+  - etcd-0.etcd.kamaji-system.svc.cluster.local
+  - etcd-1
+  - etcd-1.etcd
+  - etcd-1.etcd.kamaji-system.svc
+  - etcd-1.etcd.kamaji-system.svc.cluster.local
+  - etcd-2
+  - etcd-2.etcd
+  - etcd-2.etcd.kamaji-system.svc
+  - etcd-2.etcd.kamaji-system.svc.cluster.local
+  - localhost
+  - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: etcd-issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-peer
+  namespace: kamaji-system
+spec:
+  secretName: etcd-peer-tls
+  isCA: false
+  usages:
+    - "server auth"
+    - "client auth"
+    - "signing"
+    - "key encipherment"
+  dnsNames:
+  - etcd-0
+  - etcd-0.etcd
+  - etcd-0.etcd.kamaji-system.svc
+  - etcd-0.etcd.kamaji-system.svc.cluster.local
+  - etcd-1
+  - etcd-1.etcd
+  - etcd-1.etcd.kamaji-system.svc
+  - etcd-1.etcd.kamaji-system.svc.cluster.local
+  - etcd-2
+  - etcd-2.etcd
+  - etcd-2.etcd.kamaji-system.svc
+  - etcd-2.etcd.kamaji-system.svc.cluster.local
+  - localhost
+  - "127.0.0.1"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: etcd-peer-issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-client
+  namespace: kamaji-system
+spec:
+  commonName: root
+  secretName: etcd-client-tls
+  usages:
+  - "signing"
+  - "key encipherment"
+  - "client auth"
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 4096
+  issuerRef:
+    name: etcd-issuer
+    kind: Issuer

@@ -30,12 +30,12 @@ jobs:
         with:
           version: 'v3.14.3'
 
-      - name: Get latest tag
+      - name: Get tag from current run
         run: |
           TAG=${{ github.ref_name }}
           echo "Tag for packaging chart is $TAG"
-          echo "LATEST_TAG=${TAG}" >> $GITHUB_ENV
-          echo "LATEST_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+          echo "RELEASE_TAG_TRIMMED_V=${TAG#v}" >> $GITHUB_ENV
 
       - name: Helm login registry
         working-directory: charts
@@ -49,12 +49,12 @@ jobs:
         working-directory: charts
         run: |
           helm package ${{ env.CHART_NAME }} \
-            --version ${LATEST_TAG_TRIMMED_V} \
-            --app-version ${LATEST_TAG} \
+            --version ${RELEASE_TAG_TRIMMED_V} \
+            --app-version ${RELEASE_TAG} \
             --dependency-update
 
       - name: Helm push chart
         working-directory: charts
         run: |
-          helm push ${{ env.CHART_NAME }}-${LATEST_TAG_TRIMMED_V}.tgz \
+          helm push ${{ env.CHART_NAME }}-${RELEASE_TAG_TRIMMED_V}.tgz \
               oci://${{ env.REGISTRY }}/${{ env.CHARTS_REPOSITORY }}
