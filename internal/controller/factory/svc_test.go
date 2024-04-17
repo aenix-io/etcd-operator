@@ -17,10 +17,11 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-
+	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,69 +33,91 @@ import (
 )
 
 var _ = Describe("CreateOrUpdateService handlers", func() {
-	Context("When ensuring a cluster services", func() {
-		const resourceName = "test-resource"
+	var ns *corev1.Namespace
 
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
-		}
-		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
+	BeforeEach(func(ctx SpecContext) {
+		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      resourceName,
-				Namespace: "default",
-				UID:       "test-uid",
-			},
-			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-				Replicas: ptr.To(int32(3)),
+				GenerateName: "test-",
 			},
 		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
 
-		It("should successfully create the cluster service", func() {
-			svc := &corev1.Service{}
-			err := CreateOrUpdateClusterService(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+	Context("when ensuring cluster service", func() {
+		var (
+			etcdcluster     etcdaenixiov1alpha1.EtcdCluster
+			headlessService corev1.Service
+			clientService   corev1.Service
 
-			err = k8sClient.Get(ctx, typeNamespacedName, svc)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-			Expect(svc.Spec.ClusterIP).To(Equal("None"))
+			err error
+		)
 
-			Expect(k8sClient.Delete(ctx, svc)).To(Succeed())
+		BeforeEach(func(ctx SpecContext) {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+
+			headlessService = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      etcdcluster.GetName(),
+				},
+			}
+			clientService = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      GetClientServiceName(&etcdcluster),
+				},
+			}
 		})
 
-		It("should fail on creating the cluster service with invalid owner reference", func() {
-			etcdcluster := etcdcluster.DeepCopy()
+		AfterEach(func(ctx SpecContext) {
+			err = Get(&headlessService)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &headlessService)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+			err = Get(&clientService)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &clientService)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+
+		It("should successfully ensure cluster headless service", func(ctx SpecContext) {
+			Expect(CreateOrUpdateClusterService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Object(&headlessService)).Should(SatisfyAll(
+				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
+				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
+			))
+		})
+
+		It("should successfully ensure cluster client service", func(ctx SpecContext) {
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Object(&clientService)).Should(SatisfyAll(
+				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
+				HaveField("Spec.ClusterIP", Not(Equal(corev1.ClusterIPNone))),
+			))
+		})
+
+		It("should fail to create service with invalid owner reference", func(ctx SpecContext) {
 			emptyScheme := runtime.NewScheme()
-
-			err := CreateOrUpdateClusterService(ctx, etcdcluster, k8sClient, emptyScheme)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("should successfully create the client service", func() {
-			svc := &corev1.Service{}
-			err := CreateOrUpdateClientService(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
-
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      GetClientServiceName(etcdcluster),
-				Namespace: "default",
-			}, svc)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-			Expect(svc.Spec.ClusterIP).To(Not(Equal("None")))
-
-			Expect(k8sClient.Delete(ctx, svc)).To(Succeed())
-		})
-
-		It("should fail on creating the client service with invalid owner reference", func() {
-			etcdcluster := etcdcluster.DeepCopy()
-			emptyScheme := runtime.NewScheme()
-
-			err := CreateOrUpdateClientService(ctx, etcdcluster, k8sClient, emptyScheme)
-			Expect(err).To(HaveOccurred())
+			Expect(CreateOrUpdateClusterService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
 		})
 	})
 })

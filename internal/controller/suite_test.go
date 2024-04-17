@@ -21,9 +21,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -33,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
-	//+kubebuilder:scaffold:imports
+	// +kubebuilder:scaffold:imports
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
@@ -44,6 +46,7 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 
 func TestControllers(t *testing.T) {
+	SetDefaultEventuallyTimeout(time.Second * 5)
 	RegisterFailHandler(Fail)
 
 	RunSpecs(t, "Controller Suite")
@@ -75,12 +78,12 @@ var _ = BeforeSuite(func() {
 	err = etcdaenixiov1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	//+kubebuilder:scaffold:scheme
+	// +kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
-
+	SetClient(k8sClient)
 })
 
 var _ = AfterSuite(func() {
