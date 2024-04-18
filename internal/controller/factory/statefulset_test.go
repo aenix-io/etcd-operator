@@ -88,7 +88,6 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 			etcdcluster.Spec.PodTemplate = etcdaenixiov1alpha1.PodTemplate{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Name: "test-pod",
 					Labels: map[string]string{
 						"app": "etcd",
 					},
@@ -96,7 +95,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						"app": "etcd",
 					},
 				},
-				Spec: etcdaenixiov1alpha1.PodSpec{
+				Spec: corev1.PodSpec{
 					ServiceAccountName: "etcd-operator",
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
@@ -141,7 +140,6 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Memory()))
 
 			By("Checking the pod metadata")
-			Expect(sts.Spec.Template.ObjectMeta.GenerateName).To(Equal(etcdcluster.Spec.PodTemplate.Name))
 			Expect(sts.Spec.Template.ObjectMeta.Labels).To(Equal(map[string]string{
 				"app.kubernetes.io/name":       "etcd",
 				"app.kubernetes.io/instance":   etcdcluster.Name,
@@ -255,7 +253,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 		It("should successfully override probes", func() {
 			etcdcluster := etcdcluster.DeepCopy()
-			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
+			etcdcluster.Spec.PodTemplate.Spec = corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
 						Name: "etcd",
@@ -393,6 +391,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+
+	/* TODO: all of the following tests validate merging logic, but all merging logic is now handled externally.
+		These tests now need a rewrite.
 
 	Context("When getting liveness probe", func() {
 		It("should correctly get default values", func() {
@@ -552,6 +553,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+
 	Context("When merge with default probe", func() {
 		It("should correctly merge probe with default", func() {
 			defaultProbe := corev1.Probe{
@@ -724,4 +726,5 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		})
 
 	})
+	*/
 })
