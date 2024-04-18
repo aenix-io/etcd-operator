@@ -18,7 +18,6 @@ package factory
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,11 +25,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/aenix-io/etcd-operator/internal/k8sutils"
 )
 
 const (
@@ -75,25 +74,12 @@ func CreateOrUpdateStatefulSet(
 		Containers: []corev1.Container{generateContainer(cluster)},
 		Volumes:    volumes,
 	}
-	basePodSpecBytes, err := json.Marshal(basePodSpec)
-	if err != nil {
-		return fmt.Errorf("cannot marshal generated base pod spec to JSON: %w", err)
-	}
 	if cluster.Spec.PodTemplate.Spec.Containers == nil {
 		cluster.Spec.PodTemplate.Spec.Containers = make([]corev1.Container, 0)
 	}
-	overridePodSpecBytes, err := json.Marshal(cluster.Spec.PodTemplate.Spec)
+	finalPodSpec, err := k8sutils.StrategicMerge(basePodSpec, cluster.Spec.PodTemplate.Spec)
 	if err != nil {
-		return fmt.Errorf("cannot marshal field podTemplate.spec to JSON: %w", err)
-	}
-	finalPodSpecBytes, err := strategicpatch.StrategicMergePatch(basePodSpecBytes, overridePodSpecBytes, &corev1.PodSpec{})
-	if err != nil {
-		return fmt.Errorf("cannot patch base pod spec with podTemplate.spec: %w", err)
-	}
-	finalPodSpec := corev1.PodSpec{}
-	err = json.Unmarshal(finalPodSpecBytes, &finalPodSpec)
-	if err != nil {
-		return fmt.Errorf("cannot unmarshal finalized podspec from JSON: %w", err)
+		return fmt.Errorf("cannot strategic-merge base podspec with podTemplate.spec: %w", err)
 	}
 
 	statefulSet := &appsv1.StatefulSet{
