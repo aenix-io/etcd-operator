@@ -111,50 +111,58 @@ var _ = Describe("EtcdCluster Controller", func() {
 		})
 
 		It("should reconcile a new EtcdCluster", func(ctx SpecContext) {
-			By("reconciling the EtcdCluster")
-			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
-			Expect(err).ToNot(HaveOccurred())
-			Eventually(Get(&etcdcluster)).Should(Succeed())
-			Expect(etcdcluster.Status.Conditions).To(HaveLen(2))
-			Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
-			Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
-			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
-			Expect(etcdcluster.Status.Conditions[1].Status).To(Equal(metav1.ConditionStatus("False")))
+			By("reconciling the EtcdCluster", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				Expect(etcdcluster.Status.Conditions).To(HaveLen(2))
+				Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
+				Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
+				Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+				Expect(etcdcluster.Status.Conditions[1].Status).To(Equal(metav1.ConditionStatus("False")))
+			})
 
-			By("reconciling owned ConfigMap")
-			Eventually(Get(&configMap)).Should(Succeed())
-			Expect(configMap.Data).Should(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", "new"))
+			By("reconciling owned ConfigMap", func() {
+				Eventually(Get(&configMap)).Should(Succeed())
+				Expect(configMap.Data).Should(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", "new"))
+			})
 
-			By("reconciling owned headless Service")
-			Eventually(Get(&headlessService)).Should(Succeed())
-			Expect(headlessService.Spec.ClusterIP).Should(Equal("None"))
+			By("reconciling owned headless Service", func() {
+				Eventually(Get(&headlessService)).Should(Succeed())
+				Expect(headlessService.Spec.ClusterIP).Should(Equal("None"))
+			})
 
-			By("reconciling owned Service")
-			Eventually(Get(&service)).Should(Succeed())
-			Expect(service.Spec.ClusterIP).ShouldNot(Equal("None"))
+			By("reconciling owned Service", func() {
+				Eventually(Get(&service)).Should(Succeed())
+				Expect(service.Spec.ClusterIP).ShouldNot(Equal("None"))
+			})
 
-			By("reconciling owned StatefulSet")
-			Eventually(Get(&statefulSet)).Should(Succeed())
+			By("reconciling owned StatefulSet", func() {
+				Eventually(Get(&statefulSet)).Should(Succeed())
+			})
 		})
 
 		It("should successfully reconcile the resource twice and mark as ready", func(ctx SpecContext) {
-			By("reconciling the EtcdCluster")
-			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
-			Expect(err).ToNot(HaveOccurred())
+			By("reconciling the EtcdCluster", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+			})
 
-			By("setting owned StatefulSet to ready state")
-			Eventually(Get(&statefulSet)).Should(Succeed())
-			Eventually(UpdateStatus(&statefulSet, func() {
-				statefulSet.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
-				statefulSet.Status.Replicas = *etcdcluster.Spec.Replicas
-			})).Should(Succeed())
+			By("setting owned StatefulSet to ready state", func() {
+				Eventually(Get(&statefulSet)).Should(Succeed())
+				Eventually(UpdateStatus(&statefulSet, func() {
+					statefulSet.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
+					statefulSet.Status.Replicas = *etcdcluster.Spec.Replicas
+				})).Should(Succeed())
+			})
 
-			By("reconciling the EtcdCluster after owned StatefulSet is ready")
-			_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
-			Expect(err).ToNot(HaveOccurred())
-			Eventually(Get(&etcdcluster)).Should(Succeed())
-			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
-			Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
+			By("reconciling the EtcdCluster after owned StatefulSet is ready", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+				Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
+			})
 		})
 	})
 })
