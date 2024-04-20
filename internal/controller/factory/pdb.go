@@ -28,6 +28,7 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func CreateOrUpdatePdb(
@@ -44,6 +45,7 @@ func CreateOrUpdatePdb(
 			}})
 	}
 
+	logger := log.FromContext(ctx)
 	pdb := &v1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
@@ -62,6 +64,8 @@ func CreateOrUpdatePdb(
 	if pdb.Spec.MinAvailable == nil && pdb.Spec.MaxUnavailable == nil {
 		pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(cluster.CalculateQuorumSize())))
 	}
+
+	logger.V(2).Info("pdb spec generated", "pdb_name", pdb.Name, "pdb_spec", pdb.Spec)
 
 	if err := ctrl.SetControllerReference(cluster, pdb, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)

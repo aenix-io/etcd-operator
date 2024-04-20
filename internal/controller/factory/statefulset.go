@@ -30,6 +30,7 @@ import (
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -102,6 +103,8 @@ func CreateOrUpdateStatefulSet(
 			VolumeClaimTemplates: volumeClaimTemplates,
 		},
 	}
+	logger := log.FromContext(ctx)
+	logger.V(2).Info("statefulset spec generated", "sts_name", statefulSet.Name, "sts_spec", statefulSet.Spec)
 
 	if err := ctrl.SetControllerReference(cluster, statefulSet, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
