@@ -55,21 +55,23 @@ var _ = Describe("Condition builder", func() {
 			})
 			timestamp := etcdCluster.Status.Conditions[idx].LastTransitionTime
 
-			By("setting condition without status change")
-			SetCondition(etcdCluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
-				WithStatus(false).
-				WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted)).
-				WithMessage("test").
-				Complete())
-			Expect(etcdCluster.Status.Conditions[idx].LastTransitionTime).To(Equal(timestamp))
+			By("setting condition without status change", func() {
+				SetCondition(etcdCluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
+					WithStatus(false).
+					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted)).
+					WithMessage("test").
+					Complete())
+				Expect(etcdCluster.Status.Conditions[idx].LastTransitionTime).To(Equal(timestamp))
+			})
 
-			By("setting condition with status changed")
-			SetCondition(etcdCluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
-				WithStatus(true).
-				WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted)).
-				WithMessage("test").
-				Complete())
-			Expect(etcdCluster.Status.Conditions[idx].LastTransitionTime).NotTo(Equal(timestamp))
+			By("setting condition with status changed", func() {
+				SetCondition(etcdCluster, NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
+					WithStatus(true).
+					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted)).
+					WithMessage("test").
+					Complete())
+				Expect(etcdCluster.Status.Conditions[idx].LastTransitionTime).NotTo(Equal(timestamp))
+			})
 		})
 	})
 
