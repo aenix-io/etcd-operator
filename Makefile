@@ -3,7 +3,7 @@
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.29.3
+ENVTEST_K8S_VERSION ?= v1.30.0
 ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -151,7 +151,7 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.73.1
+PROMETHEUS_OPERATOR_VERSION ?= v0.73.2
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
