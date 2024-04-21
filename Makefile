@@ -80,6 +80,10 @@ lint: golangci-lint ## Run golangci-lint linter & yamllint
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
+.PHONY: nilaway-lint
+nilaway-lint: nilaway
+	$(NILAWAY_LINT) -include-pkgs=github.com/aenix-io/etcd-operator/api,github.com/aenix-io/etcd-operator/internal,github.com/aenix-io/etcd-operator/test ./...
+
 .PHONY: helm-lint
 helm-lint: helm ## Run helm lint over chart
 	$(HELM) lint charts/etcd-operator
@@ -221,6 +225,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+NILAWAY_LINT ?= $(LOCALBIN)/nilaway
 KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
@@ -269,6 +274,10 @@ envtest: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+.PHONY: nilaway
+nilaway: $(LOCALBIN)
+	@test -x $(NILAWAY_LINT) || GOBIN=$(LOCALBIN) go install go.uber.org/nilaway/cmd/nilaway@latest
 
 kind: $(LOCALBIN)
 	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \
