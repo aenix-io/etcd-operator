@@ -75,6 +75,10 @@ func reconcileService(ctx context.Context, rclient client.Client, crdName string
 	logger := log.FromContext(ctx)
 	logger.V(2).Info("service reconciliation started")
 
+	if svc == nil {
+		return fmt.Errorf("service is nil for crd_object: %s", crdName)
+	}
+
 	currentSvc := &corev1.Service{}
 	logger.V(2).Info("service found", "svc_name", currentSvc.Name)
 
