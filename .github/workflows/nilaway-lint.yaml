@@ -1,0 +1,14 @@
+name: Pre-commit
+
+on:
+  pull_request:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4.1.3
+      - uses: actions/setup-go@v5.0.0
+        with:
+          go-version: 1.22.2
+      - run: make nilaway-lint
