@@ -17,12 +17,13 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-
+	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,39 +36,66 @@ import (
 )
 
 var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
-	const resourceName = "test-resource"
-	ctx := context.Background()
-	typeNamespacedName := types.NamespacedName{
-		Name:      resourceName,
-		Namespace: "default",
-	}
-	Context("When ensuring a statefulset", func() {
-		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
+	var ns *corev1.Namespace
+
+	BeforeEach(func(ctx SpecContext) {
+		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      resourceName,
-				Namespace: "default",
-				UID:       "test-uid",
-			},
-			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-				Replicas: ptr.To(int32(3)),
+				GenerateName: "test-",
 			},
 		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
 
-		It("should successfully create the statefulset with empty spec", func() {
-			sts := &appsv1.StatefulSet{}
-			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+	Context("when ensuring statefulSet", func() {
+		var (
+			etcdcluster etcdaenixiov1alpha1.EtcdCluster
+			statefulSet appsv1.StatefulSet
 
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sts.Spec.Replicas).To(Equal(etcdcluster.Spec.Replicas))
+			err error
+		)
 
-			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+		BeforeEach(func(ctx SpecContext) {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+
+			statefulSet = appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      etcdcluster.GetName(),
+					Namespace: ns.GetName(),
+				},
+			}
 		})
 
-		It("should successfully create the statefulset with filled spec", func() {
-			By("Creating the statefulset")
-			etcdcluster := etcdcluster.DeepCopy()
+		AfterEach(func(ctx SpecContext) {
+			err = Get(&statefulSet)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &statefulSet)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+
+		It("should successfully ensure the statefulSet with empty spec", func(ctx SpecContext) {
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Object(&statefulSet)).Should(
+				HaveField("Spec.Replicas", Equal(etcdcluster.Spec.Replicas)),
+			)
+		})
+
+		It("should successfully ensure the statefulSet with filled spec", func(ctx SpecContext) {
 			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
 				VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
 					EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
@@ -88,7 +116,6 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 			etcdcluster.Spec.PodTemplate = etcdaenixiov1alpha1.PodTemplate{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Name: "test-pod",
 					Labels: map[string]string{
 						"app": "etcd",
 					},
@@ -96,7 +123,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 						"app": "etcd",
 					},
 				},
-				Spec: etcdaenixiov1alpha1.PodSpec{
+				Spec: corev1.PodSpec{
 					ServiceAccountName: "etcd-operator",
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
@@ -126,43 +153,40 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ClientSecret:          "client-secret",
 				},
 			}
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Get(&statefulSet)).Should(Succeed())
 
-			sts := &appsv1.StatefulSet{}
-			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+			By("Checking the resources", func() {
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).
+					To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Cpu()))
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).
+					To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Memory()))
+			})
 
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred())
+			By("Checking the pod metadata", func() {
+				Expect(statefulSet.Spec.Template.ObjectMeta.Labels).To(Equal(map[string]string{
+					"app.kubernetes.io/name":       "etcd",
+					"app.kubernetes.io/instance":   etcdcluster.Name,
+					"app.kubernetes.io/managed-by": "etcd-operator",
+					"app":                          "etcd",
+				}))
+				Expect(statefulSet.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodTemplate.Annotations))
+			})
 
-			By("Checking the resources")
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).
-				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Cpu()))
-			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).
-				To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Memory()))
-
-			By("Checking the pod metadata")
-			Expect(sts.Spec.Template.ObjectMeta.GenerateName).To(Equal(etcdcluster.Spec.PodTemplate.Name))
-			Expect(sts.Spec.Template.ObjectMeta.Labels).To(Equal(map[string]string{
-				"app.kubernetes.io/name":       "etcd",
-				"app.kubernetes.io/instance":   etcdcluster.Name,
-				"app.kubernetes.io/managed-by": "etcd-operator",
-				"app":                          "etcd",
-			}))
-			Expect(sts.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodTemplate.Annotations))
-
-			By("Checking the extraArgs")
-			Expect(sts.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
+			By("Checking the extraArgs", func() {
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
+			})
 
 			By("Checking the readinessGates", func() {
-				Expect(sts.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
+				Expect(statefulSet.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
 			})
 
 			By("Checking the serviceAccountName", func() {
-				Expect(sts.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
+				Expect(statefulSet.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
 			})
 
 			By("Checking the default startup probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz?serializable=false",
@@ -178,7 +202,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the default readiness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz",
@@ -194,7 +218,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the default liveness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/livez",
@@ -210,52 +234,51 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking generated security volumes", func() {
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
-					Name: "peer-trusted-ca-certificate",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "peer-ca-secret",
-							DefaultMode: ptr.To(int32(420)),
+				Expect(statefulSet.Spec.Template.Spec.Volumes).Should(SatisfyAll(
+					ContainElements([]corev1.Volume{
+						{
+							Name: "peer-trusted-ca-certificate",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "peer-ca-secret",
+									DefaultMode: ptr.To(int32(420)),
+								},
+							},
 						},
-					},
-				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
-					Name: "peer-certificate",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "peer-cert-secret",
-							DefaultMode: ptr.To(int32(420)),
+						{
+							Name: "peer-certificate",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "peer-cert-secret",
+									DefaultMode: ptr.To(int32(420)),
+								},
+							},
 						},
-					},
-				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
-					Name: "server-certificate",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "server-cert-secret",
-							DefaultMode: ptr.To(int32(420)),
+						{
+							Name: "server-certificate",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "server-cert-secret",
+									DefaultMode: ptr.To(int32(420)),
+								},
+							},
 						},
-					},
-				}))
-				Expect(sts.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
-					Name: "client-trusted-ca-certificate",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName:  "client-ca-secret",
-							DefaultMode: ptr.To(int32(420)),
-						},
-					},
-				}))
-			})
-
-			By("Deleting the statefulset", func() {
-				Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+						{
+							Name: "client-trusted-ca-certificate",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName:  "client-ca-secret",
+									DefaultMode: ptr.To(int32(420)),
+								},
+							},
+						}},
+					),
+				))
 			})
 		})
 
-		It("should successfully override probes", func() {
-			etcdcluster := etcdcluster.DeepCopy()
-			etcdcluster.Spec.PodTemplate.Spec = etcdaenixiov1alpha1.PodSpec{
+		It("should successfully override probes", func(ctx SpecContext) {
+			etcdcluster.Spec.PodTemplate.Spec = corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
 						Name: "etcd",
@@ -278,16 +301,11 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
-
-			sts := &appsv1.StatefulSet{}
-			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
-
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Get(&statefulSet)).Should(Succeed())
 
 			By("Checking the updated startup probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/test",
@@ -303,7 +321,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the updated readiness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/readyz",
@@ -319,7 +337,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 
 			By("Checking the updated liveness probe", func() {
-				Expect(sts.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
+				Expect(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
 							Path:   "/livez",
@@ -334,42 +352,26 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					FailureThreshold:    3,
 				}))
 			})
-
-			By("Deleting the statefulset", func() {
-				Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
-			})
 		})
 
-		It("should successfully create the statefulset with emptyDir", func() {
-			By("Creating the statefulset")
-			etcdcluster := etcdcluster.DeepCopy()
+		It("should successfully create statefulSet with emptyDir", func(ctx SpecContext) {
 			size := resource.MustParse("1Gi")
 			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
 				EmptyDir: &corev1.EmptyDirVolumeSource{
-					SizeLimit: &size,
+					SizeLimit: ptr.To(size),
 				},
 			}
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Eventually(Get(&statefulSet)).Should(Succeed())
 
-			sts := &appsv1.StatefulSet{}
-			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
-
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Checking the emptyDir")
-			Expect(sts.Spec.Template.Spec.Volumes[0].VolumeSource.EmptyDir.SizeLimit.String()).To(Equal(size.String()))
-
-			By("Deleting the statefulset")
-			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
+			By("Checking the emptyDir", func() {
+				Expect(statefulSet.Spec.Template.Spec.Volumes[0].VolumeSource.EmptyDir.SizeLimit.String()).To(Equal(size.String()))
+			})
 		})
 
-		It("should fail on creating the statefulset with invalid owner reference", func() {
-			etcdcluster := etcdcluster.DeepCopy()
+		It("should fail on creating the statefulset with invalid owner reference", func(ctx SpecContext) {
 			emptyScheme := runtime.NewScheme()
-
-			err := CreateOrUpdateStatefulSet(ctx, etcdcluster, k8sClient, emptyScheme)
-			Expect(err).To(HaveOccurred())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
 		})
 	})
 
@@ -393,6 +395,9 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+
+	/* TODO: all of the following tests validate merging logic, but all merging logic is now handled externally.
+		These tests now need a rewrite.
 
 	Context("When getting liveness probe", func() {
 		It("should correctly get default values", func() {
@@ -552,6 +557,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}))
 		})
 	})
+
 	Context("When merge with default probe", func() {
 		It("should correctly merge probe with default", func() {
 			defaultProbe := corev1.Probe{
@@ -724,4 +730,5 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		})
 
 	})
+	*/
 })

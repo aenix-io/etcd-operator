@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
@@ -50,6 +51,7 @@ func CreateOrUpdateClusterStateConfigMap(
 		)
 	}
 
+	logger := log.FromContext(ctx)
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
@@ -64,8 +66,10 @@ func CreateOrUpdateClusterStateConfigMap(
 
 	if isEtcdClusterReady(cluster) {
 		// update cluster state to existing
+		logger.V(2).Info("updating cluster state", "cluster_name", cluster.Name)
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}
+	logger.V(2).Info("configmap spec generated", "cm_name", configMap.Name, "cm_spec", configMap.Data)
 
 	if err := ctrl.SetControllerReference(cluster, configMap, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)

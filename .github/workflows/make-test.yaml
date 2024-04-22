@@ -15,11 +15,11 @@ jobs:
     strategy:
       matrix:
         k8s:
-          - version: 1.27.1
+          - version: 1.28.3
             attribute: penultimate
-          - version: 1.28.0
+          - version: 1.29.3
             attribute: previous
-          - version: 1.29.0
+          - version: 1.30.0
             attribute: latest
     runs-on: ubuntu-22.04
     steps:

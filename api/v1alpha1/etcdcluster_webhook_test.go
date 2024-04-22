@@ -33,7 +33,6 @@ var _ = Describe("EtcdCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			etcdCluster := &EtcdCluster{}
 			etcdCluster.Default()
-			Expect(etcdCluster.Spec.PodTemplate.Spec.Containers[0].Image).To(Equal(defaultEtcdImage))
 			Expect(etcdCluster.Spec.Replicas).To(BeNil(), "User should have an opportunity to create cluster with 0 replicas")
 			Expect(etcdCluster.Spec.Storage.EmptyDir).To(BeNil())
 			storage := etcdCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()

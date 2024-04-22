@@ -3,7 +3,7 @@
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.29.3
+ENVTEST_K8S_VERSION ?= v1.30.0
 ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -47,8 +47,9 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen yq ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(YQ) -i '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.podTemplate.properties.spec.properties |= {}' config/crd/bases/etcd.aenix.io_etcdclusters.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -78,6 +79,10 @@ lint: golangci-lint ## Run golangci-lint linter & yamllint
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
+
+.PHONY: nilaway-lint
+nilaway-lint: nilaway
+	$(NILAWAY_LINT) -include-pkgs=github.com/aenix-io/etcd-operator/api,github.com/aenix-io/etcd-operator/internal,github.com/aenix-io/etcd-operator/test ./...
 
 .PHONY: helm-lint
 helm-lint: helm ## Run helm lint over chart
@@ -146,7 +151,7 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.73.1
+PROMETHEUS_OPERATOR_VERSION ?= v0.73.2
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.4
 
@@ -220,6 +225,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+NILAWAY_LINT ?= $(LOCALBIN)/nilaway
 KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
@@ -268,6 +274,10 @@ envtest: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+.PHONY: nilaway
+nilaway: $(LOCALBIN)
+	@test -x $(NILAWAY_LINT) || GOBIN=$(LOCALBIN) go install go.uber.org/nilaway/cmd/nilaway@latest
 
 kind: $(LOCALBIN)
 	@test -x $(KIND) && $(KIND) version | grep -q $(KIND_VERSION) || \

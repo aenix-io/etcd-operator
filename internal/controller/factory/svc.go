@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func GetClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
@@ -40,6 +41,7 @@ func CreateOrUpdateClusterService(
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
+	logger := log.FromContext(ctx)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name,
@@ -57,6 +59,7 @@ func CreateOrUpdateClusterService(
 			PublishNotReadyAddresses: true,
 		},
 	}
+	logger.V(2).Info("cluster service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
 
 	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
@@ -71,6 +74,7 @@ func CreateOrUpdateClientService(
 	rclient client.Client,
 	rscheme *runtime.Scheme,
 ) error {
+	logger := log.FromContext(ctx)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      GetClientServiceName(cluster),
@@ -85,6 +89,7 @@ func CreateOrUpdateClientService(
 			Selector: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
 	}
+	logger.V(2).Info("client service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
 
 	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
