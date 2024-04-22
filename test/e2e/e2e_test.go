@@ -82,13 +82,13 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-			By("port-forward headless service to localhost")
+			By("port-forward service to localhost")
 			port, _ := utils.GetFreePort()
 			go func() {
 				defer GinkgoRecover()
 				defer wg.Done()
 				cmd = exec.Command("kubectl", "port-forward",
-					"service/test-client-headless", strconv.Itoa(port)+":2379",
+					"service/test", strconv.Itoa(port)+":2379",
 					"--namespace", namespace,
 				)
 				_, err = utils.Run(cmd)
