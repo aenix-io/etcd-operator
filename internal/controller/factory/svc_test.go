@@ -99,7 +99,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 		})
 
 		It("should successfully ensure headless service", func(ctx SpecContext) {
-			Expect(CreateOrUpdateClusterService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
 			Eventually(Object(&headlessService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
 				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
@@ -118,7 +118,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			svc := headlessService.DeepCopy()
 			svc.Name = cluster.Spec.HeadlessServiceTemplate.Name
 
-			Expect(CreateOrUpdateClusterService(ctx, cluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, cluster, k8sClient, k8sClient.Scheme())).To(Succeed())
 			Eventually(Object(svc)).Should(SatisfyAll(
 				HaveField("ObjectMeta.Name", Equal(cluster.Spec.HeadlessServiceTemplate.Name)),
 				HaveField("ObjectMeta.Labels", SatisfyAll(
@@ -197,7 +197,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 
 		It("should fail on creating the client service with invalid owner reference", func(ctx SpecContext) {
 			emptyScheme := runtime.NewScheme()
-			Expect(CreateOrUpdateClusterService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
 			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
 		})
 	})

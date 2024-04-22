@@ -49,7 +49,7 @@ func GetHeadlessServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return fmt.Sprintf("%s-headless", cluster.Name)
 }
 
-func CreateOrUpdateClusterService(
+func CreateOrUpdateHeadlessService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,

@@ -134,6 +134,7 @@ type EmbeddedObjectMetadata struct {
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
 }
 
+// ToObjectMeta converts EmbeddedObjectMetadata to metav1.ObjectMeta
 func (r *EmbeddedObjectMetadata) ToObjectMeta() metav1.ObjectMeta {
 	return metav1.ObjectMeta{
 		Name:        r.Name,
