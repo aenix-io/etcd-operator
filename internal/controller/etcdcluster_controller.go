@@ -99,7 +99,9 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// set cluster readiness condition
 	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
-	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) && !clusterReady {
+	if existingCondition != nil &&
+		existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) &&
+		!clusterReady {
 		// if we are still "waiting for first quorum establishment" and the StatefulSet
 		// isn't ready yet, don't update the EtcdConditionReady, but circuit-break.
 		return r.updateStatus(ctx, instance)
