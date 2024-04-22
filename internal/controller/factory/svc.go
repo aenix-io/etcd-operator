@@ -38,7 +38,7 @@ func GetServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 		return cluster.Spec.ServiceTemplate.Name
 	}
 
-	return fmt.Sprintf("%s-client", cluster.Name)
+	return cluster.Name
 }
 
 func GetHeadlessServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
