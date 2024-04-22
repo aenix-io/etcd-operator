@@ -3,13 +3,13 @@ module github.com/aenix-io/etcd-operator
 go 1.22.2
 
 require (
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.33.0
 	go.etcd.io/etcd/client/v3 v3.5.13
 	k8s.io/api v0.30.0
 	k8s.io/apimachinery v0.30.0
-	k8s.io/client-go v0.29.3
+	k8s.io/client-go v0.30.0
 	k8s.io/utils v0.0.0-20240310230437-4693a0247e57
 	sigs.k8s.io/controller-runtime v0.17.3
 )
