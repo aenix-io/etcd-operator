@@ -24,9 +24,9 @@ repos:
       entry: sh -c "make lint-fix"
       language: system
       require_serial: true
-    - id: make-nilaway-lint
-      name: make-nilaway-lint
-      entry: sh -c "make nilaway-lint"
+    - id: make-mod-tidy
+      name: make-mod-tidy
+      entry: sh -c "make mod-tidy"
       language: system
       require_serial: true
     - id: make-helm-lint
