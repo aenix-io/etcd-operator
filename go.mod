@@ -3,7 +3,7 @@ module github.com/aenix-io/etcd-operator
 go 1.22.2
 
 require (
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.33.0
 	go.etcd.io/etcd/client/v3 v3.5.13
