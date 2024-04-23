@@ -141,20 +141,20 @@ spec:
     - key encipherment
   dnsNames:
   - test-0
-  - test-0.test
-  - test-0.test.default.svc
-  - test-0.test.default.svc.cluster.local
+  - test-0.test-headless
+  - test-0.test-headless.default.svc
+  - test-0.test-headless.default.svc.cluster.local
   - test-1
-  - test-1.test
-  - test-1.test.default.svc
-  - test-1.test.default.svc.cluster.local
+  - test-1.test-headless
+  - test-1.test-headless.default.svc
+  - test-1.test-headless.default.svc.cluster.local
   - test-2
-  - test-2.test
-  - test-2.test.default.svc
-  - test-2.test.default.svc.cluster.local
-  - test-client
-  - test-client.default.svc
-  - test-client.default.svc.cluster.local
+  - test-2.test-headless
+  - test-2.test-headless.default.svc
+  - test-2.test-headless.default.svc.cluster.local
+  - test
+  - test.default.svc
+  - test.default.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:
@@ -179,17 +179,17 @@ spec:
     - key encipherment
   dnsNames:
   - test-0
-  - test-0.test
-  - test-0.test.default.svc
-  - test-0.test.default.svc.cluster.local
+  - test-0.test-headless
+  - test-0.test-headless.default.svc
+  - test-0.test-headless.default.svc.cluster.local
   - test-1
-  - test-1.test
-  - test-1.test.default.svc
-  - test-1.test.default.svc.cluster.local
+  - test-1.test-headless
+  - test-1.test-headless.default.svc
+  - test-1.test-headless.default.svc.cluster.local
   - test-2
-  - test-2.test
-  - test-2.test.default.svc
-  - test-2.test.default.svc.cluster.local
+  - test-2.test-headless
+  - test-2.test-headless.default.svc
+  - test-2.test-headless.default.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:

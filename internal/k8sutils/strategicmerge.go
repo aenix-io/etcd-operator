@@ -7,6 +7,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 )
 
+// StrategicMerge merges two objects using strategic merge patch.
+// It accepts two objects, base and patch, and returns a merged object.
+// Both base and patch objects must be of the same type and must not be a pointer.
 func StrategicMerge[K any](base, patch K) (merged K, err error) {
 	baseBytes, err := json.Marshal(base)
 	if err != nil {
@@ -20,7 +23,7 @@ func StrategicMerge[K any](base, patch K) (merged K, err error) {
 
 	mergedBytes, err := strategicpatch.StrategicMergePatch(baseBytes, patchBytes, &merged)
 	if err != nil {
-		return merged, fmt.Errorf("cannot patch base pod spec with podTemplate.spec: %w", err)
+		return merged, fmt.Errorf("cannot patch base object with given spec: %w", err)
 	}
 
 	err = json.Unmarshal(mergedBytes, &merged)

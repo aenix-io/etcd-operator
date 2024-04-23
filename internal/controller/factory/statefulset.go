@@ -28,9 +28,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -91,7 +92,7 @@ func CreateOrUpdateStatefulSet(
 		Spec: appsv1.StatefulSetSpec{
 			// initialize static fields that cannot be changed across updates.
 			Replicas:            cluster.Spec.Replicas,
-			ServiceName:         cluster.Name,
+			ServiceName:         GetHeadlessServiceName(cluster),
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
@@ -296,9 +297,9 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
 		fmt.Sprintf("--listen-client-urls=%s://0.0.0.0:2379", serverProtocol),
-		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", cluster.Name),
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", GetHeadlessServiceName(cluster)),
 		"--data-dir=/var/run/etcd/default.etcd",
-		fmt.Sprintf("--advertise-client-urls=%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", serverProtocol, cluster.Name),
+		fmt.Sprintf("--advertise-client-urls=%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", serverProtocol, GetHeadlessServiceName(cluster)),
 	}...)
 
 	args = append(args, peerTlsSettings...)

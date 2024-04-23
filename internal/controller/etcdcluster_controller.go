@@ -130,7 +130,7 @@ func (r *EtcdClusterReconciler) ensureClusterObjects(
 	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
-	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateHeadlessService(ctx, cluster, r.Client, r.Scheme); err != nil {
 		return err
 	}
 	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client, r.Scheme); err != nil {
