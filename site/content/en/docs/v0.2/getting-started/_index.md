@@ -1,7 +1,7 @@
 ---
-title: Quickstart
-weight: 0
+title: Getting Started
 description: Get etcd with etcd-operator up and running in less than 5 minutes!
+weight: 2
 ---
 
 Follow these instructions to install, run, and test etcd with etcd-operator in a Kubernetes cluster.
