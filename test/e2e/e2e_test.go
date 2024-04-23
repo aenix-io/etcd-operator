@@ -21,9 +21,10 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/aenix-io/etcd-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/aenix-io/etcd-operator/test/utils"
 )
 
 var _ = Describe("etcd-operator", Ordered, func() {
@@ -87,7 +88,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				defer GinkgoRecover()
 				defer wg.Done()
 				cmd = exec.Command("kubectl", "port-forward",
-					"service/test-client", strconv.Itoa(port)+":2379",
+					"service/test", strconv.Itoa(port)+":2379",
 					"--namespace", namespace,
 				)
 				_, err = utils.Run(cmd)

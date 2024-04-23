@@ -26,8 +26,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
 func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
@@ -41,13 +42,14 @@ func CreateOrUpdateClusterStateConfigMap(
 	rscheme *runtime.Scheme,
 ) error {
 	initialCluster := ""
+	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
 	for i := int32(0); i < *cluster.Spec.Replicas; i++ {
 		if i > 0 {
 			initialCluster += ","
 		}
-		initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
-			cluster.Name, i,
-			cluster.Name, i, cluster.Name, cluster.Namespace,
+		podName := fmt.Sprintf("%s-%d", cluster.Name, i)
+		initialCluster += fmt.Sprintf("%s=https://%s.%s",
+			podName, podName, clusterService,
 		)
 	}
 
