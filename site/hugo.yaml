@@ -1,5 +1,5 @@
 baseURL: /
-title: etcd operator
+title: etcd-operator
 
 contentDir: content/en
 defaultContentLanguage: en
@@ -53,11 +53,11 @@ params:
 
   version_menu: Releases
   archived_version: false
-  version: v0.1
+  version: v0.2
   url_latest_version: https://etcd.aenix.io/docs/latest
   versions:
-    - version: v0.1
-      url: https://etcd.aenix.io/docs/v0.1
+    - version: v0.2
+      url: https://etcd.aenix.io/docs/v0.2
 
   copyright:
     authors: "Aenix.io | "
