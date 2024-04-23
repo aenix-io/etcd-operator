@@ -21,9 +21,9 @@ metadata:
 spec:
   driver: etcd
   endpoints:
-  - etcd-0.etcd.kamaji-system.svc:2379
-  - etcd-1.etcd.kamaji-system.svc:2379
-  - etcd-2.etcd.kamaji-system.svc:2379
+  - etcd-0.etcd-headless.kamaji-system.svc:2379
+  - etcd-1.etcd-headless.kamaji-system.svc:2379
+  - etcd-2.etcd-headless.kamaji-system.svc:2379
   tlsConfig:
     certificateAuthority:
       certificate:
@@ -140,17 +140,17 @@ spec:
     - "key encipherment"
   dnsNames:
   - etcd-0
-  - etcd-0.etcd
-  - etcd-0.etcd.kamaji-system.svc
-  - etcd-0.etcd.kamaji-system.svc.cluster.local
+  - etcd-0.etcd-headless
+  - etcd-0.etcd-headless.kamaji-system.svc
+  - etcd-0.etcd-headless.kamaji-system.svc.cluster.local
   - etcd-1
-  - etcd-1.etcd
-  - etcd-1.etcd.kamaji-system.svc
-  - etcd-1.etcd.kamaji-system.svc.cluster.local
+  - etcd-1.etcd-headless
+  - etcd-1.etcd-headless.kamaji-system.svc
+  - etcd-1.etcd-headless.kamaji-system.svc.cluster.local
   - etcd-2
-  - etcd-2.etcd
-  - etcd-2.etcd.kamaji-system.svc
-  - etcd-2.etcd.kamaji-system.svc.cluster.local
+  - etcd-2.etcd-headless
+  - etcd-2.etcd-headless.kamaji-system.svc
+  - etcd-2.etcd-headless.kamaji-system.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:
@@ -175,17 +175,17 @@ spec:
     - "key encipherment"
   dnsNames:
   - etcd-0
-  - etcd-0.etcd
-  - etcd-0.etcd.kamaji-system.svc
-  - etcd-0.etcd.kamaji-system.svc.cluster.local
+  - etcd-0.etcd-headless
+  - etcd-0.etcd-headless.kamaji-system.svc
+  - etcd-0.etcd-headless.kamaji-system.svc.cluster.local
   - etcd-1
-  - etcd-1.etcd
-  - etcd-1.etcd.kamaji-system.svc
-  - etcd-1.etcd.kamaji-system.svc.cluster.local
+  - etcd-1.etcd-headless
+  - etcd-1.etcd-headless.kamaji-system.svc
+  - etcd-1.etcd-headless.kamaji-system.svc.cluster.local
   - etcd-2
-  - etcd-2.etcd
-  - etcd-2.etcd.kamaji-system.svc
-  - etcd-2.etcd.kamaji-system.svc.cluster.local
+  - etcd-2.etcd-headless
+  - etcd-2.etcd-headless.kamaji-system.svc
+  - etcd-2.etcd-headless.kamaji-system.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:

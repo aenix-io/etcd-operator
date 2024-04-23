@@ -32,8 +32,11 @@ import (
 
 func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
 	logger := log.FromContext(ctx)
+	logger.V(2).Info("statefulset reconciliation started")
 
 	currentSts := &appsv1.StatefulSet{}
+	logger.V(2).Info("statefulset found", "sts_name", currentSts.Name)
+
 	err := rclient.Get(ctx, types.NamespacedName{Namespace: sts.Namespace, Name: sts.Name}, currentSts)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -43,14 +46,18 @@ func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName st
 		return fmt.Errorf("cannot get existing statefulset: %s, for crd_object: %s, err: %w", sts.Name, crdName, err)
 	}
 	sts.Annotations = labels.Merge(currentSts.Annotations, sts.Annotations)
+	logger.V(2).Info("statefulset annotations merged", "sts_annotations", sts.Annotations)
 	sts.Status = currentSts.Status
 	return rclient.Update(ctx, sts)
 }
 
 func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName string, configMap *corev1.ConfigMap) error {
 	logger := log.FromContext(ctx)
+	logger.V(2).Info("configmap reconciliation started")
 
 	currentConfigMap := &corev1.ConfigMap{}
+	logger.V(2).Info("configmap found", "cm_name", currentConfigMap.Name)
+
 	err := rclient.Get(ctx, types.NamespacedName{Namespace: configMap.Namespace, Name: configMap.Name}, currentConfigMap)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -60,13 +67,21 @@ func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName stri
 		return fmt.Errorf("cannot get existing configMap: %s, for crd_object: %s, err: %w", configMap.Name, crdName, err)
 	}
 	configMap.Annotations = labels.Merge(currentConfigMap.Annotations, configMap.Annotations)
+	logger.V(2).Info("configmap annotations merged", "cm_annotations", configMap.Annotations)
 	return rclient.Update(ctx, configMap)
 }
 
 func reconcileService(ctx context.Context, rclient client.Client, crdName string, svc *corev1.Service) error {
 	logger := log.FromContext(ctx)
+	logger.V(2).Info("service reconciliation started")
+
+	if svc == nil {
+		return fmt.Errorf("service is nil for crd_object: %s", crdName)
+	}
 
 	currentSvc := &corev1.Service{}
+	logger.V(2).Info("service found", "svc_name", currentSvc.Name)
+
 	err := rclient.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, currentSvc)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -76,6 +91,7 @@ func reconcileService(ctx context.Context, rclient client.Client, crdName string
 		return fmt.Errorf("cannot get existing service: %s, for crd_object: %s, err: %w", svc.Name, crdName, err)
 	}
 	svc.Annotations = labels.Merge(currentSvc.Annotations, svc.Annotations)
+	logger.V(2).Info("service annotations merged", "svc_annotations", svc.Annotations)
 	svc.Status = currentSvc.Status
 	return rclient.Update(ctx, svc)
 }
@@ -84,7 +100,10 @@ func reconcileService(ctx context.Context, rclient client.Client, crdName string
 // pdb parameter should have at least metadata.name and metadata.namespace fields filled.
 func deleteManagedPdb(ctx context.Context, rclient client.Client, pdb *v1.PodDisruptionBudget) error {
 	logger := log.FromContext(ctx)
+
 	currentPdb := &v1.PodDisruptionBudget{}
+	logger.V(2).Info("pdb found", "pdb_name", currentPdb.Name)
+
 	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
 	if err != nil {
 		logger.V(2).Info("error getting cluster PDB", "error", err)
@@ -101,7 +120,11 @@ func deleteManagedPdb(ctx context.Context, rclient client.Client, pdb *v1.PodDis
 
 func reconcilePdb(ctx context.Context, rclient client.Client, crdName string, pdb *v1.PodDisruptionBudget) error {
 	logger := log.FromContext(ctx)
+	logger.V(2).Info("pdb reconciliation started")
+
 	currentPdb := &v1.PodDisruptionBudget{}
+	logger.V(2).Info("pdb found", "pdb_name", currentPdb.Name)
+
 	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -112,6 +135,7 @@ func reconcilePdb(ctx context.Context, rclient client.Client, crdName string, pd
 		return fmt.Errorf("cannot get existing pdb resource: %s for crd_object: %s, err: %w", pdb.Name, crdName, err)
 	}
 	pdb.Annotations = labels.Merge(currentPdb.Annotations, pdb.Annotations)
+	logger.V(2).Info("pdb annotations merged", "pdb_annotations", pdb.Annotations)
 	pdb.ResourceVersion = currentPdb.ResourceVersion
 	pdb.Status = currentPdb.Status
 	return rclient.Update(ctx, pdb)

@@ -15,22 +15,22 @@ jobs:
     strategy:
       matrix:
         k8s:
-          - version: 1.27.1
+          - version: 1.28.3
             attribute: penultimate
-          - version: 1.28.0
+          - version: 1.29.3
             attribute: previous
-          - version: 1.29.0
+          - version: 1.30.0
             attribute: latest
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.1.3
       - uses: actions/setup-go@v5.0.0
         with:
           go-version: 1.22.2
       - uses: docker/setup-buildx-action@v3.3.0
       - uses: tale/kubectl-action@v1.4.0
         with:
-          kubectl-version: v1.29.3
+          kubectl-version: v1.30.0
           # Empty kubeconfig file
           base64-kube-config: "YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCnByZWZlcmVuY2VzOiB7fQo="
       - run: ENVTEST_K8S_VERSION=${{ matrix.k8s.version }} make test-e2e

@@ -26,6 +26,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
@@ -40,16 +42,18 @@ func CreateOrUpdateClusterStateConfigMap(
 	rscheme *runtime.Scheme,
 ) error {
 	initialCluster := ""
+	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
 	for i := int32(0); i < *cluster.Spec.Replicas; i++ {
 		if i > 0 {
 			initialCluster += ","
 		}
-		initialCluster += fmt.Sprintf("%s-%d=https://%s-%d.%s.%s.svc:2380",
-			cluster.Name, i,
-			cluster.Name, i, cluster.Name, cluster.Namespace,
+		podName := fmt.Sprintf("%s-%d", cluster.Name, i)
+		initialCluster += fmt.Sprintf("%s=https://%s.%s",
+			podName, podName, clusterService,
 		)
 	}
 
+	logger := log.FromContext(ctx)
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
@@ -64,8 +68,10 @@ func CreateOrUpdateClusterStateConfigMap(
 
 	if isEtcdClusterReady(cluster) {
 		// update cluster state to existing
+		logger.V(2).Info("updating cluster state", "cluster_name", cluster.Name)
 		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
 	}
+	logger.V(2).Info("configmap spec generated", "cm_name", configMap.Name, "cm_spec", configMap.Data)
 
 	if err := ctrl.SetControllerReference(cluster, configMap, rscheme); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
