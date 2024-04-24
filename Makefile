@@ -55,6 +55,11 @@ manifests: controller-gen yq ## Generate WebhookConfiguration, ClusterRole and C
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
+.PHONY: generate-docs
+generate-docs: crd-ref-docs ## Generate CRD reference documentation.
+	@$(eval VERSION := $(shell $(YQ) '.params.version' site/hugo.yaml))
+	$(CRD_REF_DOCS) --config=.crd-docs.yaml --renderer=markdown --templates-dir="site/reference-templates" --output-path="site/content/en/docs/$(VERSION)/reference/api.md"
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -236,6 +241,7 @@ KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
@@ -275,6 +281,10 @@ controller-gen: $(LOCALBIN)
 .PHONY: envtest
 envtest: $(LOCALBIN)
 	@test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(LOCALBIN)
+	@test -x $(CRD_REF_DOCS) || GOBIN=$(LOCALBIN) go install github.com/elastic/crd-ref-docs@latest
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)
