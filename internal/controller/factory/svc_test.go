@@ -19,7 +19,6 @@ package factory
 import (
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
@@ -99,7 +98,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 		})
 
 		It("should successfully ensure headless service", func(ctx SpecContext) {
-			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&headlessService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
 				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
@@ -107,8 +106,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 		})
 
 		It("should successfully ensure headless service with custom metadata", func(ctx SpecContext) {
-			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
+			etcdcluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name:        "headless-name",
 					Labels:      map[string]string{"label": "value"},
@@ -116,23 +114,23 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 				},
 			}
 			svc := headlessService.DeepCopy()
-			svc.Name = cluster.Spec.HeadlessServiceTemplate.Name
+			svc.Name = etcdcluster.Spec.HeadlessServiceTemplate.Name
 
-			Expect(CreateOrUpdateHeadlessService(ctx, cluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(svc)).Should(SatisfyAll(
-				HaveField("ObjectMeta.Name", Equal(cluster.Spec.HeadlessServiceTemplate.Name)),
+				HaveField("ObjectMeta.Name", Equal(etcdcluster.Spec.HeadlessServiceTemplate.Name)),
 				HaveField("ObjectMeta.Labels", SatisfyAll(
 					HaveKeyWithValue("label", "value"),
 					HaveKeyWithValue("app.kubernetes.io/name", "etcd"),
 				)),
-				HaveField("ObjectMeta.Annotations", Equal(cluster.Spec.HeadlessServiceTemplate.Annotations)),
+				HaveField("ObjectMeta.Annotations", Equal(etcdcluster.Spec.HeadlessServiceTemplate.Annotations)),
 			))
 			// We need to manually cleanup here because we changed the name of the service
 			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
 		})
 
 		It("should successfully ensure client service", func(ctx SpecContext) {
-			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&clientService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
 				HaveField("Spec.ClusterIP", Not(Equal(corev1.ClusterIPNone))),
@@ -140,8 +138,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 		})
 
 		It("should successfully ensure client service with custom metadata", func(ctx SpecContext) {
-			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name:        "client-name",
 					Labels:      map[string]string{"label": "value"},
@@ -149,24 +146,23 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 				},
 			}
 			svc := clientService.DeepCopy()
-			svc.Name = cluster.Spec.ServiceTemplate.Name
+			svc.Name = etcdcluster.Spec.ServiceTemplate.Name
 
-			Expect(CreateOrUpdateClientService(ctx, cluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(svc)).Should(SatisfyAll(
-				HaveField("ObjectMeta.Name", Equal(cluster.Spec.ServiceTemplate.Name)),
+				HaveField("ObjectMeta.Name", Equal(etcdcluster.Spec.ServiceTemplate.Name)),
 				HaveField("ObjectMeta.Labels", SatisfyAll(
 					HaveKeyWithValue("label", "value"),
 					HaveKeyWithValue("app.kubernetes.io/name", "etcd"),
 				)),
-				HaveField("ObjectMeta.Annotations", Equal(cluster.Spec.ServiceTemplate.Annotations)),
+				HaveField("ObjectMeta.Annotations", Equal(etcdcluster.Spec.ServiceTemplate.Annotations)),
 			))
 			// We need to manually cleanup here because we changed the name of the service
 			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
 		})
 
 		It("should successfully ensure client service with custom spec", func(ctx SpecContext) {
-			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
 				Spec: corev1.ServiceSpec{
 					Type: corev1.ServiceTypeLoadBalancer,
 					Ports: []corev1.ServicePort{
@@ -180,7 +176,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 				},
 			}
 
-			Expect(CreateOrUpdateClientService(ctx, cluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&clientService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeLoadBalancer)),
 				HaveField("Spec.LoadBalancerClass", Equal(ptr.To("someClass"))),
@@ -196,9 +192,8 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 		})
 
 		It("should fail on creating the client service with invalid owner reference", func(ctx SpecContext) {
-			emptyScheme := runtime.NewScheme()
-			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
-			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
 })

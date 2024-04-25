@@ -20,15 +20,12 @@ import (
 	"context"
 	"fmt"
 
+	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
 func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
@@ -39,7 +36,6 @@ func CreateOrUpdateClusterStateConfigMap(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
 	initialCluster := ""
 	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
@@ -73,11 +69,11 @@ func CreateOrUpdateClusterStateConfigMap(
 	}
 	logger.V(2).Info("configmap spec generated", "cm_name", configMap.Name, "cm_spec", configMap.Data)
 
-	if err := ctrl.SetControllerReference(cluster, configMap, rscheme); err != nil {
+	if err := ctrl.SetControllerReference(cluster, configMap, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileConfigMap(ctx, rclient, cluster.Name, configMap)
+	return reconcileOwnedResource(ctx, rclient, configMap)
 }
 
 // isEtcdClusterReady returns true if condition "Ready" has progressed

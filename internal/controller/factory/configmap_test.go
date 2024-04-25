@@ -19,7 +19,6 @@ package factory
 import (
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
@@ -88,7 +87,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 		It("should successfully ensure the configmap", func(ctx SpecContext) {
 			var configMapUID types.UID
 			By("processing new etcd cluster", func() {
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
 				Eventually(Get(&configMap)).Should(Succeed())
 				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
 				configMapUID = configMap.GetUID()
@@ -99,7 +98,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady)).
 					WithStatus(true).
 					Complete())
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
 				Eventually(Object(&configMap)).Should(HaveField("ObjectMeta.UID", Equal(configMapUID)))
 				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("existing"))
 			})
@@ -109,15 +108,14 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 					WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum)).
 					WithStatus(true).
 					Complete())
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
 				Eventually(Object(&configMap)).Should(HaveField("ObjectMeta.UID", Equal(configMapUID)))
 				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
 			})
 		})
 
 		It("should fail to create the configmap with invalid owner reference", func(ctx SpecContext) {
-			emptyScheme := runtime.NewScheme()
-			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
 })

@@ -87,7 +87,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 
 		It("should create PDB with pre-filled data", func(ctx SpecContext) {
 			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
 			Expect(podDisruptionBudget.Spec.MinAvailable).NotTo(BeNil())
 			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(3))
@@ -95,7 +95,7 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 		})
 
 		It("should create PDB with empty data", func(ctx SpecContext) {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
 			Expect(etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
 			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(2))
@@ -104,14 +104,14 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 
 		It("should skip deletion of PDB if not filled and not exist", func(ctx SpecContext) {
 			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).NotTo(HaveOccurred())
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
 		})
 
 		It("should delete created PDB after updating CR", func(ctx SpecContext) {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
 			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).NotTo(HaveOccurred())
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
 			err = Get(&podDisruptionBudget)()
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
