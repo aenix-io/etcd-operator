@@ -23,7 +23,6 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	v1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,10 +34,9 @@ func CreateOrUpdatePdb(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
 	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
-		return deleteManagedPdb(ctx, rclient, &v1.PodDisruptionBudget{
+		return deleteOwnedResource(ctx, rclient, &v1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: cluster.Namespace,
 				Name:      cluster.Name,
@@ -67,9 +65,9 @@ func CreateOrUpdatePdb(
 
 	logger.V(2).Info("pdb spec generated", "pdb_name", pdb.Name, "pdb_spec", pdb.Spec)
 
-	if err := ctrl.SetControllerReference(cluster, pdb, rscheme); err != nil {
+	if err := ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcilePdb(ctx, rclient, cluster.Name, pdb)
+	return reconcileOwnedResource(ctx, rclient, pdb)
 }

@@ -20,123 +20,46 @@ import (
 	"context"
 	"fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func reconcileStatefulSet(ctx context.Context, rclient client.Client, crdName string, sts *appsv1.StatefulSet) error {
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("statefulset reconciliation started")
-
-	currentSts := &appsv1.StatefulSet{}
-	logger.V(2).Info("statefulset found", "sts_name", currentSts.Name)
-
-	err := rclient.Get(ctx, types.NamespacedName{Namespace: sts.Namespace, Name: sts.Name}, currentSts)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.V(2).Info("creating new statefulset", "sts_name", sts.Name, "crd_object", crdName)
-			return rclient.Create(ctx, sts)
-		}
-		return fmt.Errorf("cannot get existing statefulset: %s, for crd_object: %s, err: %w", sts.Name, crdName, err)
+func reconcileOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
+	if resource == nil {
+		return fmt.Errorf("resource cannot be nil")
 	}
-	sts.Annotations = labels.Merge(currentSts.Annotations, sts.Annotations)
-	logger.V(2).Info("statefulset annotations merged", "sts_annotations", sts.Annotations)
-	sts.Status = currentSts.Status
-	return rclient.Update(ctx, sts)
+	gvk, err := apiutil.GVKForObject(resource, c.Scheme())
+	if err != nil {
+		return fmt.Errorf("failed to get GVK: %w", err)
+	}
+	logger := log.FromContext(ctx).WithValues("group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
+	logger.V(2).Info("reconciling owned resource")
+
+	base := resource.DeepCopyObject().(client.Object)
+	err = c.Get(ctx, client.ObjectKeyFromObject(resource), base)
+	if err == nil {
+		logger.V(2).Info("updating owned resource")
+		resource.SetAnnotations(labels.Merge(base.GetAnnotations(), resource.GetAnnotations()))
+		resource.SetResourceVersion(base.GetResourceVersion())
+		logger.V(2).Info("owned resource annotations merged", "annotations", resource.GetAnnotations())
+		return c.Update(ctx, resource)
+	}
+	if errors.IsNotFound(err) {
+		logger.V(2).Info("creating new owned resource")
+		return c.Create(ctx, resource)
+	}
+	return fmt.Errorf("error getting owned resource: %w", err)
 }
 
-func reconcileConfigMap(ctx context.Context, rclient client.Client, crdName string, configMap *corev1.ConfigMap) error {
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("configmap reconciliation started")
-
-	currentConfigMap := &corev1.ConfigMap{}
-	logger.V(2).Info("configmap found", "cm_name", currentConfigMap.Name)
-
-	err := rclient.Get(ctx, types.NamespacedName{Namespace: configMap.Namespace, Name: configMap.Name}, currentConfigMap)
+func deleteOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
+	gvk, err := apiutil.GVKForObject(resource, c.Scheme())
 	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.V(2).Info("creating new configMap", "cm_name", configMap.Name, "crd_object", crdName)
-			return rclient.Create(ctx, configMap)
-		}
-		return fmt.Errorf("cannot get existing configMap: %s, for crd_object: %s, err: %w", configMap.Name, crdName, err)
+		return err
 	}
-	configMap.Annotations = labels.Merge(currentConfigMap.Annotations, configMap.Annotations)
-	logger.V(2).Info("configmap annotations merged", "cm_annotations", configMap.Annotations)
-	return rclient.Update(ctx, configMap)
-}
-
-func reconcileService(ctx context.Context, rclient client.Client, crdName string, svc *corev1.Service) error {
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("service reconciliation started")
-
-	if svc == nil {
-		return fmt.Errorf("service is nil for crd_object: %s", crdName)
-	}
-
-	currentSvc := &corev1.Service{}
-	logger.V(2).Info("service found", "svc_name", currentSvc.Name)
-
-	err := rclient.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: svc.Name}, currentSvc)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.V(2).Info("creating new service", "svc_name", svc.Name, "crd_object", crdName)
-			return rclient.Create(ctx, svc)
-		}
-		return fmt.Errorf("cannot get existing service: %s, for crd_object: %s, err: %w", svc.Name, crdName, err)
-	}
-	svc.Annotations = labels.Merge(currentSvc.Annotations, svc.Annotations)
-	logger.V(2).Info("service annotations merged", "svc_annotations", svc.Annotations)
-	svc.Status = currentSvc.Status
-	return rclient.Update(ctx, svc)
-}
-
-// deleteManagedPdb deletes cluster PDB if it exists.
-// pdb parameter should have at least metadata.name and metadata.namespace fields filled.
-func deleteManagedPdb(ctx context.Context, rclient client.Client, pdb *v1.PodDisruptionBudget) error {
-	logger := log.FromContext(ctx)
-
-	currentPdb := &v1.PodDisruptionBudget{}
-	logger.V(2).Info("pdb found", "pdb_name", currentPdb.Name)
-
-	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
-	if err != nil {
-		logger.V(2).Info("error getting cluster PDB", "error", err)
-		return client.IgnoreNotFound(err)
-	}
-	err = rclient.Delete(ctx, currentPdb)
-	if err != nil {
-		logger.Error(err, "error deleting cluster PDB", "name", pdb.Name)
-		return client.IgnoreNotFound(err)
-	}
-
-	return nil
-}
-
-func reconcilePdb(ctx context.Context, rclient client.Client, crdName string, pdb *v1.PodDisruptionBudget) error {
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("pdb reconciliation started")
-
-	currentPdb := &v1.PodDisruptionBudget{}
-	logger.V(2).Info("pdb found", "pdb_name", currentPdb.Name)
-
-	err := rclient.Get(ctx, types.NamespacedName{Namespace: pdb.Namespace, Name: pdb.Name}, currentPdb)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.V(2).Info("creating new PDB", "pdb_name", pdb.Name, "crd_object", crdName)
-			return rclient.Create(ctx, pdb)
-		}
-		logger.V(2).Info("error getting cluster PDB", "error", err)
-		return fmt.Errorf("cannot get existing pdb resource: %s for crd_object: %s, err: %w", pdb.Name, crdName, err)
-	}
-	pdb.Annotations = labels.Merge(currentPdb.Annotations, pdb.Annotations)
-	logger.V(2).Info("pdb annotations merged", "pdb_annotations", pdb.Annotations)
-	pdb.ResourceVersion = currentPdb.ResourceVersion
-	pdb.Status = currentPdb.Status
-	return rclient.Update(ctx, pdb)
+	logger := log.FromContext(ctx).WithValues("group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
+	logger.V(2).Info("deleting owned resource")
+	return client.IgnoreNotFound(c.Delete(ctx, resource))
 }
