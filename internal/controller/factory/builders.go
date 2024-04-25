@@ -28,9 +28,12 @@ import (
 )
 
 func reconcileOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
+	if resource == nil {
+		return fmt.Errorf("resource cannot be nil")
+	}
 	gvk, err := apiutil.GVKForObject(resource, c.Scheme())
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get GVK: %w", err)
 	}
 	logger := log.FromContext(ctx).WithValues("group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
 	logger.V(2).Info("reconciling owned resource")
