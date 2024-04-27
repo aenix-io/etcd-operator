@@ -157,7 +157,7 @@ NAMESPACE ?= etcd-operator-system
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION ?= v0.73.2
 # renovate: datasource=github-tags depName=jetstack/cert-manager
-CERT_MANAGER_VERSION ?= v1.14.4
+CERT_MANAGER_VERSION ?= v1.14.5
 
 ifndef ignore-not-found
   ignore-not-found = false
@@ -239,7 +239,7 @@ YQ = $(LOCALBIN)/yq
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.3.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.14.0
+CONTROLLER_TOOLS_VERSION ?= v0.15.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.57.2
