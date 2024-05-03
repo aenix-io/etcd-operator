@@ -1,7 +1,7 @@
 ---
-title: Quickstart
-weight: 0
+title: Getting Started
 description: Get etcd with etcd-operator up and running in less than 5 minutes!
+weight: 2
 ---
 
 Follow these instructions to install, run, and test etcd with etcd-operator in a Kubernetes cluster.
@@ -14,7 +14,7 @@ Pre-requisites:
 
 1. Install etcd-operator:
     ```bash
-    kubectl apply -f https://github.com/aenix-io/etcd-operator/releases/download/latest/etcd-operator.yaml
+    kubectl apply -f https://github.com/aenix-io/etcd-operator/releases/latest/download/etcd-operator.yaml
     ```
 2. Check the operator is running:
     ```bash

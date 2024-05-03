@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	policyv1 "k8s.io/api/policy/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -32,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
@@ -99,7 +99,9 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// set cluster readiness condition
 	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
-	if existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) && !clusterReady {
+	if existingCondition != nil &&
+		existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) &&
+		!clusterReady {
 		// if we are still "waiting for first quorum establishment" and the StatefulSet
 		// isn't ready yet, don't update the EtcdConditionReady, but circuit-break.
 		return r.updateStatus(ctx, instance)
@@ -125,45 +127,49 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // ensureClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
-	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
 		return err
 	}
-	if err := factory.CreateOrUpdateClusterService(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateHeadlessService(ctx, cluster, r.Client); err != nil {
 		return err
 	}
-	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
 		return err
 	}
-	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client); err != nil {
 		return err
 	}
-	if err := factory.CreateOrUpdatePdb(ctx, cluster, r.Client, r.Scheme); err != nil {
+	if err := factory.CreateOrUpdatePdb(ctx, cluster, r.Client); err != nil {
 		return err
 	}
-
 	return nil
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
 func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, err error) (ctrl.Result, error) {
-	res, statusErr := r.updateStatus(ctx, cluster)
+	// The function 'updateStatusOnErr' will always return non-nil error. Hence, the ctrl.Result will always be ignored.
+	// Therefore, the ctrl.Result returned by 'updateStatus' function can be discarded.
+	// REF: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile@v0.17.3#Reconciler
+	_, statusErr := r.updateStatus(ctx, cluster)
 	if statusErr != nil {
-		return res, goerrors.Join(statusErr, err)
+		return ctrl.Result{}, goerrors.Join(statusErr, err)
 	}
-	return res, err
+	return ctrl.Result{}, err
 }
 
 // updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
 func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	if err := r.Status().Update(ctx, cluster); err != nil {
-		logger.Error(err, "unable to update cluster status")
-		if errors.IsConflict(err) {
-			return ctrl.Result{Requeue: true}, nil
-		}
-		return ctrl.Result{}, err
+	err := r.Status().Update(ctx, cluster)
+	if err == nil {
+		return ctrl.Result{}, nil
 	}
-	return ctrl.Result{}, nil
+	if errors.IsConflict(err) {
+		logger.V(2).Info("conflict during cluster status update")
+		return ctrl.Result{Requeue: true}, nil
+	}
+	logger.Error(err, "cannot update cluster status")
+	return ctrl.Result{}, err
 }
 
 // isStatefulSetReady gets managed StatefulSet and checks its readiness.

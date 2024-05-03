@@ -22,30 +22,54 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/aenix-io/etcd-operator/internal/k8sutils"
 )
 
-func GetClientServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	return fmt.Sprintf("%s-client", cluster.Name)
+func GetServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	if cluster.Spec.ServiceTemplate != nil && cluster.Spec.ServiceTemplate.Name != "" {
+		return cluster.Spec.ServiceTemplate.Name
+	}
+
+	return cluster.Name
 }
 
-func CreateOrUpdateClusterService(
+func GetHeadlessServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	if cluster.Spec.HeadlessServiceTemplate != nil && cluster.Spec.HeadlessServiceTemplate.Name != "" {
+		return cluster.Spec.HeadlessServiceTemplate.Name
+	}
+
+	return fmt.Sprintf("%s-headless", cluster.Name)
+}
+
+func CreateOrUpdateHeadlessService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
+	logger := log.FromContext(ctx)
+	var err error
+
+	metadata := metav1.ObjectMeta{
+		Name:      GetHeadlessServiceName(cluster),
+		Namespace: cluster.Namespace,
+		Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
+	}
+
+	if cluster.Spec.HeadlessServiceTemplate != nil {
+		metadata, err = k8sutils.StrategicMerge(metadata, cluster.Spec.HeadlessServiceTemplate.ToObjectMeta())
+		if err != nil {
+			return fmt.Errorf("cannot strategic-merge base svc metadata with headlessServiceTemplate.metadata: %w", err)
+		}
+	}
+
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cluster.Name,
-			Namespace: cluster.Namespace,
-			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
-		},
+		ObjectMeta: metadata,
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{Name: "peer", TargetPort: intstr.FromInt32(2380), Port: 2380, Protocol: corev1.ProtocolTCP},
@@ -58,22 +82,26 @@ func CreateOrUpdateClusterService(
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
+	logger.V(2).Info("cluster service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
+
+	if err := ctrl.SetControllerReference(cluster, svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileService(ctx, rclient, cluster.Name, svc)
+	return reconcileOwnedResource(ctx, rclient, svc)
 }
 
 func CreateOrUpdateClientService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
-	svc := &corev1.Service{
+	logger := log.FromContext(ctx)
+	var err error
+
+	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetClientServiceName(cluster),
+			Name:      GetServiceName(cluster),
 			Namespace: cluster.Namespace,
 			Labels:    NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 		},
@@ -86,9 +114,21 @@ func CreateOrUpdateClientService(
 		},
 	}
 
-	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
+	if cluster.Spec.ServiceTemplate != nil {
+		svc, err = k8sutils.StrategicMerge(svc, corev1.Service{
+			ObjectMeta: cluster.Spec.ServiceTemplate.EmbeddedObjectMetadata.ToObjectMeta(),
+			Spec:       cluster.Spec.ServiceTemplate.Spec,
+		})
+		if err != nil {
+			return fmt.Errorf("cannot strategic-merge base svc with serviceTemplate: %w", err)
+		}
+	}
+
+	logger.V(2).Info("client service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
+
+	if err := ctrl.SetControllerReference(cluster, &svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileService(ctx, rclient, cluster.Name, svc)
+	return reconcileOwnedResource(ctx, rclient, &svc)
 }

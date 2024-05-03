@@ -17,145 +17,152 @@ limitations under the License.
 package controller
 
 import (
-	"context"
-
-	"k8s.io/utils/ptr"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 )
 
 var _ = Describe("EtcdCluster Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+	var (
+		reconciler *EtcdClusterReconciler
+		ns         *corev1.Namespace
+	)
 
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
+	BeforeEach(func(ctx SpecContext) {
+		reconciler = &EtcdClusterReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
 		}
-		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind EtcdCluster")
-			err := k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &etcdaenixiov1alpha1.EtcdCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
+		ns = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "test-",
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
+
+	Context("When reconciling the EtcdCluster", func() {
+		var (
+			etcdcluster     etcdaenixiov1alpha1.EtcdCluster
+			configMap       corev1.ConfigMap
+			headlessService corev1.Service
+			service         corev1.Service
+			statefulSet     appsv1.StatefulSet
+
+			err error
+		)
+
+		BeforeEach(func(ctx SpecContext) {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
 					},
-					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-						Replicas: ptr.To(int32(3)),
-						Storage: etcdaenixiov1alpha1.StorageSpec{
-							EmptyDir: &v1.EmptyDirVolumeSource{},
-						},
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+				},
 			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+
+			configMap = corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      factory.GetClusterStateConfigMapName(&etcdcluster),
+				},
+			}
+			DeferCleanup(k8sClient.Delete, &configMap)
+			headlessService = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      factory.GetHeadlessServiceName(&etcdcluster),
+				},
+			}
+			DeferCleanup(k8sClient.Delete, &headlessService)
+			service = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      factory.GetServiceName(&etcdcluster),
+				},
+			}
+			DeferCleanup(k8sClient.Delete, &service)
+			statefulSet = appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      etcdcluster.GetName(),
+				},
+			}
+			DeferCleanup(k8sClient.Delete, &statefulSet)
 		})
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &etcdaenixiov1alpha1.EtcdCluster{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		It("should reconcile a new EtcdCluster", func(ctx SpecContext) {
+			By("reconciling the EtcdCluster", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				Expect(etcdcluster.Status.Conditions).To(HaveLen(2))
+				Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
+				Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
+				Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+				Expect(etcdcluster.Status.Conditions[1].Status).To(Equal(metav1.ConditionStatus("False")))
+			})
 
-			By("Cleanup the specific resource instance EtcdCluster")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			By("reconciling owned ConfigMap", func() {
+				Eventually(Get(&configMap)).Should(Succeed())
+				Expect(configMap.Data).Should(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", "new"))
+			})
+
+			By("reconciling owned headless Service", func() {
+				Eventually(Get(&headlessService)).Should(Succeed())
+				Expect(headlessService.Spec.ClusterIP).Should(Equal("None"))
+			})
+
+			By("reconciling owned Service", func() {
+				Eventually(Get(&service)).Should(Succeed())
+				Expect(service.Spec.ClusterIP).ShouldNot(Equal("None"))
+			})
+
+			By("reconciling owned StatefulSet", func() {
+				Eventually(Get(&statefulSet)).Should(Succeed())
+			})
 		})
 
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &EtcdClusterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+		It("should successfully reconcile the resource twice and mark as ready", func(ctx SpecContext) {
+			By("reconciling the EtcdCluster", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
 			})
-			Expect(err).NotTo(HaveOccurred())
 
-			err = k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(etcdcluster.Status.Conditions).To(HaveLen(2))
-			Expect(etcdcluster.Status.Conditions[0].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionInitialized))
-			Expect(etcdcluster.Status.Conditions[0].Status).To(Equal(metav1.ConditionStatus("True")))
-			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
-			Expect(etcdcluster.Status.Conditions[1].Status).To(Equal(metav1.ConditionStatus("False")))
-
-			// check that ConfigMap is created
-			cm := &v1.ConfigMap{}
-			cmName := types.NamespacedName{
-				Namespace: typeNamespacedName.Namespace,
-				Name:      factory.GetClusterStateConfigMapName(etcdcluster),
-			}
-			err = k8sClient.Get(ctx, cmName, cm)
-			Expect(err).NotTo(HaveOccurred(), "cluster configmap state should exist")
-			Expect(cm.Data).To(HaveKeyWithValue("ETCD_INITIAL_CLUSTER_STATE", "new"))
-			// check that Service is created
-			svc := &v1.Service{}
-			err = k8sClient.Get(ctx, typeNamespacedName, svc)
-			Expect(err).NotTo(HaveOccurred(), "cluster headless Service should exist")
-			Expect(svc.Spec.ClusterIP).To(Equal("None"), "cluster Service should be headless")
-			// check that StatefulSet is created
-			sts := &appsv1.StatefulSet{}
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
-			// check that Service is created
-			svc = &v1.Service{}
-			clientSvcName := types.NamespacedName{
-				Namespace: typeNamespacedName.Namespace,
-				Name:      factory.GetClientServiceName(etcdcluster),
-			}
-			err = k8sClient.Get(ctx, clientSvcName, svc)
-			Expect(err).NotTo(HaveOccurred(), "cluster client Service should exist")
-			Expect(svc.Spec.ClusterIP).NotTo(Equal("None"), "cluster client Service should NOT be headless")
-		})
-
-		It("should successfully reconcile the resource twice and mark as ready", func() {
-			By("Reconciling the created resource twice (second time after marking sts as ready)")
-			controllerReconciler := &EtcdClusterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+			By("setting owned StatefulSet to ready state", func() {
+				Eventually(Get(&statefulSet)).Should(Succeed())
+				Eventually(UpdateStatus(&statefulSet, func() {
+					statefulSet.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
+					statefulSet.Status.Replicas = *etcdcluster.Spec.Replicas
+				})).Should(Succeed())
 			})
-			Expect(err).NotTo(HaveOccurred())
 
-			// check that StatefulSet is created
-			sts := &appsv1.StatefulSet{}
-			err = k8sClient.Get(ctx, typeNamespacedName, sts)
-			Expect(err).NotTo(HaveOccurred(), "cluster statefulset should exist")
-			// mark sts as ready
-			sts.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
-			sts.Status.Replicas = *etcdcluster.Spec.Replicas
-			Expect(k8sClient.Status().Update(ctx, sts)).To(Succeed())
-			// reconcile and check EtcdCluster status
-			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+			By("reconciling the EtcdCluster after owned StatefulSet is ready", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+				Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// check EtcdCluster status
-			err = k8sClient.Get(ctx, typeNamespacedName, etcdcluster)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
-			Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
 		})
 	})
 })

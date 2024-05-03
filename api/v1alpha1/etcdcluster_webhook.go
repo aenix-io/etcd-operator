@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -62,20 +61,6 @@ func (r *EtcdCluster) Default() {
 			r.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests = corev1.ResourceList{
 				corev1.ResourceStorage: resource.MustParse("4Gi"),
 			}
-		}
-	}
-	etcdContainerIdx := slices.IndexFunc(r.Spec.PodTemplate.Spec.Containers, func(c corev1.Container) bool {
-		return c.Name == "etcd"
-	})
-	if etcdContainerIdx == -1 {
-		r.Spec.PodTemplate.Spec.Containers = append(r.Spec.PodTemplate.Spec.Containers, corev1.Container{
-			Name:  "etcd",
-			Image: defaultEtcdImage,
-		})
-	} else {
-		c := &r.Spec.PodTemplate.Spec.Containers[etcdContainerIdx]
-		if c.Image == "" {
-			c.Image = defaultEtcdImage
 		}
 	}
 }

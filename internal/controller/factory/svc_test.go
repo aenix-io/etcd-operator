@@ -17,10 +17,10 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-
-	"k8s.io/apimachinery/pkg/runtime"
+	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,69 +32,168 @@ import (
 )
 
 var _ = Describe("CreateOrUpdateService handlers", func() {
-	Context("When ensuring a cluster services", func() {
-		const resourceName = "test-resource"
+	var ns *corev1.Namespace
 
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
-		}
-		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
+	BeforeEach(func(ctx SpecContext) {
+		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      resourceName,
-				Namespace: "default",
-				UID:       "test-uid",
-			},
-			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-				Replicas: ptr.To(int32(3)),
+				GenerateName: "test-",
 			},
 		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
 
-		It("should successfully create the cluster service", func() {
-			svc := &corev1.Service{}
-			err := CreateOrUpdateClusterService(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
+	Context("when ensuring cluster services", func() {
+		var (
+			etcdcluster     etcdaenixiov1alpha1.EtcdCluster
+			headlessService corev1.Service
+			clientService   corev1.Service
 
-			err = k8sClient.Get(ctx, typeNamespacedName, svc)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-			Expect(svc.Spec.ClusterIP).To(Equal("None"))
+			err error
+		)
 
-			Expect(k8sClient.Delete(ctx, svc)).To(Succeed())
+		BeforeEach(func(ctx SpecContext) {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+
+			headlessService = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      GetHeadlessServiceName(&etcdcluster),
+				},
+			}
+			clientService = corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      GetServiceName(&etcdcluster),
+				},
+			}
 		})
 
-		It("should fail on creating the cluster service with invalid owner reference", func() {
-			etcdcluster := etcdcluster.DeepCopy()
-			emptyScheme := runtime.NewScheme()
-
-			err := CreateOrUpdateClusterService(ctx, etcdcluster, k8sClient, emptyScheme)
-			Expect(err).To(HaveOccurred())
+		AfterEach(func(ctx SpecContext) {
+			err = Get(&headlessService)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &headlessService)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+			err = Get(&clientService)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &clientService)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
 		})
 
-		It("should successfully create the client service", func() {
-			svc := &corev1.Service{}
-			err := CreateOrUpdateClientService(ctx, etcdcluster, k8sClient, k8sClient.Scheme())
-			Expect(err).NotTo(HaveOccurred())
-
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      GetClientServiceName(etcdcluster),
-				Namespace: "default",
-			}, svc)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
-			Expect(svc.Spec.ClusterIP).To(Not(Equal("None")))
-
-			Expect(k8sClient.Delete(ctx, svc)).To(Succeed())
+		It("should successfully ensure headless service", func(ctx SpecContext) {
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Object(&headlessService)).Should(SatisfyAll(
+				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
+				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
+			))
 		})
 
-		It("should fail on creating the client service with invalid owner reference", func() {
-			etcdcluster := etcdcluster.DeepCopy()
-			emptyScheme := runtime.NewScheme()
+		It("should successfully ensure headless service with custom metadata", func(ctx SpecContext) {
+			etcdcluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name:        "headless-name",
+					Labels:      map[string]string{"label": "value"},
+					Annotations: map[string]string{"annotation": "value"},
+				},
+			}
+			svc := headlessService.DeepCopy()
+			svc.Name = etcdcluster.Spec.HeadlessServiceTemplate.Name
 
-			err := CreateOrUpdateClientService(ctx, etcdcluster, k8sClient, emptyScheme)
-			Expect(err).To(HaveOccurred())
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Object(svc)).Should(SatisfyAll(
+				HaveField("ObjectMeta.Name", Equal(etcdcluster.Spec.HeadlessServiceTemplate.Name)),
+				HaveField("ObjectMeta.Labels", SatisfyAll(
+					HaveKeyWithValue("label", "value"),
+					HaveKeyWithValue("app.kubernetes.io/name", "etcd"),
+				)),
+				HaveField("ObjectMeta.Annotations", Equal(etcdcluster.Spec.HeadlessServiceTemplate.Annotations)),
+			))
+			// We need to manually cleanup here because we changed the name of the service
+			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
+		})
+
+		It("should successfully ensure client service", func(ctx SpecContext) {
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Object(&clientService)).Should(SatisfyAll(
+				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
+				HaveField("Spec.ClusterIP", Not(Equal(corev1.ClusterIPNone))),
+			))
+		})
+
+		It("should successfully ensure client service with custom metadata", func(ctx SpecContext) {
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name:        "client-name",
+					Labels:      map[string]string{"label": "value"},
+					Annotations: map[string]string{"annotation": "value"},
+				},
+			}
+			svc := clientService.DeepCopy()
+			svc.Name = etcdcluster.Spec.ServiceTemplate.Name
+
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Object(svc)).Should(SatisfyAll(
+				HaveField("ObjectMeta.Name", Equal(etcdcluster.Spec.ServiceTemplate.Name)),
+				HaveField("ObjectMeta.Labels", SatisfyAll(
+					HaveKeyWithValue("label", "value"),
+					HaveKeyWithValue("app.kubernetes.io/name", "etcd"),
+				)),
+				HaveField("ObjectMeta.Annotations", Equal(etcdcluster.Spec.ServiceTemplate.Annotations)),
+			))
+			// We need to manually cleanup here because we changed the name of the service
+			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
+		})
+
+		It("should successfully ensure client service with custom spec", func(ctx SpecContext) {
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeLoadBalancer,
+					Ports: []corev1.ServicePort{
+						{
+							Name:     "client",
+							Port:     2379,
+							Protocol: corev1.ProtocolUDP,
+						},
+					},
+					LoadBalancerClass: ptr.To("someClass"),
+				},
+			}
+
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Object(&clientService)).Should(SatisfyAll(
+				HaveField("Spec.Type", Equal(corev1.ServiceTypeLoadBalancer)),
+				HaveField("Spec.LoadBalancerClass", Equal(ptr.To("someClass"))),
+				HaveField("Spec.Ports", SatisfyAll(
+					HaveLen(1),
+					HaveEach(SatisfyAll(
+						HaveField("Name", Equal("client")),
+						HaveField("Port", Equal(int32(2379))),
+						HaveField("Protocol", Equal(corev1.ProtocolUDP)),
+					)),
+				)),
+			))
+		})
+
+		It("should fail on creating the client service with invalid owner reference", func(ctx SpecContext) {
+			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
 })

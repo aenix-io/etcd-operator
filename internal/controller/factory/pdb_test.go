@@ -17,94 +17,103 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-	"fmt"
-
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/policy/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
 
 var _ = Describe("CreateOrUpdatePdb handlers", func() {
-	Context("Should successfully create PDB resource for cluster", func() {
-		const resourceName = "test-resource"
-		ctx := context.Background()
-		etcdcluster := &etcdaenixiov1alpha1.EtcdCluster{
+	var ns *corev1.Namespace
+
+	BeforeEach(func(ctx SpecContext) {
+		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      resourceName,
-				Namespace: "default",
-				UID:       "test-uid",
-			},
-			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-				Replicas:                    ptr.To(int32(3)),
-				PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+				GenerateName: "test-",
 			},
 		}
-		typeNamespacedName := types.NamespacedName{Name: resourceName, Namespace: "default"}
-		AfterEach(func() {
-			By("deleting pdb if it exists", func() {
-				pdb := &v1.PodDisruptionBudget{}
-				err := k8sClient.Get(ctx, typeNamespacedName, pdb)
-				if err == nil {
-					Expect(k8sClient.Delete(ctx, pdb)).To(Succeed())
-				} else {
-					Expect(errors.IsNotFound(err)).To(BeTrue(), fmt.Sprintf("expected NotFound error, got %#v", err))
-				}
-			})
-		})
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
 
-		It("should create PDB with pre-filled data", func() {
-			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
-			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
-			Expect(err).To(Succeed())
+	Context("should successfully create pod disruption budget for etcd cluster", func() {
+		var (
+			etcdcluster         etcdaenixiov1alpha1.EtcdCluster
+			podDisruptionBudget policyv1.PodDisruptionBudget
 
-			pdb := &v1.PodDisruptionBudget{}
-			Expect(k8sClient.Get(ctx, typeNamespacedName, pdb)).To(Succeed(), "PDB should exist after reconciliation")
-			if Expect(pdb.Spec.MinAvailable).NotTo(BeNil()) {
-				Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(3))
+			err error
+		)
+
+		BeforeEach(func(ctx SpecContext) {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas:                    ptr.To(int32(3)),
+					PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+				},
 			}
-			Expect(pdb.Spec.MaxUnavailable).To(BeNil())
-		})
-		It("Should create PDB with empty data", func() {
-			cluster := etcdcluster.DeepCopy()
-			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
-			Expect(err).To(Succeed())
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
 
-			pdb := &v1.PodDisruptionBudget{}
-			Expect(k8sClient.Get(ctx, typeNamespacedName, pdb)).To(Succeed())
-			if Expect(pdb.Spec.MinAvailable).NotTo(BeNil()) {
-				Expect(cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
-				Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(2))
+			podDisruptionBudget = policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns.GetName(),
+					Name:      etcdcluster.GetName(),
+				},
 			}
-			Expect(pdb.Spec.MaxUnavailable).To(BeNil())
 		})
 
-		It("Should skip deletion of PDB if not filled and not exist", func() {
-			cluster := etcdcluster.DeepCopy()
-			cluster.Spec.PodDisruptionBudgetTemplate = nil
-			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
-			Expect(err).To(Succeed())
+		AfterEach(func(ctx SpecContext) {
+			err = Get(&podDisruptionBudget)()
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, &podDisruptionBudget)).Should(Succeed())
+			} else {
+				Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
 		})
 
-		It("should delete created PDB after updating CR", func() {
-			cluster := etcdcluster.DeepCopy()
-			err := CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
-			Expect(err).To(Succeed())
-			pdb := &v1.PodDisruptionBudget{}
-			Expect(k8sClient.Get(ctx, typeNamespacedName, pdb)).To(Succeed())
+		It("should create PDB with pre-filled data", func(ctx SpecContext) {
+			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+			Expect(podDisruptionBudget.Spec.MinAvailable).NotTo(BeNil())
+			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(3))
+			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
+		})
 
-			cluster.Spec.PodDisruptionBudgetTemplate = nil
-			err = CreateOrUpdatePdb(ctx, cluster, k8sClient, k8sClient.Scheme())
-			Expect(err).To(Succeed())
-			err = k8sClient.Get(ctx, typeNamespacedName, pdb)
-			Expect(errors.IsNotFound(err)).To(BeTrue(), fmt.Sprintf("expected NotFound error, got %#v", err))
+		It("should create PDB with empty data", func(ctx SpecContext) {
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+			Expect(etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
+			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(2))
+			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
+		})
+
+		It("should skip deletion of PDB if not filled and not exist", func(ctx SpecContext) {
+			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
+		})
+
+		It("should delete created PDB after updating CR", func(ctx SpecContext) {
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
+			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
+			err = Get(&podDisruptionBudget)()
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 })
