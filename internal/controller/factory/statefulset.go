@@ -296,19 +296,17 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	serverTlsSettings := []string{}
-	serverProtocol := "http"
 
 	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
 		serverTlsSettings = []string{
 			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
 			"--key-file=/etc/etcd/pki/server/cert/tls.key",
 		}
-		serverProtocol = "https"
 	}
 
 	clientTlsSettings := []string{}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
+	if etcdaenixiov1alpha1.IsClientSecurityEnabled(cluster) {
 		clientTlsSettings = []string{
 			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
 			"--client-cert-auth",
@@ -324,10 +322,10 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
-		fmt.Sprintf("--listen-client-urls=%s://0.0.0.0:2379", serverProtocol),
+		fmt.Sprintf("--listen-client-urls=%s0.0.0.0:2379", GetServerProtocol(cluster)),
 		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", GetHeadlessServiceName(cluster)),
 		"--data-dir=/var/run/etcd/default.etcd",
-		fmt.Sprintf("--advertise-client-urls=%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", serverProtocol, GetHeadlessServiceName(cluster)),
+		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
 	}...)
 
 	args = append(args, peerTlsSettings...)
@@ -420,4 +418,12 @@ func getLivenessProbe() *corev1.Probe {
 		},
 		PeriodSeconds: 5,
 	}
+}
+
+func GetServerProtocol(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	serverProtocol := "http://"
+	if etcdaenixiov1alpha1.IsServerSecurityEnabled(cluster) {
+		serverProtocol = "https://"
+	}
+	return serverProtocol
 }
