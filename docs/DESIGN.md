@@ -11,14 +11,31 @@ flowchart TD
       A0 --> A1[Connect to the cluster\nand fetch all statuses]
         A1 --> |Got some response| AA{Is cluster\nin quorum?}
           AA -->|Yes| AAA{All reachable\nmembers have the\nsame cluster ID?}
-            AAA -->|Yes| AAAA{Have all\nmembers been\nreached?}
-              AAAA -->|Yes| AAAAA0[Ensure the StatefulSet with a replica count\nmatching the cluster size, because anything\nelse is an invalid state. Ensure the cluster\nstate ConfigMap based on the value of\nEtcdCluster.spec.replicas. Initial cluster\nstate is 'existing'.]
-                AAAAA0 --> AAAAA1{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
-                  AAAAA1 --> |Yes|AAAAAA[Set cluster\nstatus to ready.]
-                    AAAAAA --> AAAAAAStop(Stop)
+            AAA -->|Yes| AAAA{Are the\nmember ordinals\ncontiguous?}
+              AAAA -->|Yes| AAAAA{Have all\nmembers been\nreached?}
+                AAAAA -->|Yes| AAAAAA{Is the\nStatefulSet\npresent?}
+                  AAAAAA -->|Yes| AAAAAAA{Is it\nready?}
+                    AAAAAAA -->|Yes| AAAAAAAA{Is its size\nequal to the\nnumber of\n members?}
+                      AAAAAAAA -->|Yes| AAAAAAAAA{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
+                        AAAAAAAAA -->|Yes| AAAAAAAAAA[Set cluster\nstatus to ready.]
+                          AAAAAAAAAA --> HappyStop([Stop])
+
+                      AAAAAAAAA --> |No, desired\nsize larger|AAAAAAAAAB[Ensure ConfigMap with\ninitial cluster state existing\nand initial cluster URLs\nequal to current cluster\nplus one member, do\n'member add' API call and\nincrement StatefulSet size.]
+                        AAAAAAAAAB --> ScaleUpStop([Stop])
+
+                      AAAAAAAAA --> |No, desired\nsize smaller|AAAAAAAAAC[Member remove API\ncall, then decrement\nStatefulSet size.]
+                        AAAAAAAAAC --> ScaleDownStop([Stop])
+
+                      AAAAAAAA -->|No,\ngreater| AAAAAAAAB([This is 146%\nsplitbrain, stop.])
+
+                      AAAAAAAA -->|No,\nsmaller| AAAAAAAAC([StatefulSetController\nis not working as\nit should, stop.])
+
+                    AAAAAAA -->|No| AAAAAAAB[The non-ready replicas\nare evicted members,\nthey should be removed.]
+
+                AAAAA -->|No| AAAAAB{asd}
 
             AAA -->|No| AAAB[Cluster is in\nsplit-brain. Set\nerror status.]
-              AAAB -->AAABStop(Stop)
+              AAAB --> AAABStop([Stop])
 
         A1 --> |No members\nreached| AB{EtcdCluster\n.spec.replicas==0?}
         A1 --> |Unexpected\nerror| AC(Requeue)
