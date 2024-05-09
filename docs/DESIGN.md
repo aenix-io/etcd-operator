@@ -16,20 +16,25 @@ flowchart TD
             AAAA --> |Yes| AAAAA0[Promote any learners.]
               AAAAA0 --> |OK| AAAAA1[Ensure configmap with initial cluster\nmatching existing members and\ncluster state=existing]
               AAAAA1 --> |OK| AAAAA2[Ensure StatefulSet with\nreplicas = max member ordinal + 1]
-              AAAAA2 --> |OK| AAAAA3{Are all\nmembers healthy?}
-              AAAAA3 --> |Yes| AAAAAA{Are all STS pods present\nin the member list?}
-                AAAAAA --> |Yes| AAAAAAA{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
-                  AAAAAAA -->|Yes| AAAAAAAA[Set cluster\nstatus to ready.]
-                    AAAAAAAA --> HappyStop([Stop])
+              AAAAA2 --> |OK| AAAAAA{Are all\nmembers healthy?}
+                AAAAAA --> |Yes| AAAAAAA{Are all STS pods present\nin the member list?}
+                  AAAAAAA --> |Yes| AAAAAAAA{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
+                    AAAAAAAA -->|Yes| AAAAAAAAA[Set cluster\nstatus to ready.]
+                      AAAAAAAAA --> HappyStop([Stop])
 
-                  AAAAAAA --> |No, desired\nsize larger| AAAAAAAB[Ensure ConfigMap with\ninitial cluster state existing\nand initial cluster URLs\nequal to current cluster\nplus one member, do\n'member add' API call and\nincrement StatefulSet size.]
-                    AAAAAAAB --> ScaleUpStop([Stop])
+                    AAAAAAAA --> |No, desired\nsize larger| AAAAAAAAB[Ensure ConfigMap with\ninitial cluster state existing\nand initial cluster URLs\nequal to current cluster\nplus one member, do\n'member add' API call and\nincrement StatefulSet size.]
+                      AAAAAAAAB --> ScaleUpStop([Stop])
 
-                  AAAAAAA --> |No, desired\nsize smaller| AAAAAAAC[Member remove API\ncall, then decrement\nStatefulSet size\nthen delete PVC.]
-                    AAAAAAAC --> ScaleDownStop([Stop])
+                    AAAAAAAA --> |No, desired\nsize smaller| AAAAAAAAC[Member remove API\ncall, then decrement\nStatefulSet size\nthen delete PVC.]
+                      AAAAAAAAC --> ScaleDownStop([Stop])
 
-                  AAAAAAA --> |Etcd replicas=0\nSTS replicas=1| AAAAAAAD[Decrement\nSTS to zero]
-                    AAAAAAAD --> ScaleToZeroStop([Stop])
+                    AAAAAAAA --> |Etcd replicas=0\nSTS replicas=1| AAAAAAAAD[Decrement\nSTS to zero]
+                      AAAAAAAAD --> ScaleToZeroStop([Stop])
+
+                AAAAAA --> |No| AAAAAAB1[On timeout evict member.]
+                  AAAAAAB1 --> AAAAAAB2[Delete PVC, ensure ConfigMap with\nmembers + this one and delete pod.]
+
+                AAAAAAA --> |No| AAAAAAB2
 
               AAAAA0 -->|Error| AAAAAB([Requeue])
               AAAAA1 -->|Error| AAAAAB([Requeue])
@@ -65,30 +70,3 @@ flowchart TD
       A1 --> |Unexpected\nerror| AC(Requeue)
       A2 --> |Unexpected\nerror| A2Err(Requeue)
 ```
-<!---
-TODO: Commented this out in favor of flowchart, but some things might come back later
-## Creating a cluster
-
-When a user adds an `EtcdCluster` resource to the Kubernetes cluster, the reconciler observes an
-`EtcdCluster` object with an empty list of conditions in its status. This prompts it to fill the
-status field with a set of default conditions, including an "etcd not ready" condtion with the
-reason "waiting for first quorum".
-
-TODO: we need a diagram of possible state transitions for the various conditions. We also need to
-better handle the possibility of a bad status being passed when creating a cluster. We should write
-tests, where an etcd cluster with a non-empty status field is applied to the cluster. We should also
-try to find a way to determine that the cluster is not ready and/or waiting for first quorum without
-assuming that a new cluster has an empty status field.
-
-Next, the operator creates the following objects:
-
-* A configmap holding configuration values for bootstrapping a new cluster (`ETCD_INITIAL_CLUSTER_*` environment variables).
-* A headless service for intra-cluster communication.
-* A statefulset with pods for the individual members of the etcd cluster.
-* A service for clients' access to the etcd cluster.
-* A pod disruption budget to prevent the etcd cluster from losing quorum.
-
-If the above is successful, the etcd cluster status is set to `Initialized`.
-
-If no error happens, the statefulset is most likely not yet ready and the status is updated with "etcd cluster not ready" as it is "waiting for first quorum". Once the statefulset is ready, a reconciliation is triggered again, since the child statefulset is also being watched. Finally, the status is updated once again to a "ready" condition.
---->
