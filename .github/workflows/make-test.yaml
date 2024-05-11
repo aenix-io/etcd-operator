@@ -23,8 +23,8 @@ jobs:
             attribute: latest
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4.1.4
+      - uses: actions/checkout@v4.1.5
       - uses: actions/setup-go@v5.0.1
         with:
-          go-version: 1.22.2
+          go-version: 1.22.3
       - run: ENVTEST_K8S_VERSION=${{ matrix.k8s.version }} make test
