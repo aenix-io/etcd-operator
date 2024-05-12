@@ -9,8 +9,7 @@ primitives and gives an overview of the underlying implementation.
 flowchart TD
     Start(Start) --> A0[Ensure service.]
       A0 --> A1[Connect to the cluster\nand fetch all statuses.]
-      A1 --> |Got some response| A2[Ensure ConfigMap has\nETCD_FORCE_NEW_CLUSTER=false.]
-      A2 --> AA{All reachable\nmembers have the\nsame cluster ID?}
+      A1 --> |Got some response| AA{All reachable\nmembers have the\nsame cluster ID?}
         AA --> |Yes| AAA{Is cluster\nin quorum?}
           AAA --> |Yes| AAAA{Are all members \nmanaged by the operator?}
             AAAA --> |Yes| AAAAA0[Promote any learners.]
@@ -50,7 +49,7 @@ flowchart TD
       A1 --> |No members\nreached| AB{Is the correct\nzero-replica STS\npresent?}
         AB --> |Yes| ABA{EtcdCluster\n.spec.replicas==0?}
           ABA --> |Yes| ABAA([Cluster successfully\nscaled to zero, stop.])
-          ABA --> |No| ABAB[Ensure ConfigMap with\nforce-new-cluster,\ninitial cluster = new,\ninitial cluster peers with\nsingle member `name`-0]
+          ABA --> |No| ABAB[Ensure ConfigMap with\ninitial cluster = new,\ninitial cluster peers with\nsingle member `name`-0]
             ABAB --> |OK| ABABA[Increment STS size.]
               ABABA --> |OK| ABABAA([Stop])
               ABABA --> |Error| ABABAB([Requeue])
@@ -68,5 +67,4 @@ flowchart TD
 
       A0 --> |Unexpected\nerror| AC(Requeue)
       A1 --> |Unexpected\nerror| AC(Requeue)
-      A2 --> |Unexpected\nerror| A2Err(Requeue)
 ```
