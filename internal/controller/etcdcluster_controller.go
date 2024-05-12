@@ -48,6 +48,7 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;watch;delete;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
@@ -72,6 +73,57 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, nil
 	}
 
+	sts := appsv1.StatefulSet{}
+	// create two services and the pdb, try fetching the sts
+	{
+		c := make(chan error)
+		go func(chan<- error) {
+			err := factory.CreateOrUpdateClientService(ctx, instance, r.Client)
+			if err != nil {
+				err = fmt.Errorf("couldn't ensure client service: %w", err)
+			}
+			c <- err
+		}(c)
+		go func(chan<- error) {
+			err := factory.CreateOrUpdateHeadlessService(ctx, instance, r.Client)
+			if err != nil {
+				err = fmt.Errorf("couldn't ensure headless service: %w", err)
+			}
+			c <- err
+		}(c)
+		go func(chan<- error) {
+			err := factory.CreateOrUpdatePdb(ctx, instance, r.Client)
+			if err != nil {
+				err = fmt.Errorf("couldn't ensure pod disruption budget: %w", err)
+			}
+			c <- err
+		}(c)
+		go func(chan<- error) {
+			err := r.Get(ctx, req.NamespacedName, &sts)
+			if client.IgnoreNotFound(err) != nil {
+				err = fmt.Errorf("couldn't get statefulset: %w", err)
+			}
+			c <- err
+		}(c)
+		for i := 0; i < 4; i++ {
+			if err := <-c; err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+	/*
+		clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if clusterClient == nil || singleClients == nil {
+			// TODO: no endpoints case
+
+		}
+		if sts.UID != "" {
+			r.Patch()
+		}
+	*/
 	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
 		factory.FillConditions(instance)
