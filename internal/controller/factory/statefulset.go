@@ -22,6 +22,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
@@ -105,8 +105,11 @@ func CreateOrUpdateStatefulSet(
 			VolumeClaimTemplates: volumeClaimTemplates,
 		},
 	}
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("statefulset spec generated", "sts_name", statefulSet.Name, "sts_spec", statefulSet.Spec)
+	ctx, err = contextWithGVK(ctx, statefulSet, rclient.Scheme())
+	if err != nil {
+		return err
+	}
+	log.Debug(ctx, "statefulset spec generated", "spec", statefulSet.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, statefulSet, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)

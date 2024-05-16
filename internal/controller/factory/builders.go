@@ -20,46 +20,46 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+func contextWithGVK(ctx context.Context, resource client.Object, scheme *runtime.Scheme) (context.Context, error) {
+	gvk, err := apiutil.GVKForObject(resource, scheme)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GVK: %w", err)
+	}
+	ctx = log.WithValues(ctx, "group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
+	return ctx, nil
+}
 
 func reconcileOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
 	if resource == nil {
 		return fmt.Errorf("resource cannot be nil")
 	}
-	gvk, err := apiutil.GVKForObject(resource, c.Scheme())
-	if err != nil {
-		return fmt.Errorf("failed to get GVK: %w", err)
-	}
-	logger := log.FromContext(ctx).WithValues("group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
-	logger.V(2).Info("reconciling owned resource")
+	log.Debug(ctx, "reconciling owned resource")
 
 	base := resource.DeepCopyObject().(client.Object)
-	err = c.Get(ctx, client.ObjectKeyFromObject(resource), base)
+	err := c.Get(ctx, client.ObjectKeyFromObject(resource), base)
 	if err == nil {
-		logger.V(2).Info("updating owned resource")
+		log.Debug(ctx, "updating owned resource")
 		resource.SetAnnotations(labels.Merge(base.GetAnnotations(), resource.GetAnnotations()))
 		resource.SetResourceVersion(base.GetResourceVersion())
-		logger.V(2).Info("owned resource annotations merged", "annotations", resource.GetAnnotations())
+		log.Debug(ctx, "owned resource annotations merged", "annotations", resource.GetAnnotations())
 		return c.Update(ctx, resource)
 	}
 	if errors.IsNotFound(err) {
-		logger.V(2).Info("creating new owned resource")
+		log.Debug(ctx, "creating new owned resource")
 		return c.Create(ctx, resource)
 	}
 	return fmt.Errorf("error getting owned resource: %w", err)
 }
 
 func deleteOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
-	gvk, err := apiutil.GVKForObject(resource, c.Scheme())
-	if err != nil {
-		return err
-	}
-	logger := log.FromContext(ctx).WithValues("group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
-	logger.V(2).Info("deleting owned resource")
+	log.Debug(ctx, "deleting owned resource")
 	return client.IgnoreNotFound(c.Delete(ctx, resource))
 }
