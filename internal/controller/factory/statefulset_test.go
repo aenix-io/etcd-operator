@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
@@ -89,7 +88,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		})
 
 		It("should successfully ensure the statefulSet with empty spec", func(ctx SpecContext) {
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&statefulSet)).Should(
 				HaveField("Spec.Replicas", Equal(etcdcluster.Spec.Replicas)),
 			)
@@ -153,7 +152,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					ClientSecret:          "client-secret",
 				},
 			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&statefulSet)).Should(Succeed())
 
 			By("Checking the resources", func() {
@@ -301,7 +300,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&statefulSet)).Should(Succeed())
 
 			By("Checking the updated startup probe", func() {
@@ -361,7 +360,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					SizeLimit: ptr.To(size),
 				},
 			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, k8sClient.Scheme())).To(Succeed())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Get(&statefulSet)).Should(Succeed())
 
 			By("Checking the emptyDir", func() {
@@ -370,8 +369,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		})
 
 		It("should fail on creating the statefulset with invalid owner reference", func(ctx SpecContext) {
-			emptyScheme := runtime.NewScheme()
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient, emptyScheme)).NotTo(Succeed())
+			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
 

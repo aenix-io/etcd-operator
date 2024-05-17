@@ -22,11 +22,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
@@ -53,7 +51,6 @@ func CreateOrUpdateHeadlessService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
 	logger := log.FromContext(ctx)
 	var err error
@@ -87,18 +84,17 @@ func CreateOrUpdateHeadlessService(
 
 	logger.V(2).Info("cluster service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
 
-	if err := ctrl.SetControllerReference(cluster, svc, rscheme); err != nil {
+	if err := ctrl.SetControllerReference(cluster, svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileService(ctx, rclient, cluster.Name, svc)
+	return reconcileOwnedResource(ctx, rclient, svc)
 }
 
 func CreateOrUpdateClientService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-	rscheme *runtime.Scheme,
 ) error {
 	logger := log.FromContext(ctx)
 	var err error
@@ -130,9 +126,9 @@ func CreateOrUpdateClientService(
 
 	logger.V(2).Info("client service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
 
-	if err := ctrl.SetControllerReference(cluster, &svc, rscheme); err != nil {
+	if err := ctrl.SetControllerReference(cluster, &svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileService(ctx, rclient, cluster.Name, &svc)
+	return reconcileOwnedResource(ctx, rclient, &svc)
 }

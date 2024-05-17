@@ -7,8 +7,8 @@ jobs:
   pre-commit:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4.1.3
-      - uses: actions/setup-go@v5.0.0
+      - uses: actions/checkout@v4.1.5
+      - uses: actions/setup-go@v5.0.1
         with:
-          go-version: 1.22.2
+          go-version: 1.22.3
       - uses: pre-commit/action@v3.0.1

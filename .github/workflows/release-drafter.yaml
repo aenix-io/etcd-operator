@@ -10,6 +10,9 @@ on:
 jobs:
   release-drafter:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: release-drafter/release-drafter@v6.0.0
         with:
