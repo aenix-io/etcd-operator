@@ -69,6 +69,8 @@ mod-tidy: ## Run go mod tidy against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
+	echo "Check for kubernetes version $(ENVTEST_K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
+	@$(ENVTEST) list | grep -q $(ENVTEST_K8S_VERSION_TRIMMED_V)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
@@ -155,7 +157,7 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.73.2
+PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
 CERT_MANAGER_VERSION ?= v1.14.5
 
@@ -244,15 +246,15 @@ ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v1.58.1
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
-KIND_VERSION ?= v0.22.0
+KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
-HELM_VERSION ?= v3.14.4
+HELM_VERSION ?= v3.15.0
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
 HELM_SCHEMA_VERSION ?= v1.3.0
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
-YQ_VERSION ?= v4.43.1
+YQ_VERSION ?= v4.44.1
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
