@@ -3,7 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: etcd-operator-system/etcd-operator-serving-cert
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: etcdclusters.etcd.aenix.io
 spec:
   conversion:
@@ -581,6 +581,7 @@ spec:
                             not set, the implementation will apply its default routing strategy. If set
                             to "PreferClose", implementations should prioritize endpoints that are
                             topologically close (e.g., same zone).
+                            This is an alpha field and requires enabling ServiceTrafficDistribution feature.
                           type: string
                         type:
                           description: |-
