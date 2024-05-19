@@ -36,7 +36,7 @@ jobs:
       - run: |
           if [ "${{ matrix.k8s.version }}" = "default" ]; then
             # For latest version use default from Makefile
-            make test
+            make test-e2e
           else
             ENVTEST_K8S_VERSION=${{ matrix.k8s.version }} make test-e2e
           fi
