@@ -19,9 +19,12 @@ package factory
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -246,6 +249,25 @@ func generateEtcdCommand() []string {
 
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
+
+	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
+		var size resource.Quantity
+		if cluster.Spec.Storage.EmptyDir != nil {
+			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
+				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
+			}
+		} else {
+			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+		}
+		quota := float64(size.Value()) * 0.95
+		quota = math.Floor(quota)
+		if quota > 0 {
+			if cluster.Spec.Options == nil {
+				cluster.Spec.Options = make(map[string]string, 1)
+			}
+			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
+		}
+	}
 
 	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
