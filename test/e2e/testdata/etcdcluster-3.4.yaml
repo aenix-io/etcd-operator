@@ -1,0 +1,15 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: test
+spec:
+  replicas: 3
+  podTemplate:
+    spec:
+      containers:
+        - name: etcd
+          image: "quay.io/coreos/etcd:v3.4.32"
+#      volumes: []
+#  storage:
+#    emptyDir: {}

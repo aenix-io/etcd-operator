@@ -1,0 +1,7 @@
+---
+apiVersion: etcd.aenix.io/v1alpha1
+kind: EtcdCluster
+metadata:
+  name: test
+spec:
+  replicas: 3

@@ -80,8 +80,8 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e:
-	go test ./test/e2e/ -v -ginkgo.v
+test-e2e: ginkgo
+	$(GINKGO) -v ./test/e2e/
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter & yamllint
@@ -249,6 +249,7 @@ HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
+GINKGO ?= $(LOCALBIN)/ginkgo
 
 ## Tool Versions
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
@@ -268,6 +269,8 @@ HELM_SCHEMA_VERSION ?= v1.4.1
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.44.1
+# renovate: datasource=github-tags depName=onsi/ginkgo
+GINKGO_VERSION ?= v2.17.3
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -297,6 +300,11 @@ crd-ref-docs: $(LOCALBIN)
 golangci-lint: $(LOCALBIN)
 	@test -x $(GOLANGCI_LINT) && $(GOLANGCI_LINT) version | grep -q $(GOLANGCI_LINT_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+.PHONY: ginkgo
+ginkgo: $(LOCALBIN)
+	@test -x $(GINKGO) && $(GINKGO) version | grep -q $(GINKGO_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
 
 .PHONY: nilaway
 nilaway: $(LOCALBIN)
