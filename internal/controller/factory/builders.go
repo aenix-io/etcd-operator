@@ -29,6 +29,9 @@ import (
 )
 
 func contextWithGVK(ctx context.Context, resource client.Object, scheme *runtime.Scheme) (context.Context, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("resource cannot be nil")
+	}
 	gvk, err := apiutil.GVKForObject(resource, scheme)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get GVK: %w", err)

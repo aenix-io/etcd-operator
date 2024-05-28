@@ -37,7 +37,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 		ns         *corev1.Namespace
 	)
 
-	BeforeEach(func(ctx SpecContext) {
+	BeforeEach(func() {
 		reconciler = &EtcdClusterReconciler{
 			Client: k8sClient,
 			Scheme: k8sClient.Scheme(),
@@ -63,7 +63,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			err error
 		)
 
-		BeforeEach(func(ctx SpecContext) {
+		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "test-etcdcluster-",
@@ -110,7 +110,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			DeferCleanup(k8sClient.Delete, &statefulSet)
 		})
 
-		It("should reconcile a new EtcdCluster", func(ctx SpecContext) {
+		It("should reconcile a new EtcdCluster", func() {
 			By("reconciling the EtcdCluster", func() {
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
 				Expect(err).ToNot(HaveOccurred())
@@ -142,7 +142,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			})
 		})
 
-		It("should successfully reconcile the resource twice and mark as ready", func(ctx SpecContext) {
+		It("should successfully reconcile the resource twice and mark as ready", func() {
 			By("reconciling the EtcdCluster", func() {
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
 				Expect(err).ToNot(HaveOccurred())
