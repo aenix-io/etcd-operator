@@ -36,7 +36,8 @@ import (
 )
 
 const (
-	etcdContainerName = "etcd"
+	etcdContainerName                = "etcd"
+	defaultBackendQuotaBytesFraction = 0.95
 )
 
 func CreateOrUpdateStatefulSet(
@@ -259,7 +260,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		} else {
 			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
 		}
-		quota := float64(size.Value()) * 0.95
+		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
 		quota = math.Floor(quota)
 		if quota > 0 {
 			if cluster.Spec.Options == nil {
