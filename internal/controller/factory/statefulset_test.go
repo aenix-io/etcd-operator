@@ -392,6 +392,58 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				"--key2=value2",
 			}))
 		})
+		It("should not override user defined quota-backend-bytes", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Options: map[string]string{
+						"quota-backend-bytes": "2147483648", // 2Gi
+					},
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							SizeLimit: ptr.To(resource.MustParse("2Gi")),
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			Expect(args).To(ContainElement("--quota-backend-bytes=2147483648"))
+		})
+		It("should set quota-backend-bytes to 0.95 of EmptyDir size", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							SizeLimit: ptr.To(resource.MustParse("2Gi")),
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			// 2Gi * 0.95 = 2040109465,6
+			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
+		})
+		It("should set quota-backend-bytes to 0.95 of PVC size", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+								StorageClassName: ptr.To("local-path"),
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: map[corev1.ResourceName]resource.Quantity{
+										corev1.ResourceStorage: resource.MustParse("2Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			// 2Gi * 0.95 = 2040109465,6
+			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
+		})
 	})
 
 	/* TODO: all of the following tests validate merging logic, but all merging logic is now handled externally.
