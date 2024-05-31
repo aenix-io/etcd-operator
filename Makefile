@@ -3,7 +3,7 @@
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.30.0
+ENVTEST_K8S_VERSION ?= v1.30.1
 ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -250,11 +250,11 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.15.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.58.1
+GOLANGCI_LINT_VERSION ?= v1.59.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
-HELM_VERSION ?= v3.15.0
+HELM_VERSION ?= v3.15.1
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
 HELM_SCHEMA_VERSION ?= v1.3.0
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
