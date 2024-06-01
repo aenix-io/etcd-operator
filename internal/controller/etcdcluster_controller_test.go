@@ -83,7 +83,7 @@ var _ = Describe("EtcdCluster Controller", func() {
 			configMap = corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ns.GetName(),
-					Name:      factory.GetClusterStateConfigMapName(&etcdcluster),
+					Name:      factory.GetConfigMapName(&etcdcluster),
 				},
 			}
 			DeferCleanup(k8sClient.Delete, &configMap)

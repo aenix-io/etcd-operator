@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	return cluster.Name + "-cluster-state"
+func GetConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	return cluster.Name + "-env"
 }
 
 func CreateOrUpdateClusterStateConfigMap(
@@ -53,7 +53,7 @@ func CreateOrUpdateClusterStateConfigMap(
 	configMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
-			Name:      GetClusterStateConfigMapName(cluster),
+			Name:      GetConfigMapName(cluster),
 		},
 		Data: map[string]string{
 			"ETCD_INITIAL_CLUSTER_STATE":     "new",

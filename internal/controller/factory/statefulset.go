@@ -358,7 +358,7 @@ func generateContainer(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Containe
 		{Name: "peer", ContainerPort: 2380},
 		{Name: "client", ContainerPort: 2379},
 	}
-	clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
+	clusterStateConfigMapName := GetConfigMapName(cluster)
 	c.EnvFrom = []corev1.EnvFromSource{
 		{
 			ConfigMapRef: &corev1.ConfigMapEnvSource{

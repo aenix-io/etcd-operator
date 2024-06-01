@@ -70,7 +70,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			configMap = corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: ns.GetName(),
-					Name:      GetClusterStateConfigMapName(&etcdcluster),
+					Name:      GetConfigMapName(&etcdcluster),
 				},
 			}
 		})
