@@ -56,9 +56,11 @@ func CreateOrUpdateClusterStateConfigMap(
 			Name:      GetClusterStateConfigMapName(cluster),
 		},
 		Data: map[string]string{
-			"ETCD_INITIAL_CLUSTER_STATE": "new",
-			"ETCD_INITIAL_CLUSTER":       initialCluster,
-			"ETCD_INITIAL_CLUSTER_TOKEN": cluster.Name + "-" + cluster.Namespace,
+			"ETCD_INITIAL_CLUSTER_STATE":     "new",
+			"ETCD_INITIAL_CLUSTER":           initialCluster,
+			"ETCD_INITIAL_CLUSTER_TOKEN":     cluster.Name + "-" + cluster.Namespace,
+			"ETCD_AUTO_COMPACTION_RETENTION": "5m",
+			"ETCD_SNAPSHOT_COUNT":            "10000",
 		},
 	}
 
