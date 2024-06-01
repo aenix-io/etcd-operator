@@ -27,6 +27,9 @@ import (
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	fmt.Fprintf(GinkgoWriter, "Starting etcd-operator suite\n")
+	_, err := fmt.Fprintf(GinkgoWriter, "Starting etcd-operator suite\n")
+	if err != nil {
+		return
+	}
 	RunSpecs(t, "e2e suite")
 }
