@@ -312,6 +312,11 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		}
 	}
 
+	autoCompactionSettings := []string{
+		"--auto-compaction-retention=5m",
+		"--snapshot-count=10000",
+	}
+
 	args = append(args, []string{
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
@@ -325,6 +330,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args = append(args, peerTlsSettings...)
 	args = append(args, serverTlsSettings...)
 	args = append(args, clientTlsSettings...)
+	args = append(args, autoCompactionSettings...)
 
 	return args
 }
