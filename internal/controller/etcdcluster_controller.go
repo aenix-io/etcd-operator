@@ -20,6 +20,7 @@ import (
 	"context"
 	goerrors "errors"
 	"fmt"
+	"reflect"
 
 	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -37,6 +38,8 @@ import (
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EtcdClusterReconciler reconciles a EtcdCluster object
@@ -67,20 +70,62 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Error retrieving object, requeue
 		return reconcile.Result{}, err
 	}
+
 	// If object is being deleted, skipping reconciliation
 	if !instance.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
 
-	// fill conditions
-	if len(instance.Status.Conditions) == 0 {
-		factory.FillConditions(instance)
-	}
-
-	// ensure managed resources
+	// Ensure managed resources
 	if err := r.ensureClusterObjects(ctx, instance); err != nil {
 		logger.Error(err, "cannot create Cluster auxiliary objects")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
+	}
+
+	// Check if StatefulSet exists
+	statefulSet := &appsv1.StatefulSet{}
+	err = r.Get(ctx, client.ObjectKey{Name: instance.Name, Namespace: instance.Namespace}, statefulSet)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.V(2).Info("StatefulSet not found, skipping storage check", "namespaced_name", req.NamespacedName)
+		} else {
+			return reconcile.Result{}, err
+		}
+	} else {
+		// Check if storage size has changed
+		if len(statefulSet.Spec.VolumeClaimTemplates) > 0 {
+			pvcName := statefulSet.Spec.VolumeClaimTemplates[0].Name
+			pvc := &corev1.PersistentVolumeClaim{}
+			err = r.Get(ctx, client.ObjectKey{Name: pvcName, Namespace: instance.Namespace}, pvc)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					logger.V(2).Info("PVC not found, skipping storage check", "pvc_name", pvcName)
+				} else {
+					return reconcile.Result{}, err
+				}
+			} else {
+				desiredStorage := instance.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+				currentStorage := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+
+				if !reflect.DeepEqual(desiredStorage, currentStorage) {
+					// Delete the StatefulSet with --cascade=orphan
+					deletePolicy := metav1.DeletePropagationOrphan
+					logger.Info("Deleting StatefulSet due to storage change", "statefulSet", statefulSet.Name)
+					err := r.Delete(ctx, statefulSet, &client.DeleteOptions{PropagationPolicy: &deletePolicy})
+					if err != nil {
+						logger.Error(err, "failed to delete StatefulSet")
+						return reconcile.Result{}, err
+					}
+				}
+			}
+		} else {
+			logger.V(2).Info("No VolumeClaimTemplates found in StatefulSet")
+		}
+	}
+
+	// fill conditions
+	if len(instance.Status.Conditions) == 0 {
+		factory.FillConditions(instance)
 	}
 
 	// set cluster initialization condition
