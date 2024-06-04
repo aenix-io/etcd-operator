@@ -19,9 +19,12 @@ package factory
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,7 +36,8 @@ import (
 )
 
 const (
-	etcdContainerName = "etcd"
+	etcdContainerName                = "etcd"
+	defaultBackendQuotaBytesFraction = 0.95
 )
 
 func CreateOrUpdateStatefulSet(
@@ -247,6 +251,25 @@ func generateEtcdCommand() []string {
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
+	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
+		var size resource.Quantity
+		if cluster.Spec.Storage.EmptyDir != nil {
+			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
+				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
+			}
+		} else {
+			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+		}
+		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
+		quota = math.Floor(quota)
+		if quota > 0 {
+			if cluster.Spec.Options == nil {
+				cluster.Spec.Options = make(map[string]string, 1)
+			}
+			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
+		}
+	}
+
 	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
 		if len(value) == 0 {
@@ -289,6 +312,11 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		}
 	}
 
+	autoCompactionSettings := []string{
+		"--auto-compaction-retention=5m",
+		"--snapshot-count=10000",
+	}
+
 	args = append(args, []string{
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
@@ -302,6 +330,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args = append(args, peerTlsSettings...)
 	args = append(args, serverTlsSettings...)
 	args = append(args, clientTlsSettings...)
+	args = append(args, autoCompactionSettings...)
 
 	return args
 }
