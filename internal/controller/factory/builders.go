@@ -28,6 +28,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
+// contextWithGVK returns a new context with the GroupVersionKind (GVK) information
+// of the given resource added to the context values. It uses the provided scheme
+// to determine the GVK.
+// If the resource is nil, it returns an error with the message "resource cannot be nil".
+// If there is an error while obtaining the GVK, it returns an error with the message
+// "failed to get GVK" followed by the detailed error message.
+// The context value is updated with the following key-value pairs:
+// - "group": GVK's GroupVersion string
+// - "kind": GVK's Kind
+// - "name": Resource's name
 func contextWithGVK(ctx context.Context, resource client.Object, scheme *runtime.Scheme) (context.Context, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
@@ -63,6 +73,9 @@ func reconcileOwnedResource(ctx context.Context, c client.Client, resource clien
 }
 
 func deleteOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
+	if resource == nil {
+		return fmt.Errorf("resource cannot be nil")
+	}
 	log.Debug(ctx, "deleting owned resource")
 	return client.IgnoreNotFound(c.Delete(ctx, resource))
 }

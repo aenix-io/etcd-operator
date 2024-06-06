@@ -35,37 +35,43 @@ func CreateOrUpdatePdb(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
+	var err error
+
+	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
+		ctx = log.WithValues(ctx, "group", "policy/v1", "kind", "PodDisruptionBudget", "name", cluster.Name)
+		return deleteOwnedResource(ctx, rclient, &v1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: cluster.Namespace,
+				Name:      cluster.Name,
+			},
+		})
+	}
+
 	pdb := &v1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
 			Name:      cluster.Name,
 		},
-	}
-	ctx, err := contextWithGVK(ctx, pdb, rclient.Scheme())
-	if err != nil {
-		return err
-	}
-
-	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
-		return deleteOwnedResource(ctx, rclient, pdb)
-	}
-
-	pdb.Spec = v1.PodDisruptionBudgetSpec{
-		MinAvailable:   cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable,
-		MaxUnavailable: cluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable,
-		Selector: &metav1.LabelSelector{
-			MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
+		Spec: v1.PodDisruptionBudgetSpec{
+			MinAvailable:   cluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable,
+			MaxUnavailable: cluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
+			},
+			UnhealthyPodEvictionPolicy: ptr.To(v1.IfHealthyBudget),
 		},
-		UnhealthyPodEvictionPolicy: ptr.To(v1.IfHealthyBudget),
 	}
 	// if both are nil, calculate minAvailable based on number of replicas in the cluster
 	if pdb.Spec.MinAvailable == nil && pdb.Spec.MaxUnavailable == nil {
 		pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(cluster.CalculateQuorumSize())))
 	}
-
+	ctx, err = contextWithGVK(ctx, pdb, rclient.Scheme())
+	if err != nil {
+		return err
+	}
 	log.Debug(ctx, "pdb spec generated", "spec", pdb.Spec)
 
-	if err := ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
+	if err = ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 

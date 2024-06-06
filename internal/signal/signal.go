@@ -22,6 +22,18 @@ import (
 	"os/signal"
 )
 
+// NotifyContext returns a derived context from the parent context with a cancel
+// function. It sets up a signal channel to listen for the specified signals and
+// cancels the context when any of those signals are received. If a second signal
+// is received, it exits the program with a status code of 1.
+//
+// Example usage:
+//
+//	ctx := signal.NotifyContext(parentContext, os.Interrupt, syscall.SIGTERM)
+//	go func() {
+//	    <-ctx.Done()
+//	    // Perform cleanup or other tasks before exiting
+//	}()
 func NotifyContext(parent context.Context, signals ...os.Signal) context.Context {
 	ctx, cancel := context.WithCancel(parent)
 	c := make(chan os.Signal, 2)

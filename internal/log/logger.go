@@ -48,6 +48,20 @@ type Parameters struct {
 	Development     bool
 }
 
+// Setup initializes the logger and returns a new context with the logger attached.
+// The logger is configured based on the provided Parameters. The encoder and writer
+// are selected based on the Development flag. The LogLevel parameter determines the
+// log level of the logger. The StacktraceLevel parameter determines the log level at
+// which a stack trace is added to log entries.
+// The function does not modify the original context.
+//
+// Example usage:
+//
+//	ctx := Setup(context.Background(), Parameters{
+//	  LogLevel:        "debug",
+//	  StacktraceLevel: "error",
+//	  Development:     true,
+//	})
 func Setup(ctx context.Context, p Parameters) context.Context {
 	encoderConfig := zapcore.EncoderConfig{
 		MessageKey:     "message",
@@ -74,22 +88,27 @@ func Setup(ctx context.Context, p Parameters) context.Context {
 	return logr.NewContextWithSlogLogger(ctx, l)
 }
 
+// Info logs an informational message with optional key-value pairs.
 func Info(ctx context.Context, msg string, keysAndValues ...interface{}) {
 	logr.FromContextAsSlogLogger(ctx).With(keysAndValues...).Info(msg)
 }
 
+// Debug logs a debug message with optional key-value pairs.
 func Debug(ctx context.Context, msg string, keysAndValues ...interface{}) {
 	logr.FromContextAsSlogLogger(ctx).With(keysAndValues...).Debug(msg)
 }
 
+// Warn logs a warning message with optional key-value pairs.
 func Warn(ctx context.Context, msg string, keysAndValues ...interface{}) {
 	logr.FromContextAsSlogLogger(ctx).With(keysAndValues...).Warn(msg)
 }
 
+// Error logs an error message with optional key-value pairs.
 func Error(ctx context.Context, err error, msg string, keysAndValues ...interface{}) {
 	logr.FromContextAsSlogLogger(ctx).With(keysAndValues...).Error(msg, slog.Any("error", err))
 }
 
+// WithValues adds additional key-value pairs to the context's logger.
 func WithValues(ctx context.Context, keysAndValues ...interface{}) context.Context {
 	return logr.NewContextWithSlogLogger(ctx, logr.FromContextAsSlogLogger(ctx).With(keysAndValues...))
 }
