@@ -21,13 +21,13 @@ import (
 	"fmt"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/aenix-io/etcd-operator/internal/log"
 	v1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func CreateOrUpdatePdb(
@@ -35,15 +35,18 @@ func CreateOrUpdatePdb(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
+	var err error
+
 	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
+		ctx = log.WithValues(ctx, "group", "policy/v1", "kind", "PodDisruptionBudget", "name", cluster.Name)
 		return deleteOwnedResource(ctx, rclient, &v1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: cluster.Namespace,
 				Name:      cluster.Name,
-			}})
+			},
+		})
 	}
 
-	logger := log.FromContext(ctx)
 	pdb := &v1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
@@ -62,10 +65,13 @@ func CreateOrUpdatePdb(
 	if pdb.Spec.MinAvailable == nil && pdb.Spec.MaxUnavailable == nil {
 		pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(cluster.CalculateQuorumSize())))
 	}
+	ctx, err = contextWithGVK(ctx, pdb, rclient.Scheme())
+	if err != nil {
+		return err
+	}
+	log.Debug(ctx, "pdb spec generated", "spec", pdb.Spec)
 
-	logger.V(2).Info("pdb spec generated", "pdb_name", pdb.Name, "pdb_spec", pdb.Spec)
-
-	if err := ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
+	if err = ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
