@@ -146,33 +146,33 @@ func (r *EtcdClusterReconciler) ensureClusterObjects(
 	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile cluster state configmap failed")
 		return err
-	} else {
-		log.Debug(ctx, "cluster state configmap reconciled")
 	}
+	log.Debug(ctx, "cluster state configmap reconciled")
+
 	if err := factory.CreateOrUpdateHeadlessService(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile headless service failed")
 		return err
-	} else {
-		log.Debug(ctx, "headless service reconciled")
 	}
+	log.Debug(ctx, "headless service reconciled")
+
 	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile statefulset failed")
 		return err
-	} else {
-		log.Debug(ctx, "statefulset reconciled")
 	}
+	log.Debug(ctx, "statefulset reconciled")
+
 	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile client service failed")
 		return err
-	} else {
-		log.Debug(ctx, "client service reconciled")
 	}
+	log.Debug(ctx, "client service reconciled")
+
 	if err := factory.CreateOrUpdatePdb(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile pdb failed")
 		return err
-	} else {
-		log.Debug(ctx, "pdb reconciled")
 	}
+	log.Debug(ctx, "pdb reconciled")
+
 	return nil
 }
 
@@ -288,9 +288,9 @@ func testMemberList(ctx context.Context, cli *clientv3.Client) error {
 	if err != nil {
 		log.Error(ctx, err, "failed to get member list", "endpoints", cli.Endpoints())
 		return err
-	} else {
-		log.Debug(ctx, "member list got", "member list", memberList)
 	}
+	log.Debug(ctx, "member list got", "member list", memberList)
+
 	return err
 }
 
@@ -303,9 +303,8 @@ func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, cluster *etcd
 	if err != nil {
 		log.Error(ctx, err, "failed to build tls config")
 		return nil, err
-	} else {
-		log.Debug(ctx, "tls config built", "tls config", tlsConfig)
 	}
+	log.Debug(ctx, "tls config built", "tls config", tlsConfig)
 
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
@@ -316,9 +315,8 @@ func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, cluster *etcd
 	if err != nil {
 		log.Error(ctx, err, "failed to create etcd client", "endpoints", endpoints)
 		return nil, err
-	} else {
-		log.Debug(ctx, "etcd client created", "endpoints", endpoints)
 	}
+	log.Debug(ctx, "etcd client created", "endpoints", endpoints)
 
 	return cli, nil
 
@@ -337,10 +335,8 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ServerTrustedCASecret}, serverCASecret); err != nil {
 			log.Error(ctx, err, "failed to get server trusted CA secret")
 			return nil, err
-		} else {
-			log.Debug(ctx, "secret read", "server trusted CA secret") // serverCASecret,
-
 		}
+		log.Debug(ctx, "secret read", "server trusted CA secret") // serverCASecret,
 
 		caCertPool = x509.NewCertPool()
 
@@ -359,10 +355,8 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ClientSecret}, rootSecret); err != nil {
 			log.Error(ctx, err, "failed to get root client secret")
 			return nil, err
-		} else {
-			log.Debug(ctx, "secret read", "root client secret") // rootSecret,
-
 		}
+		log.Debug(ctx, "secret read", "root client secret") // rootSecret,
 
 		cert, err = tls.X509KeyPair(rootSecret.Data["tls.crt"], rootSecret.Data["tls.key"])
 		if err != nil {
@@ -414,9 +408,9 @@ func (r *EtcdClusterReconciler) createRoleIfNotExists(ctx context.Context, authC
 			if err != nil {
 				log.Error(ctx, err, "failed to add role", "role name", "root")
 				return err
-			} else {
-				log.Debug(ctx, "role added", "role name", "root")
 			}
+			log.Debug(ctx, "role added", "role name", "root")
+
 		} else {
 			log.Error(ctx, err, "failed to get role", "role name", "root")
 			return err
@@ -445,9 +439,9 @@ func (r *EtcdClusterReconciler) createUserIfNotExists(ctx context.Context, authC
 			if err != nil {
 				log.Error(ctx, err, "failed to add user", "user name", "root")
 				return nil, err
-			} else {
-				log.Debug(ctx, "user added", "user name", "root")
 			}
+			log.Debug(ctx, "user added", "user name", "root")
+
 		} else {
 			log.Error(ctx, err, "failed to get user", "user name", "root")
 			return nil, err
