@@ -98,6 +98,18 @@ func (r *EtcdCluster) CalculateQuorumSize() int {
 	return int(*r.Spec.Replicas)/2 + 1
 }
 
+func (c *EtcdCluster) IsClientSecurityEnabled() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ClientSecret != ""
+}
+
+func (c *EtcdCluster) IsServerSecurityEnabled() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ServerSecret != ""
+}
+
+func (c *EtcdCluster) IsServerTrustedCADefined() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ServerTrustedCASecret != ""
+}
+
 // +kubebuilder:object:root=true
 
 // EtcdClusterList contains a list of EtcdCluster

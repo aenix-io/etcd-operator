@@ -306,7 +306,7 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 	clientTlsSettings := []string{}
 
-	if etcdaenixiov1alpha1.IsClientSecurityEnabled(cluster) {
+	if cluster.IsClientSecurityEnabled() {
 		clientTlsSettings = []string{
 			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
 			"--client-cert-auth",
@@ -422,7 +422,7 @@ func getLivenessProbe() *corev1.Probe {
 
 func GetServerProtocol(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	serverProtocol := "http://"
-	if etcdaenixiov1alpha1.IsServerSecurityEnabled(cluster) {
+	if cluster.IsServerSecurityEnabled() {
 		serverProtocol = "https://"
 	}
 	return serverProtocol

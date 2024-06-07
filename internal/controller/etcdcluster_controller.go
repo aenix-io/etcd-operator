@@ -330,7 +330,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 
 	caCertPool := &x509.CertPool{}
 
-	if etcdaenixiov1alpha1.IsServerCADefined(cluster) {
+	if cluster.IsServerTrustedCADefined() {
 
 		serverCASecret := &corev1.Secret{}
 
@@ -353,7 +353,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 
 	cert := tls.Certificate{}
 
-	if etcdaenixiov1alpha1.IsClientSecurityEnabled(cluster) {
+	if cluster.IsClientSecurityEnabled() {
 
 		rootSecret := &corev1.Secret{}
 		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ClientSecret}, rootSecret); err != nil {
@@ -372,7 +372,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 	}
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: !etcdaenixiov1alpha1.IsServerCADefined(cluster),
+		InsecureSkipVerify: !cluster.IsServerTrustedCADefined(),
 		RootCAs:            caCertPool,
 		Certificates: []tls.Certificate{
 			cert,
