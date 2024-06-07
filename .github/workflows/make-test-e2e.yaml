@@ -9,7 +9,7 @@ on:
 
 jobs:
   test-e2e:
-    name: test-e2e on k8s 1.30.0 version
+    name: test-e2e on k8s ${{ matrix.k8s.attribute }} version
     # Pull request has label 'ok-to-test' or the author is a member of the organization
     if: contains(github.event.pull_request.labels.*.name, 'ok-to-test') || contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     strategy:
