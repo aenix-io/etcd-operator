@@ -87,7 +87,6 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// ensure managed resources
 	if err = r.ensureClusterObjects(ctx, instance); err != nil {
-		log.Error(ctx, err, "cannot create Cluster auxiliary objects")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 
