@@ -164,7 +164,7 @@ NAMESPACE ?= etcd-operator-system
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
-CERT_MANAGER_VERSION ?= v1.14.5
+CERT_MANAGER_VERSION ?= v1.15.0
 
 ifndef ignore-not-found
   ignore-not-found = false
@@ -256,7 +256,7 @@ KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.15.1
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.3.0
+HELM_SCHEMA_VERSION ?= v1.4.0
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
