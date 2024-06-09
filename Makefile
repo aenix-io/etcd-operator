@@ -198,9 +198,13 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
-kind-create: kind ## Create kubernetes cluster using Kind.
+kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(ENVTEST_K8S_VERSION); \
+	fi
+	@if ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes) | $(YQ) e '.[0].Config.Image' | grep -q $(ENVTEST_K8S_VERSION); then \
+  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(ENVTEST_K8S_VERSION); \
 	fi
 
 .PHONY: kind-delete
