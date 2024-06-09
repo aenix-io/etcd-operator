@@ -20,12 +20,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
@@ -52,7 +52,6 @@ func CreateOrUpdateHeadlessService(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
-	logger := log.FromContext(ctx)
 	var err error
 
 	metadata := metav1.ObjectMeta{
@@ -81,10 +80,13 @@ func CreateOrUpdateHeadlessService(
 			PublishNotReadyAddresses: true,
 		},
 	}
+	ctx, err = contextWithGVK(ctx, svc, rclient.Scheme())
+	if err != nil {
+		return err
+	}
+	log.Debug(ctx, "cluster service spec generated", "spec", svc.Spec)
 
-	logger.V(2).Info("cluster service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
-
-	if err := ctrl.SetControllerReference(cluster, svc, rclient.Scheme()); err != nil {
+	if err = ctrl.SetControllerReference(cluster, svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
@@ -96,7 +98,6 @@ func CreateOrUpdateClientService(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
-	logger := log.FromContext(ctx)
 	var err error
 
 	svc := corev1.Service{
@@ -123,10 +124,13 @@ func CreateOrUpdateClientService(
 			return fmt.Errorf("cannot strategic-merge base svc with serviceTemplate: %w", err)
 		}
 	}
+	ctx, err = contextWithGVK(ctx, &svc, rclient.Scheme())
+	if err != nil {
+		return err
+	}
+	log.Debug(ctx, "client service spec generated", "spec", svc.Spec)
 
-	logger.V(2).Info("client service spec generated", "svc_name", svc.Name, "svc_spec", svc.Spec)
-
-	if err := ctrl.SetControllerReference(cluster, &svc, rclient.Scheme()); err != nil {
+	if err = ctrl.SetControllerReference(cluster, &svc, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
 	}
 

@@ -34,7 +34,7 @@ import (
 var _ = Describe("CreateOrUpdateService handlers", func() {
 	var ns *corev1.Namespace
 
-	BeforeEach(func(ctx SpecContext) {
+	BeforeEach(func() {
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "test-",
@@ -53,7 +53,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			err error
 		)
 
-		BeforeEach(func(ctx SpecContext) {
+		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "test-etcdcluster-",
@@ -82,7 +82,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			}
 		})
 
-		AfterEach(func(ctx SpecContext) {
+		AfterEach(func() {
 			err = Get(&headlessService)()
 			if err == nil {
 				Expect(k8sClient.Delete(ctx, &headlessService)).Should(Succeed())
@@ -97,7 +97,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			}
 		})
 
-		It("should successfully ensure headless service", func(ctx SpecContext) {
+		It("should successfully ensure headless service", func() {
 			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&headlessService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
@@ -105,7 +105,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			))
 		})
 
-		It("should successfully ensure headless service with custom metadata", func(ctx SpecContext) {
+		It("should successfully ensure headless service with custom metadata", func() {
 			etcdcluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name:        "headless-name",
@@ -129,7 +129,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
 		})
 
-		It("should successfully ensure client service", func(ctx SpecContext) {
+		It("should successfully ensure client service", func() {
 			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&clientService)).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
@@ -137,7 +137,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			))
 		})
 
-		It("should successfully ensure client service with custom metadata", func(ctx SpecContext) {
+		It("should successfully ensure client service with custom metadata", func() {
 			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
 					Name:        "client-name",
@@ -161,7 +161,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			Expect(k8sClient.Delete(ctx, svc)).Should(Succeed())
 		})
 
-		It("should successfully ensure client service with custom spec", func(ctx SpecContext) {
+		It("should successfully ensure client service with custom spec", func() {
 			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
 				Spec: corev1.ServiceSpec{
 					Type: corev1.ServiceTypeLoadBalancer,
@@ -191,7 +191,7 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 			))
 		})
 
-		It("should fail on creating the client service with invalid owner reference", func(ctx SpecContext) {
+		It("should fail on creating the client service with invalid owner reference", func() {
 			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})

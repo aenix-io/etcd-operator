@@ -34,7 +34,7 @@ import (
 var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 	var ns *corev1.Namespace
 
-	BeforeEach(func(ctx SpecContext) {
+	BeforeEach(func() {
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "test-",
@@ -52,7 +52,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			err error
 		)
 
-		BeforeEach(func(ctx SpecContext) {
+		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "test-etcdcluster-",
@@ -75,7 +75,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			}
 		})
 
-		AfterEach(func(ctx SpecContext) {
+		AfterEach(func() {
 			err = Get(&configMap)()
 			if err == nil {
 				Expect(k8sClient.Delete(ctx, &configMap)).Should(Succeed())
@@ -84,7 +84,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			}
 		})
 
-		It("should successfully ensure the configmap", func(ctx SpecContext) {
+		It("should successfully ensure the configmap", func() {
 			var configMapUID types.UID
 			By("processing new etcd cluster", func() {
 				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
@@ -114,7 +114,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			})
 		})
 
-		It("should fail to create the configmap with invalid owner reference", func(ctx SpecContext) {
+		It("should fail to create the configmap with invalid owner reference", func() {
 			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})

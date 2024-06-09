@@ -21,8 +21,8 @@ import (
 	goerrors "errors"
 	"fmt"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	policyv1 "k8s.io/api/policy/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -55,13 +55,12 @@ type EtcdClusterReconciler struct {
 
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("reconciling object", "namespaced_name", req.NamespacedName)
+	log.Debug(ctx, "reconciling object")
 	instance := &etcdaenixiov1alpha1.EtcdCluster{}
 	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			logger.V(2).Info("object not found", "namespaced_name", req.NamespacedName)
+			log.Debug(ctx, "object not found")
 			return ctrl.Result{}, nil
 		}
 		// Error retrieving object, requeue
@@ -78,8 +77,8 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// ensure managed resources
-	if err := r.ensureClusterObjects(ctx, instance); err != nil {
-		logger.Error(err, "cannot create Cluster auxiliary objects")
+	if err = r.ensureClusterObjects(ctx, instance); err != nil {
+		log.Error(ctx, err, "cannot create Cluster auxiliary objects")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 
@@ -93,7 +92,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// check sts condition
 	clusterReady, err := r.isStatefulSetReady(ctx, instance)
 	if err != nil {
-		logger.Error(err, "failed to check etcd cluster state")
+		log.Error(ctx, err, "failed to check etcd cluster state")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
 	}
 
@@ -159,16 +158,15 @@ func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *
 
 // updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
 func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	err := r.Status().Update(ctx, cluster)
 	if err == nil {
 		return ctrl.Result{}, nil
 	}
 	if errors.IsConflict(err) {
-		logger.V(2).Info("conflict during cluster status update")
+		log.Debug(ctx, "conflict during cluster status update")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	logger.Error(err, "cannot update cluster status")
+	log.Error(ctx, err, "cannot update cluster status")
 	return ctrl.Result{}, err
 }
 
