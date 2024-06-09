@@ -15,9 +15,9 @@ jobs:
     strategy:
       matrix:
         k8s:
-          - version: 1.28.0
+          - version: v1.28.0
             attribute: penultimate
-          - version: 1.29.0
+          - version: v1.29.0
             attribute: previous
           - version: default
             attribute: latest
