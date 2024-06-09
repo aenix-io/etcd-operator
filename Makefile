@@ -3,7 +3,7 @@
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.30.0
+ENVTEST_K8S_VERSION ?= v1.30.1
 ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -164,7 +164,7 @@ NAMESPACE ?= etcd-operator-system
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
-CERT_MANAGER_VERSION ?= v1.14.5
+CERT_MANAGER_VERSION ?= v1.15.0
 
 ifndef ignore-not-found
   ignore-not-found = false
@@ -256,7 +256,7 @@ KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.15.1
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.3.0
+HELM_SCHEMA_VERSION ?= v1.4.0
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq

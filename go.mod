@@ -3,20 +3,20 @@ module github.com/aenix-io/etcd-operator
 go 1.22.3
 
 require (
-	github.com/go-logr/logr v1.4.1
+	github.com/go-logr/logr v1.4.2
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	go.etcd.io/etcd/client/v3 v3.5.14
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.0
 	go.uber.org/zap/exp v0.2.0
 	k8s.io/api v0.30.1
 	k8s.io/apimachinery v0.30.1
 	k8s.io/client-go v0.30.1
 	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
-	sigs.k8s.io/controller-runtime v0.18.3
+	sigs.k8s.io/controller-runtime v0.18.4
 )
 
 require (
