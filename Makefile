@@ -1,10 +1,10 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+# K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.30.0
-ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
+K8S_VERSION ?= v1.30.0
+K8S_VERSION_TRIMMED_V = $(subst v,,$(K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -74,9 +74,9 @@ mod-tidy: ## Run go mod tidy against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	echo "Check for kubernetes version $(ENVTEST_K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
-	@$(ENVTEST) list | grep -q $(ENVTEST_K8S_VERSION_TRIMMED_V)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
+	@$(ENVTEST) list | grep -q $(K8S_VERSION_TRIMMED_V)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
@@ -198,9 +198,13 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
-kind-create: kind ## Create kubernetes cluster using Kind.
+kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+	fi
+	@if ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
+  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
 	fi
 
 .PHONY: kind-delete
