@@ -399,24 +399,22 @@ func (r *EtcdClusterReconciler) createRoleIfNotExists(ctx context.Context, authC
 
 	_, err := authClient.RoleGet(ctx, roleName)
 	if err != nil {
-		if err.Error() == "etcdserver: role name not found" {
-			ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-
-			_, err = authClient.RoleAdd(ctx, roleName)
-			if err != nil {
-				log.Error(ctx, err, "failed to add role", "role name", "root")
-				return err
-			}
-			log.Debug(ctx, "role added", "role name", "root")
-
-		} else {
+		if err.Error() != "etcdserver: role name not found" {
 			log.Error(ctx, err, "failed to get role", "role name", "root")
 			return err
 		}
-	} else {
-		log.Debug(ctx, "role exists, nothing to do", "role name", "root")
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		_, err = authClient.RoleAdd(ctx, roleName)
+		if err != nil {
+			log.Error(ctx, err, "failed to add role", "role name", "root")
+			return err
+		}
+		log.Debug(ctx, "role added", "role name", "root")
+		return nil
 	}
+	log.Debug(ctx, "role exists, nothing to do", "role name", "root")
 
 	return nil
 }
@@ -428,26 +426,25 @@ func (r *EtcdClusterReconciler) createUserIfNotExists(ctx context.Context, authC
 
 	userResponse, err := authClient.UserGet(ctx, userName)
 	if err != nil {
-		if err.Error() == "etcdserver: user name not found" {
-			_, cancel = context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-
-			_, err = authClient.UserAddWithOptions(ctx, "root", "", &clientv3.UserAddOptions{
-				NoPassword: true,
-			})
-			if err != nil {
-				log.Error(ctx, err, "failed to add user", "user name", "root")
-				return nil, err
-			}
-			log.Debug(ctx, "user added", "user name", "root")
-
-		} else {
+		if err.Error() != "etcdserver: user name not found" {
 			log.Error(ctx, err, "failed to get user", "user name", "root")
 			return nil, err
 		}
-	} else {
-		log.Debug(ctx, "user exists, nothing to do", "user name", "root")
+
+		_, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		_, err = authClient.UserAddWithOptions(ctx, "root", "", &clientv3.UserAddOptions{
+			NoPassword: true,
+		})
+		if err != nil {
+			log.Error(ctx, err, "failed to add user", "user name", "root")
+			return nil, err
+		}
+		log.Debug(ctx, "user added", "user name", "root")
+		return nil, nil
 	}
+	log.Debug(ctx, "user exists, nothing to do", "user name", "root")
 
 	return userResponse, err
 }
