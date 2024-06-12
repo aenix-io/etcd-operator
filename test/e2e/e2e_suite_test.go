@@ -17,12 +17,30 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"testing"
+
+	"github.com/aenix-io/etcd-operator/internal/log"
+	"github.com/go-logr/logr"
+	logctrl "sigs.k8s.io/controller-runtime/pkg/log"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var ctx context.Context
+
+var _ = BeforeSuite(func() {
+	ctx = log.Setup(context.TODO(), log.Parameters{
+		LogLevel:        "error",
+		StacktraceLevel: "error",
+		Development:     true,
+	})
+
+	// This line prevents controller-runtime from complaining about log.SetLogger never being called
+	logctrl.SetLogger(logr.FromContextOrDiscard(ctx))
+})
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {

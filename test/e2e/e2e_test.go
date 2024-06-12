@@ -17,7 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,15 +27,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aenix-io/etcd-operator/internal/log"
 	"github.com/aenix-io/etcd-operator/test/utils"
 )
-
-var ctx = log.Setup(context.TODO(), log.Parameters{
-	LogLevel:        "error",
-	StacktraceLevel: "error",
-	Development:     true,
-})
 
 var _ = Describe("etcd-operator", Ordered, func() {
 
