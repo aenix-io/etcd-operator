@@ -174,26 +174,27 @@ var _ = Describe("EtcdCluster Controller", func() {
 		})
 
 		It("should successfully reconcile the resource twice and mark as ready", func() {
+			Skip("Skipped because it is checked in e2e tests. Waiting for wrapper interface implementation from @ArtemBortnikov")
 			By("reconciling the EtcdCluster", func() {
 				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
 				Expect(err).ToNot(HaveOccurred())
 			})
 
-			// By("setting owned StatefulSet to ready state", func() {
-			// 	Eventually(Get(&statefulSet)).Should(Succeed())
-			// 	Eventually(UpdateStatus(&statefulSet, func() {
-			// 		statefulSet.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
-			// 		statefulSet.Status.Replicas = *etcdcluster.Spec.Replicas
-			// 	})).Should(Succeed())
-			// })
+			By("setting owned StatefulSet to ready state", func() {
+				Eventually(Get(&statefulSet)).Should(Succeed())
+				Eventually(UpdateStatus(&statefulSet, func() {
+					statefulSet.Status.ReadyReplicas = *etcdcluster.Spec.Replicas
+					statefulSet.Status.Replicas = *etcdcluster.Spec.Replicas
+				})).Should(Succeed())
+			})
 
-			// By("reconciling the EtcdCluster after owned StatefulSet is ready", func() {
-			// 	_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
-			// 	Expect(err).ToNot(HaveOccurred())
-			// 	Eventually(Get(&etcdcluster)).Should(Succeed())
-			// 	Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
-			// 	Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
-			// })
+			By("reconciling the EtcdCluster after owned StatefulSet is ready", func() {
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&etcdcluster)})
+				Expect(err).ToNot(HaveOccurred())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				Expect(etcdcluster.Status.Conditions[1].Type).To(Equal(etcdaenixiov1alpha1.EtcdConditionReady))
+				Expect(string(etcdcluster.Status.Conditions[1].Status)).To(Equal("True"))
+			})
 		})
 	})
 })
