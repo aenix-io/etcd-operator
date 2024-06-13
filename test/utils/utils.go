@@ -19,17 +19,27 @@ package utils
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"log"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/aenix-io/etcd-operator/internal/controller"
+	"github.com/aenix-io/etcd-operator/internal/log"
+
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 // Run executes the provided command within this context
@@ -82,8 +92,8 @@ func GetProjectDir() (string, error) {
 	return wd, nil
 }
 
-// GetFreePort asks the kernel for a free open port that is ready to use.
-func GetFreePort() (port int, err error) {
+// getFreePort asks the kernel for a free open port that is ready to use.
+func getFreePort(ctx context.Context) (port int, err error) {
 	var a *net.TCPAddr
 	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
 		var l *net.TCPListener
@@ -91,7 +101,7 @@ func GetFreePort() (port int, err error) {
 			defer func(l *net.TCPListener) {
 				err := l.Close()
 				if err != nil {
-					log.Fatal(err)
+					log.Error(ctx, err, "failed to get free port")
 				}
 			}(l)
 			return l.Addr().(*net.TCPAddr).Port, nil
@@ -100,44 +110,52 @@ func GetFreePort() (port int, err error) {
 	return
 }
 
-// GetEtcdClient creates client for interacting with etcd.
-func GetEtcdClient(endpoints []string) *clientv3.Client {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   endpoints,
-		DialTimeout: 5 * time.Second,
-	})
+func GetK8sClient(ctx context.Context) (controller.EtcdClusterReconciler, error) {
+
+	cfg, err := config.GetConfig()
 	if err != nil {
-		log.Fatal(err)
+		return controller.EtcdClusterReconciler{}, err
 	}
-	return cli
+
+	c, err := client.New(cfg, client.Options{Scheme: runtimeScheme})
+	if err != nil {
+		return controller.EtcdClusterReconciler{}, err
+	}
+
+	r := controller.EtcdClusterReconciler{
+		Client: c,
+	}
+
+	return r, err
+}
+
+var (
+	runtimeScheme = runtime.NewScheme()
+)
+
+func init() {
+	_ = etcdaenixiov1alpha1.AddToScheme(runtimeScheme)
+	_ = corev1.AddToScheme(runtimeScheme)
 }
 
 // IsEtcdClusterHealthy checks etcd cluster health.
-func IsEtcdClusterHealthy(endpoints []string) bool {
+func IsEtcdClusterHealthy(ctx context.Context, client *clientv3.Client) (bool, error) {
 	// Should be changed when etcd is healthy
 	health := false
-
-	// Configure client
-	client := GetEtcdClient(endpoints)
-	defer func(client *clientv3.Client) {
-		err := client.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}(client)
+	var err error
 
 	// Prepare the maintenance client
 	maint := clientv3.NewMaintenance(client)
 
 	// Context for the call
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	// Perform the status call to check health
-	for i := range endpoints {
-		resp, err := maint.Status(ctx, endpoints[i])
+	for _, endpoint := range client.Endpoints() {
+		resp, err := maint.Status(ctx, endpoint)
 		if err != nil {
-			log.Fatalf("Failed to get endpoint health: %v", err)
+			return false, err
 		} else {
 			if resp.Errors == nil {
 				fmt.Printf("Endpoint is healthy: %s\n", resp.Version)
@@ -145,5 +163,44 @@ func IsEtcdClusterHealthy(endpoints []string) bool {
 			}
 		}
 	}
-	return health
+	return health, err
+}
+
+func GetEtcdClient(ctx context.Context, namespacedName types.NamespacedName) (*clientv3.Client, error) {
+
+	r, err := GetK8sClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cluster := &etcdaenixiov1alpha1.EtcdCluster{}
+	err = r.Get(ctx, namespacedName, cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := r.GetEtcdClient(ctx, cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	port, _ := getFreePort(ctx)
+	go func() {
+		cmd := exec.Command("kubectl", "port-forward",
+			"service/test", strconv.Itoa(port)+":2379",
+			"--namespace", cluster.Namespace,
+		)
+		_, err = Run(cmd)
+	}()
+
+	localEndpoints := []string{}
+
+	for _, endpoint := range client.Endpoints() {
+		re := regexp.MustCompile(`:\/\/.*`)
+		localEndpoints = append(localEndpoints, re.ReplaceAllString(endpoint, "://localhost:"+strconv.Itoa(port)))
+	}
+
+	client.SetEndpoints(localEndpoints...)
+
+	return client, err
 }

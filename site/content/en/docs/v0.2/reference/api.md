@@ -202,6 +202,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `tls` _[TLSSpec](#tlsspec)_ | Section for user-managed tls certificates |  |  |
+| `enableAuth` _boolean_ | Section to enable etcd auth |  |  |
 
 
 #### StorageSpec
@@ -235,10 +236,11 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `peerTrustedCASecret` _string_ | Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret. |  |  |
-| `peerSecret` _string_ | Certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt and tls.key fields in the secret. |  |  |
-| `serverSecret` _string_ | Server certificate secret to secure client-server communication. Is provided to the client who connects to etcd by client port (2379 by default).<br />It is expected to have tls.crt and tls.key fields in the secret. |  |  |
-| `clientTrustedCASecret` _string_ | Trusted CA for client certificates that are provided by client to etcd. It is expected to have tls.crt field in the secret. |  |  |
-| `clientSecret` _string_ | Client certificate for etcd-operator to do maintenance. It is expected to have tls.crt and tls.key fields in the secret. |  |  |
+| `peerTrustedCASecret` _string_ | Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have ca.crt field in the secret.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
+| `peerSecret` _string_ | Certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt and tls.key fields in the secret.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
+| `serverTrustedCASecret` _string_ | Trusted CA for etcd server certificates for client-server communication. Is necessary to set trust between operator and etcd.<br />It is expected to have ca.crt field in the secret. If it is not specified, then insecure communication will be used.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
+| `serverSecret` _string_ | Server certificate secret to secure client-server communication. Is provided to the client who connects to etcd by client port (2379 by default).<br />It is expected to have tls.crt and tls.key fields in the secret.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
+| `clientTrustedCASecret` _string_ | Trusted CA for client certificates that are provided by client to etcd. It is expected to have ca.crt field in the secret.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
+| `clientSecret` _string_ | Client certificate for etcd-operator to do maintenance. It is expected to have tls.crt and tls.key fields in the secret.<br />This secret must be created in the namespace with etcdCluster CR. |  |  |
 
 

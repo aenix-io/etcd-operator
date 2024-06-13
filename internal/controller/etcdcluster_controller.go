@@ -18,8 +18,14 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	goerrors "errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/aenix-io/etcd-operator/internal/log"
 	policyv1 "k8s.io/api/policy/v1"
@@ -37,6 +43,8 @@ import (
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
+
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 // EtcdClusterReconciler reconciles a EtcdCluster object
@@ -50,6 +58,7 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups=etcd.aenix.io,resources=etcdclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;watch;delete;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;create;delete;update;patch;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=view;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;create;delete;update;patch;list;watch
 
@@ -78,7 +87,6 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// ensure managed resources
 	if err = r.ensureClusterObjects(ctx, instance); err != nil {
-		log.Error(ctx, err, "cannot create Cluster auxiliary objects")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 
@@ -94,6 +102,13 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		log.Error(ctx, err, "failed to check etcd cluster state")
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
+	}
+
+	if clusterReady && *instance.Spec.Replicas != int32(0) {
+		err := r.configureAuth(ctx, instance)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// set cluster readiness condition
@@ -126,21 +141,37 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // ensureClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+
 	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile cluster state configmap failed")
 		return err
 	}
+	log.Debug(ctx, "cluster state configmap reconciled")
+
 	if err := factory.CreateOrUpdateHeadlessService(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile headless service failed")
 		return err
 	}
+	log.Debug(ctx, "headless service reconciled")
+
 	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile statefulset failed")
 		return err
 	}
+	log.Debug(ctx, "statefulset reconciled")
+
 	if err := factory.CreateOrUpdateClientService(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile client service failed")
 		return err
 	}
+	log.Debug(ctx, "client service reconciled")
+
 	if err := factory.CreateOrUpdatePdb(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile pdb failed")
 		return err
 	}
+	log.Debug(ctx, "pdb reconciled")
+
 	return nil
 }
 
@@ -189,4 +220,281 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Complete(r)
+}
+
+func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+
+	var err error
+
+	cli, err := r.GetEtcdClient(ctx, cluster)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		err = cli.Close()
+	}()
+
+	err = testMemberList(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	auth := clientv3.NewAuth(cli)
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.EnableAuth {
+
+		if err := r.createRoleIfNotExists(ctx, auth, "root"); err != nil {
+			return err
+		}
+
+		rootUserResponse, err := r.createUserIfNotExists(ctx, auth, "root")
+		if err != nil {
+			return err
+		}
+
+		if err := r.grantRoleToUser(ctx, auth, "root", "root", rootUserResponse); err != nil {
+			return err
+		}
+
+		if err := r.enableAuth(ctx, auth); err != nil {
+			return err
+		}
+	} else {
+		if err := r.disableAuth(ctx, auth); err != nil {
+			return err
+		}
+	}
+
+	err = testMemberList(ctx, cli)
+	if err != nil {
+		return err
+	}
+
+	return err
+}
+
+// This is auxiliary self-test function, that shows that connection to etcd cluster works.
+// As soon as operator has functionality to operate etcd-cluster, this function can be removed.
+func testMemberList(ctx context.Context, cli *clientv3.Client) error {
+
+	etcdCluster := clientv3.NewCluster(cli)
+
+	_, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	memberList, err := etcdCluster.MemberList(ctx)
+
+	if err != nil {
+		log.Error(ctx, err, "failed to get member list", "endpoints", cli.Endpoints())
+		return err
+	}
+	log.Debug(ctx, "member list got", "member list", memberList)
+
+	return err
+}
+
+func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (*clientv3.Client, error) {
+
+	endpoints := getEndpointsSlice(cluster)
+	log.Debug(ctx, "endpoints built", "endpoints", endpoints)
+
+	tlsConfig, err := r.getTLSConfig(ctx, cluster)
+	if err != nil {
+		log.Error(ctx, err, "failed to build tls config")
+		return nil, err
+	}
+	log.Debug(ctx, "tls config built", "tls config", tlsConfig)
+
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+		TLS:         tlsConfig,
+	},
+	)
+	if err != nil {
+		log.Error(ctx, err, "failed to create etcd client", "endpoints", endpoints)
+		return nil, err
+	}
+	log.Debug(ctx, "etcd client created", "endpoints", endpoints)
+
+	return cli, nil
+
+}
+
+func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (*tls.Config, error) {
+
+	var err error
+
+	caCertPool := &x509.CertPool{}
+
+	if cluster.IsServerTrustedCADefined() {
+
+		serverCASecret := &corev1.Secret{}
+
+		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ServerTrustedCASecret}, serverCASecret); err != nil {
+			log.Error(ctx, err, "failed to get server trusted CA secret")
+			return nil, err
+		}
+		log.Debug(ctx, "secret read", "server trusted CA secret") // serverCASecret,
+
+		caCertPool = x509.NewCertPool()
+
+		if !caCertPool.AppendCertsFromPEM(serverCASecret.Data["tls.crt"]) {
+			log.Error(ctx, err, "failed to parse CA certificate")
+			return nil, err
+		}
+
+	}
+
+	cert := tls.Certificate{}
+
+	if cluster.IsClientSecurityEnabled() {
+
+		rootSecret := &corev1.Secret{}
+		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ClientSecret}, rootSecret); err != nil {
+			log.Error(ctx, err, "failed to get root client secret")
+			return nil, err
+		}
+		log.Debug(ctx, "secret read", "root client secret") // rootSecret,
+
+		cert, err = tls.X509KeyPair(rootSecret.Data["tls.crt"], rootSecret.Data["tls.key"])
+		if err != nil {
+			log.Error(ctx, err, "failed to parse key pair", "cert", cert)
+			return nil, err
+		}
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: !cluster.IsServerTrustedCADefined(),
+		RootCAs:            caCertPool,
+		Certificates: []tls.Certificate{
+			cert,
+		},
+	}
+
+	return tlsConfig, err
+}
+
+func getEndpointsSlice(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+
+	endpoints := []string{}
+	for podNumber := 0; podNumber < int(*cluster.Spec.Replicas); podNumber++ {
+		endpoints = append(
+			endpoints,
+			strings.Join(
+				[]string{
+					factory.GetServerProtocol(cluster) + cluster.Name + "-" + strconv.Itoa(podNumber),
+					factory.GetHeadlessServiceName(cluster),
+					cluster.Namespace,
+					"svc:2379"},
+				"."))
+	}
+	return endpoints
+}
+
+func (r *EtcdClusterReconciler) createRoleIfNotExists(ctx context.Context, authClient clientv3.Auth, roleName string) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := authClient.RoleGet(ctx, roleName)
+	if err != nil {
+		if err.Error() != "etcdserver: role name not found" {
+			log.Error(ctx, err, "failed to get role", "role name", "root")
+			return err
+		}
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		_, err = authClient.RoleAdd(ctx, roleName)
+		if err != nil {
+			log.Error(ctx, err, "failed to add role", "role name", "root")
+			return err
+		}
+		log.Debug(ctx, "role added", "role name", "root")
+		return nil
+	}
+	log.Debug(ctx, "role exists, nothing to do", "role name", "root")
+
+	return nil
+}
+
+func (r *EtcdClusterReconciler) createUserIfNotExists(ctx context.Context, authClient clientv3.Auth, userName string) (*clientv3.AuthUserGetResponse, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	userResponse, err := authClient.UserGet(ctx, userName)
+	if err != nil {
+		if err.Error() != "etcdserver: user name not found" {
+			log.Error(ctx, err, "failed to get user", "user name", "root")
+			return nil, err
+		}
+
+		_, cancel = context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		_, err = authClient.UserAddWithOptions(ctx, "root", "", &clientv3.UserAddOptions{
+			NoPassword: true,
+		})
+		if err != nil {
+			log.Error(ctx, err, "failed to add user", "user name", "root")
+			return nil, err
+		}
+		log.Debug(ctx, "user added", "user name", "root")
+		return nil, nil
+	}
+	log.Debug(ctx, "user exists, nothing to do", "user name", "root")
+
+	return userResponse, err
+}
+
+func (r *EtcdClusterReconciler) grantRoleToUser(ctx context.Context, authClient clientv3.Auth, userName, roleName string, userResponse *clientv3.AuthUserGetResponse) error {
+
+	var err error
+
+	if userResponse == nil || !slices.Contains(userResponse.Roles, roleName) {
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, err := authClient.UserGrantRole(ctx, userName, roleName)
+
+		if err != nil {
+			log.Error(ctx, err, "failed to grant user to role", "user:role name", "root:root")
+			return err
+		}
+		log.Debug(ctx, "user:role granted", "user:role name", "root:root")
+	} else {
+		log.Debug(ctx, "user:role already granted, nothing to do", "user:role name", "root:root")
+	}
+
+	return err
+}
+
+func (r *EtcdClusterReconciler) enableAuth(ctx context.Context, authClient clientv3.Auth) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := authClient.AuthEnable(ctx)
+
+	if err != nil {
+		log.Error(ctx, err, "failed to enable auth")
+		return err
+	}
+	log.Debug(ctx, "auth enabled")
+
+	return err
+}
+
+func (r *EtcdClusterReconciler) disableAuth(ctx context.Context, authClient clientv3.Auth) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := authClient.AuthDisable(ctx)
+	if err != nil {
+		log.Error(ctx, err, "failed to disable auth")
+		return err
+	}
+	log.Debug(ctx, "auth disabled")
+
+	return nil
 }

@@ -3,13 +3,15 @@ apiVersion: etcd.aenix.io/v1alpha1
 kind: EtcdCluster
 metadata:
   name: test
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   storage: {}
   security:
+    enableAuth: true
     tls:
       peerTrustedCASecret: ca-peer-secret
       peerSecret: peer-secret
+      serverTrustedCASecret: ca-server-secret
       serverSecret: server-secret
       clientTrustedCASecret: ca-client-secret
       clientSecret: client-secret
@@ -18,7 +20,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: selfsigned-issuer
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   selfSigned: {}
 ---
@@ -26,7 +28,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: ca-certificate-peer
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   isCA: true
   usages:
@@ -52,7 +54,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: ca-certificate-server
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   isCA: true
   usages:
@@ -78,7 +80,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: ca-certificate-client
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   isCA: true
   usages:
@@ -104,7 +106,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: ca-issuer-peer
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   ca:
     secretName: ca-peer-secret
@@ -113,7 +115,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: ca-issuer-server
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   ca:
     secretName: ca-server-secret
@@ -122,7 +124,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: ca-issuer-client
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   ca:
     secretName: ca-client-secret
@@ -131,7 +133,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: server-certificate
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   secretName: server-secret
   isCA: false
@@ -142,19 +144,19 @@ spec:
   dnsNames:
   - test-0
   - test-0.test-headless
-  - test-0.test-headless.default.svc
-  - test-0.test-headless.default.svc.cluster.local
+  - test-0.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-0.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - test-1
   - test-1.test-headless
-  - test-1.test-headless.default.svc
-  - test-1.test-headless.default.svc.cluster.local
+  - test-1.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-1.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - test-2
   - test-2.test-headless
-  - test-2.test-headless.default.svc
-  - test-2.test-headless.default.svc.cluster.local
+  - test-2.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-2.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - test
-  - test.default.svc
-  - test.default.svc.cluster.local
+  - test.test-tls-auth-etcd-cluster.svc
+  - test.test-tls-auth-etcd-cluster.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:
@@ -168,7 +170,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: peer-certificate
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   secretName: peer-secret
   isCA: false
@@ -180,16 +182,16 @@ spec:
   dnsNames:
   - test-0
   - test-0.test-headless
-  - test-0.test-headless.default.svc
-  - test-0.test-headless.default.svc.cluster.local
+  - test-0.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-0.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - test-1
   - test-1.test-headless
-  - test-1.test-headless.default.svc
-  - test-1.test-headless.default.svc.cluster.local
+  - test-1.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-1.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - test-2
   - test-2.test-headless
-  - test-2.test-headless.default.svc
-  - test-2.test-headless.default.svc.cluster.local
+  - test-2.test-headless.test-tls-auth-etcd-cluster.svc
+  - test-2.test-headless.test-tls-auth-etcd-cluster.svc.cluster.local
   - localhost
   - "127.0.0.1"
   privateKey:
@@ -203,7 +205,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: client-certificate
-  namespace: default
+  namespace: test-tls-auth-etcd-cluster
 spec:
   commonName: root
   secretName: client-secret

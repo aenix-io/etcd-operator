@@ -74,7 +74,7 @@ mod-tidy: ## Run go mod tidy against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
+	@echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
 	@$(ENVTEST) list | grep -q $(K8S_VERSION_TRIMMED_V)
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 

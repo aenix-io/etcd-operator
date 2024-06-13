@@ -19,6 +19,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - secrets
+  verbs:
+  - list
+  - view
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - services
   verbs:
   - create
