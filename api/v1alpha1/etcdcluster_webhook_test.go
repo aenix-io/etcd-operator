@@ -213,6 +213,66 @@ var _ = Describe("EtcdCluster Webhook", func() {
 				}
 			}
 		})
+
+		It("Shouldn't reject if auth is enabled and security client certs are defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security = &SecuritySpec{
+				EnableAuth: true,
+				TLS: TLSSpec{
+					ClientTrustedCASecret: "test-client-trusted-ca-cert",
+					ClientSecret:          "test-client-cert",
+					ServerSecret:          "test-server-cert",
+				},
+			}
+			err := localCluster.validateSecurity()
+			Expect(err).To(BeNil())
+		})
+
+		It("Should reject if auth is enabled and one of client and server certs is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security = &SecuritySpec{
+				EnableAuth: true,
+				TLS: TLSSpec{
+					ClientSecret:          "test-client-cert",
+					ClientTrustedCASecret: "test-client-trusted-ca-cert",
+				},
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security"),
+					localCluster.Spec.Security.TLS,
+					"if auth is enabled, client secret and server secret must be provided",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+
+		})
+
+		It("Should reject if auth is enabled and one of client and server certs is defined", func() {
+			localCluster := etcdCluster.DeepCopy()
+			localCluster.Spec.Security = &SecuritySpec{
+				EnableAuth: true,
+				TLS: TLSSpec{
+					ServerSecret: "test-server-cert",
+				},
+			}
+			err := localCluster.validateSecurity()
+			if Expect(err).NotTo(BeNil()) {
+				expectedFieldErr := field.Invalid(
+					field.NewPath("spec", "security"),
+					localCluster.Spec.Security.TLS,
+					"if auth is enabled, client secret and server secret must be provided",
+				)
+				if Expect(err).To(HaveLen(1)) {
+					Expect(*(err[0])).To(Equal(*expectedFieldErr))
+				}
+			}
+
+		})
+
 	})
 
 	Context("Validate PDB", func() {

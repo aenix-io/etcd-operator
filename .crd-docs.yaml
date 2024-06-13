@@ -1,0 +1,10 @@
+processor:
+  ignoreTypes:
+    - "(EtcdCluster)List$"
+    - "(EtcdCluster)Status$"
+  ignoreFields:
+    - "status$"
+    - "TypeMeta$"
+
+render:
+  kubernetesVersion: 1.30.0

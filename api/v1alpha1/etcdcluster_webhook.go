@@ -281,6 +281,15 @@ func (r *EtcdCluster) validateSecurity() field.ErrorList {
 		)
 	}
 
+	if security.EnableAuth && (security.TLS.ClientSecret == "" || security.TLS.ServerSecret == "") {
+
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "security"),
+			security.TLS,
+			"if auth is enabled, client secret and server secret must be provided"),
+		)
+	}
+
 	if len(allErrors) > 0 {
 		return allErrors
 	}

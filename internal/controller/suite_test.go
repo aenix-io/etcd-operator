@@ -17,12 +17,14 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
@@ -44,6 +46,13 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+
+// global context for test suites
+var ctx = log.Setup(context.TODO(), log.Parameters{
+	LogLevel:        "debug",
+	StacktraceLevel: "error",
+	Development:     true,
+})
 
 func TestControllers(t *testing.T) {
 	SetDefaultEventuallyTimeout(time.Second * 5)
@@ -85,6 +94,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 	SetClient(k8sClient)
+	SetContext(ctx)
 })
 
 var _ = AfterSuite(func() {

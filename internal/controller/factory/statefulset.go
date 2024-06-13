@@ -19,21 +19,25 @@ package factory
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
 )
 
 const (
-	etcdContainerName = "etcd"
+	etcdContainerName                = "etcd"
+	defaultBackendQuotaBytesFraction = 0.95
 )
 
 func CreateOrUpdateStatefulSet(
@@ -101,8 +105,11 @@ func CreateOrUpdateStatefulSet(
 			VolumeClaimTemplates: volumeClaimTemplates,
 		},
 	}
-	logger := log.FromContext(ctx)
-	logger.V(2).Info("statefulset spec generated", "sts_name", statefulSet.Name, "sts_spec", statefulSet.Spec)
+	ctx, err = contextWithGVK(ctx, statefulSet, rclient.Scheme())
+	if err != nil {
+		return err
+	}
+	log.Debug(ctx, "statefulset spec generated", "spec", statefulSet.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, statefulSet, rclient.Scheme()); err != nil {
 		return fmt.Errorf("cannot set controller reference: %w", err)
@@ -247,6 +254,25 @@ func generateEtcdCommand() []string {
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
+	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
+		var size resource.Quantity
+		if cluster.Spec.Storage.EmptyDir != nil {
+			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
+				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
+			}
+		} else {
+			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+		}
+		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
+		quota = math.Floor(quota)
+		if quota > 0 {
+			if cluster.Spec.Options == nil {
+				cluster.Spec.Options = make(map[string]string, 1)
+			}
+			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
+		}
+	}
+
 	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
 		if len(value) == 0 {
@@ -270,38 +296,42 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	serverTlsSettings := []string{}
-	serverProtocol := "http"
 
 	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
 		serverTlsSettings = []string{
 			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
 			"--key-file=/etc/etcd/pki/server/cert/tls.key",
 		}
-		serverProtocol = "https"
 	}
 
 	clientTlsSettings := []string{}
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ClientSecret != "" {
+	if cluster.IsClientSecurityEnabled() {
 		clientTlsSettings = []string{
 			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
 			"--client-cert-auth",
 		}
 	}
 
+	autoCompactionSettings := []string{
+		"--auto-compaction-retention=5m",
+		"--snapshot-count=10000",
+	}
+
 	args = append(args, []string{
 		"--name=$(POD_NAME)",
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
-		fmt.Sprintf("--listen-client-urls=%s://0.0.0.0:2379", serverProtocol),
+		fmt.Sprintf("--listen-client-urls=%s0.0.0.0:2379", GetServerProtocol(cluster)),
 		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", GetHeadlessServiceName(cluster)),
 		"--data-dir=/var/run/etcd/default.etcd",
-		fmt.Sprintf("--advertise-client-urls=%s://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", serverProtocol, GetHeadlessServiceName(cluster)),
+		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
 	}...)
 
 	args = append(args, peerTlsSettings...)
 	args = append(args, serverTlsSettings...)
 	args = append(args, clientTlsSettings...)
+	args = append(args, autoCompactionSettings...)
 
 	return args
 }
@@ -388,4 +418,12 @@ func getLivenessProbe() *corev1.Probe {
 		},
 		PeriodSeconds: 5,
 	}
+}
+
+func GetServerProtocol(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	serverProtocol := "http://"
+	if cluster.IsServerSecurityEnabled() {
+		serverProtocol = "https://"
+	}
+	return serverProtocol
 }

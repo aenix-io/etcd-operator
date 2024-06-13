@@ -37,7 +37,7 @@ import (
 var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 	var ns *corev1.Namespace
 
-	BeforeEach(func(ctx SpecContext) {
+	BeforeEach(func() {
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "test-",
@@ -55,7 +55,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			err error
 		)
 
-		BeforeEach(func(ctx SpecContext) {
+		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					GenerateName: "test-etcdcluster-",
@@ -78,7 +78,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 		})
 
-		AfterEach(func(ctx SpecContext) {
+		AfterEach(func() {
 			err = Get(&statefulSet)()
 			if err == nil {
 				Expect(k8sClient.Delete(ctx, &statefulSet)).Should(Succeed())
@@ -87,14 +87,14 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			}
 		})
 
-		It("should successfully ensure the statefulSet with empty spec", func(ctx SpecContext) {
+		It("should successfully ensure the statefulSet with empty spec", func() {
 			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
 			Eventually(Object(&statefulSet)).Should(
 				HaveField("Spec.Replicas", Equal(etcdcluster.Spec.Replicas)),
 			)
 		})
 
-		It("should successfully ensure the statefulSet with filled spec", func(ctx SpecContext) {
+		It("should successfully ensure the statefulSet with filled spec", func() {
 			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
 				VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
 					EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
@@ -276,7 +276,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 		})
 
-		It("should successfully override probes", func(ctx SpecContext) {
+		It("should successfully override probes", func() {
 			etcdcluster.Spec.PodTemplate.Spec = corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
@@ -353,7 +353,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 		})
 
-		It("should successfully create statefulSet with emptyDir", func(ctx SpecContext) {
+		It("should successfully create statefulSet with emptyDir", func() {
 			size := resource.MustParse("1Gi")
 			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
 				EmptyDir: &corev1.EmptyDirVolumeSource{
@@ -368,7 +368,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			})
 		})
 
-		It("should fail on creating the statefulset with invalid owner reference", func(ctx SpecContext) {
+		It("should fail on creating the statefulset with invalid owner reference", func() {
 			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
@@ -391,6 +391,58 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				"--key1=value1",
 				"--key2=value2",
 			}))
+		})
+		It("should not override user defined quota-backend-bytes", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Options: map[string]string{
+						"quota-backend-bytes": "2147483648", // 2Gi
+					},
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							SizeLimit: ptr.To(resource.MustParse("2Gi")),
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			Expect(args).To(ContainElement("--quota-backend-bytes=2147483648"))
+		})
+		It("should set quota-backend-bytes to 0.95 of EmptyDir size", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							SizeLimit: ptr.To(resource.MustParse("2Gi")),
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			// 2Gi * 0.95 = 2040109465,6
+			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
+		})
+		It("should set quota-backend-bytes to 0.95 of PVC size", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+								StorageClassName: ptr.To("local-path"),
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: map[corev1.ResourceName]resource.Quantity{
+										corev1.ResourceStorage: resource.MustParse("2Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			args := generateEtcdArgs(etcdCluster)
+			// 2Gi * 0.95 = 2040109465,6
+			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
 		})
 	})
 
