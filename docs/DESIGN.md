@@ -7,64 +7,67 @@ primitives and gives an overview of the underlying implementation.
 
 ```mermaid
 flowchart TD
-    Start(Start) --> A0[Ensure service.]
-      A0 --> A1[Connect to the cluster\nand fetch all statuses.]
-      A1 --> |Got some response| AA{All reachable\nmembers have the\nsame cluster ID?}
-        AA --> |Yes| AAA{Is cluster\nin quorum?}
-          AAA --> |Yes| AAAA{Are all members \nmanaged by the operator?}
-            AAAA --> |Yes| AAAAA0[Promote any learners.]
-              AAAAA0 --> |OK| AAAAA1[Ensure configmap with initial cluster\nmatching existing members and\ncluster state=existing]
-              AAAAA1 --> |OK| AAAAA2[Ensure StatefulSet with\nreplicas = max member ordinal + 1]
-              AAAAA2 --> |OK| AAAAAA{Are all\nmembers healthy?}
-                AAAAAA --> |Yes| AAAAAAA{Are all STS pods present\nin the member list?}
-                  AAAAAAA --> |Yes| AAAAAAAA{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
-                    AAAAAAAA -->|Yes| AAAAAAAAA[Set cluster\nstatus to ready.]
-                      AAAAAAAAA --> HappyStop([Stop])
+    Start(Start) --> A[Ensure service.]
+      A --> AA{Are there any\nendpoints?}
+        AA --> |Yes| AAA[Connect to the cluster\nand fetch all statuses.]
+          AAA --> |Got some response| AAAA{All reachable\nmembers have the\nsame cluster ID?}
+            AAAA --> |Yes| AAAAA{Is cluster\nin quorum?}
+              AAAAA --> |Yes| AAAAAA{Are all members \nmanaged by the operator?}
+                AAAAAA --> |Yes| AAAAAAA["`
+                  Promote any learners.
+                  Ensure configmap with initial cluster matching existing members and cluster state=existing.
+                  Ensure StatefulSet with replicas = max member ordinal + 1
+                `"]
+                  AAAAAAA --> |OK| AAAAAAAA{Are all\nmembers healthy?}
+                    AAAAAAAA --> |Yes| AAAAAAAAA{Are all STS pods present\nin the member list?}
+                      AAAAAAAAA --> |Yes| AAAAAAAAAA{Is the\nEtcdCluster\nsize equal to the\nStatefulSet\nsize?}
+                        AAAAAAAAAA -->|Yes| AAAAAAAAAAA[Set cluster\nstatus to ready.]
+                          AAAAAAAAAAA --> HappyStop([Stop])
 
-                    AAAAAAAA --> |No, desired\nsize larger| AAAAAAAAB[Ensure ConfigMap with\ninitial cluster state existing\nand initial cluster URLs\nequal to current cluster\nplus one member, do\n'member add' API call and\nincrement StatefulSet size.]
-                      AAAAAAAAB --> ScaleUpStop([Stop])
+                        AAAAAAAAAA --> |No, desired\nsize larger| AAAAAAAAAAB[Ensure ConfigMap with\ninitial cluster state existing\nand initial cluster URLs\nequal to current cluster\nplus one member, do\n'member add' API call and\nincrement StatefulSet size.]
+                          AAAAAAAAAAB --> ScaleUpStop([Stop])
 
-                    AAAAAAAA --> |No, desired\nsize smaller| AAAAAAAAC[Member remove API\ncall, then decrement\nStatefulSet size\nthen delete PVC.]
-                      AAAAAAAAC --> ScaleDownStop([Stop])
+                        AAAAAAAAAA --> |No, desired\nsize smaller| AAAAAAAAAAC[Member remove API\ncall, then decrement\nStatefulSet size\nthen delete PVC.]
+                          AAAAAAAAAAC --> ScaleDownStop([Stop])
 
-                    AAAAAAAA --> |Etcd replicas=0\nSTS replicas=1| AAAAAAAAD[Decrement\nSTS to zero]
-                      AAAAAAAAD --> ScaleToZeroStop([Stop])
+                        AAAAAAAAAA --> |Etcd replicas=0\nSTS replicas=1| AAAAAAAAAAD[Decrement\nSTS to zero]
+                          AAAAAAAAAAD --> ScaleToZeroStop([Stop])
 
-                AAAAAA --> |No| AAAAAAB1[On timeout evict member.]
-                  AAAAAAB1 --> AAAAAAB2[Delete PVC, ensure ConfigMap with\nmembers + this one and delete pod.]
+                    AAAAAAAA --> |No| AAAAAAAAB1[On timeout evict member.]
+                      AAAAAAAAB1 --> AAAAAAAAB2[Delete PVC, ensure ConfigMap with\nmembers + this one and delete pod.]
 
-                AAAAAAA --> |No| AAAAAAB2
+                    AAAAAAAAA --> |No| AAAAAAAAB2
 
-              AAAAA0 -->|Error| AAAAAB([Requeue])
-              AAAAA1 -->|Error| AAAAAB([Requeue])
-              AAAAA2 -->|Error| AAAAAB([Requeue])
+                  AAAAAAA -->|Error| AAAAAAAB([Requeue])
 
-            AAAA --> |No| AAAAB([Not implemented,\nstop.])
+                AAAAAA --> |No| AAAAAAB([Not implemented,\nstop.])
 
-          AAA --> |No| AAAB([Either the cluster will\nsoon recover when\nall pods are back online\nor something caused\ndata loss and majority\n failure simultaneously.])
+              AAAAA --> |No| AAAAAB([Either the cluster will\nsoon recover when\nall pods are back online\nor something caused\ndata loss and majority\n failure simultaneously.])
 
-        AA --> |No| AAB[Cluster is in\nsplit-brain. Set\nerror status.]
-          AAB --> AABStop([Stop])
+            AAAA --> |No| AAAAB[Cluster is in\nsplit-brain. Set\nerror status.]
+              AAAAB --> AAAABStop([Stop])
 
-      A1 --> |No members\nreached| AB{Is the correct\nzero-replica STS\npresent?}
-        AB --> |Yes| ABA{EtcdCluster\n.spec.replicas==0?}
-          ABA --> |Yes| ABAA([Cluster successfully\nscaled to zero, stop.])
-          ABA --> |No| ABAB[Ensure ConfigMap with\ninitial cluster = new,\ninitial cluster peers with\nsingle member `name`-0]
-            ABAB --> |OK| ABABA[Increment STS size.]
-              ABABA --> |OK| ABABAA([Stop])
-              ABABA --> |Error| ABABAB([Requeue])
+          AAA --> |No members\nreached| AAAB{Is the STS\npresent?}
+            AAAB --> |Yes| AAABA{"`Does it have the correct pod spec?`"}
+              AAABA --> |Yes| AAABAA(["`The statefulset cannot be ready, as the ready and liveness probes must be failing. Hope it becomes ready or wait for user intervention.`"])
+              AAABA --> |No| AAABAB["`Patch the podspec`"]
 
-            ABAB --> |Error| ABABAB
+            AAAB --> |No| AAABB(["`Looks like it was deleted with cascade=orphan. Create it again and see what happens`"])
 
-        AB --> |No| ABB{Is the STS\npresent at all?}
-          ABB --> |Yes| ABBA[Patch the STS,\nexcept for replicas]
-            ABBA --> |OK| ABBAA([Stop])
-            ABBA --> |Error| ABBAB([Requeue])
+        AA --> |No| AAB{Is the STS\npresent?}
+          AAB --> |Yes| AABA{Does it have the\ncorrect pod spec?}
+            AABA --> |Yes| AABAA{Is it\nready?}
+              AABAA --> |Yes| AABAAA{Then it must have\nspec.replicas==0\n Is EtcdCluster\n.spec.replicas==0?}
+                AABAAA --> |Yes| AABAAAA([Cluster successfully\nscaled to zero, stop.])
+                AABAAA --> |No| AABAAAB["`
+                  Ensure ConfigMap with initial cluster = new,
+                  initial cluster peers with single member name-0,
+                  increment STS size.
+                `"]
 
-          ABB --> |No| ABBB[Create a zero-\nreplica STS]
-            ABBB --> |OK| ABBBA([Stop])
-            ABBB --> |Error| ABBBB([Requeue])
+              AABAA --> |No| AABAAB([Stop and wait, either\nit will turn ready soon\nand the next reconcile\nwill move things along,\nor user intervention is\nneeded])
 
-      A0 --> |Unexpected\nerror| AC(Requeue)
-      A1 --> |Unexpected\nerror| AC(Requeue)
+            AABA --> |No| AABAB[Patch the podspec]
+
+          AAB --> |No| AABB[Create configmap, initial state new\ninitial cluster according to spec.\nreplicas, create statefulset.]
 ```
