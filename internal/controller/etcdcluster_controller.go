@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aenix-io/etcd-operator/internal/log"
@@ -45,6 +46,10 @@ import (
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+)
+
+const (
+	etcdDefaultTimeout = 5 * time.Second
 )
 
 // EtcdClusterReconciler reconciles a EtcdCluster object
@@ -81,7 +86,8 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, nil
 	}
 
-	sts := appsv1.StatefulSet{}
+	state := observables{}
+
 	// create two services and the pdb, try fetching the sts
 	{
 		c := make(chan error)
@@ -107,11 +113,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			c <- err
 		}(c)
 		go func(chan<- error) {
-			err := r.Get(ctx, req.NamespacedName, &sts)
+			err := r.Get(ctx, req.NamespacedName, &state.statefulSet)
 			if client.IgnoreNotFound(err) != nil {
 				err = fmt.Errorf("couldn't get statefulset: %w", err)
 			}
-			c <- err
+			c <- client.IgnoreNotFound(err)
 		}(c)
 		for i := 0; i < 4; i++ {
 			if err := <-c; err != nil {
@@ -119,19 +125,33 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 	}
-	/*
-		clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if clusterClient == nil || singleClients == nil {
-			// TODO: no endpoints case
+	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	state.endpointsFound = clusterClient != nil && singleClients != nil
+	state.stsExists = state.statefulSet.UID != ""
 
+	// get status of every endpoint and member list from every endpoint
+	state.etcdStatuses = make([]etcdStatus, len(singleClients))
+	{
+		var wg sync.WaitGroup
+		ctx, cancel := context.WithTimeout(ctx, etcdDefaultTimeout)
+		for i := range singleClients {
+			go func(i int) {
+				wg.Add(1)
+				defer wg.Done()
+				state.etcdStatuses[i].fill(ctx, singleClients[i])
+			}(i)
 		}
-		if sts.UID != "" {
-			r.Patch()
-		}
-	*/
+		wg.Wait()
+		cancel()
+	}
+	state.setClusterID()
+	if state.inSplitbrain() {
+		log.Error(ctx, fmt.Errorf("etcd cluster in splitbrain"), "etcd cluster in splitbrain, dropping from reconciliation queue")
+		return ctrl.Result{}, nil
+	}
 	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
 		factory.FillConditions(instance)
