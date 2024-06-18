@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"sync"
 	"time"
 
@@ -89,23 +88,25 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--filename", dir+"/examples/manifests/etcdcluster-simple.yaml",
 					"--namespace", namespace,
 				)
-				_, err = utils.Run(cmd)
+				_, err := utils.Run(cmd)
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
 			WaitSTSReady("statefulset/test", namespace)
 
-			// CheckEtcdClusterHealthy("service/test", namespace)
+			var etcdClient *clientv3.Client
 
-			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
-			Expect(err).NotTo(HaveOccurred())
-			defer func() {
-				err := client.Close()
+			By("get etcd client", func() {
+				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 				Expect(err).NotTo(HaveOccurred())
-			}()
+				defer func() {
+					err := etcdClient.Close()
+					Expect(err).NotTo(HaveOccurred())
+				}()
+			})
 
 			By("check etcd cluster is healthy", func() {
-				Expect(utils.IsEtcdClusterHealthy(ctx, client)).To(BeTrue())
+				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
 			})
 
 		})
@@ -145,18 +146,22 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
-			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
-			Expect(err).NotTo(HaveOccurred())
-			defer func() {
-				err := client.Close()
-				Expect(err).NotTo(HaveOccurred())
-			}()
+			var etcdClient *clientv3.Client
 
-			By("check etcd cluster is healthy", func() {
-				Expect(utils.IsEtcdClusterHealthy(ctx, client)).To(BeTrue())
+			By("get etcd client", func() {
+				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+				Expect(err).NotTo(HaveOccurred())
+				defer func() {
+					err := etcdClient.Close()
+					Expect(err).NotTo(HaveOccurred())
+				}()
 			})
 
-			auth := clientv3.NewAuth(client)
+			By("check etcd cluster is healthy", func() {
+				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
+			})
+
+			auth := clientv3.NewAuth(etcdClient)
 
 			By("check root role is created", func() {
 				_, err = auth.RoleGet(ctx, "root")
@@ -183,45 +188,61 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			CreateNamespace(namespace)
 			DeferCleanup(DeleteNamespaceCB(namespace))
 
-			By("apply upgrade etcd cluster manifest")
+			By("apply upgrade etcd cluster manifest", func() {
+				cmd := exec.Command("kubectl", "apply",
+					"--filename", dir+fileName,
+					"--namespace", namespace,
+				)
+				_, err := utils.Run(cmd)
 
-			cmd := exec.Command("kubectl", "apply",
-				"--filename", dir+fileName,
-				"--namespace", namespace,
-			)
-			_, err := utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			})
 
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			var etcdClient *clientv3.Client
+
+			By("get etcd client", func() {
+				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+				Expect(err).NotTo(HaveOccurred())
+				defer func() {
+					err := etcdClient.Close()
+					Expect(err).NotTo(HaveOccurred())
+				}()
+			})
 
 			WaitSTSReady("statefulset/test", namespace)
-			CheckEtcdClusterHealthy("service/test", namespace)
 
-			By("upgrade etcd cluster to one patch version")
-			cmd = exec.Command("kubectl", "patch",
-				"etcdcluster/test",
-				"--type", "json",
-				// Strategic Merge Patch is not currently supported by the etcd-operator
-				// "--patch",
-				// fmt.Sprintf(
-				//  "{\"spec\":{\"podTemplate\":{\"containers\":[{\"name\":\"etcd\",\"image\":\"quay.io/coreos/etcd:%s\"}]}}}",
-				//  version,
-				// ),
-				"--patch",
-				fmt.Sprintf(
-					"[{\"op\": \"replace\", \"path\": \"/spec/podTemplate/spec/containers/0/image\", "+
-						"\"value\":\"quay.io/coreos/etcd:%s\"}]",
-					version,
-				),
-				"--namespace", namespace,
-			)
-			_, err = utils.Run(cmd)
-			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			By("check etcd cluster is healthy", func() {
+				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
+			})
+			By("upgrade etcd cluster to one patch version", func() {
+				cmd := exec.Command("kubectl", "patch",
+					"etcdcluster/test",
+					"--type", "json",
+					// Strategic Merge Patch is not currently supported by the etcd-operator
+					// "--patch",
+					// fmt.Sprintf(
+					//  "{\"spec\":{\"podTemplate\":{\"containers\":[{\"name\":\"etcd\",\"image\":\"quay.io/coreos/etcd:%s\"}]}}}",
+					//  version,
+					// ),
+					"--patch",
+					fmt.Sprintf(
+						"[{\"op\": \"replace\", \"path\": \"/spec/podTemplate/spec/containers/0/image\", "+
+							"\"value\":\"quay.io/coreos/etcd:%s\"}]",
+						version,
+					),
+					"--namespace", namespace,
+				)
+				_, err := utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			})
 
 			// Give the operator some time to update the sts
 			time.Sleep(2 * time.Second)
 
 			WaitSTSReady("statefulset/test", namespace)
-			CheckEtcdClusterHealthy("service/test", namespace)
+			By("check etcd cluster is healthy", func() {
+				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
+			})
 		},
 		Entry(
 			"should upgrade etcd cluster patch version",
@@ -279,48 +300,25 @@ func DeleteNamespace(namespace string) error {
 }
 
 func CreateNamespace(namespace string) {
-	By("create namespace")
+	By("create namespace", func() {
+		cmd := exec.Command("kubectl", "create", "namespace", namespace)
+		_, err := utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	})
 
-	cmd := exec.Command("kubectl", "create", "namespace", namespace)
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 }
 
 func WaitSTSReady(stsName, namespace string) {
-	By("wait for statefulset is ready")
-
-	cmd := exec.Command("kubectl", "wait",
-		stsName,
-		"--for", "jsonpath={.status.availableReplicas}=3",
-		"--namespace", namespace,
-		"--timeout", "5m",
-	)
-	_, err := utils.Run(cmd)
-
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-}
-
-func CheckEtcdClusterHealthy(serviceName, namespace string) {
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	By("port-forward service to localhost")
-	port, _ := utils.GetFreePort()
-	go func() {
-		defer GinkgoRecover()
-		defer wg.Done()
-
-		cmd := exec.Command("kubectl", "port-forward",
-			serviceName, strconv.Itoa(port)+":2379",
+	By("wait for statefulset is ready", func() {
+		cmd := exec.Command("kubectl", "wait",
+			stsName,
+			"--for", "jsonpath={.status.availableReplicas}=3",
 			"--namespace", namespace,
+			"--timeout", "5m",
 		)
 		_, err := utils.Run(cmd)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred())
-	}()
 
-	By("check etcd cluster is healthy")
-	endpoints := []string{"localhost:" + strconv.Itoa(port)}
-	for i := 0; i < 3; i++ {
-		Expect(utils.IsEtcdClusterHealthy(endpoints)).To(BeTrue())
-	}
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	})
+
 }
