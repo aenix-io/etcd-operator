@@ -76,7 +76,7 @@ mod-tidy: ## Run go mod tidy against code.
 test: manifests generate fmt vet envtest ## Run tests.
 	@echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
 	@$(ENVTEST) list | grep -q $(K8S_VERSION_TRIMMED_V)
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out -v
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
@@ -203,11 +203,11 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config=test/e2e/testdata/kind.yaml; \
 	fi
 	@if ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
   		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION)  --config=test/e2e/testdata/kind.yaml; \
 	fi
 
 .PHONY: kind-delete
