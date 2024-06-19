@@ -270,7 +270,7 @@ HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.44.1
 # renovate: datasource=github-tags depName=onsi/ginkgo
-GINKGO_VERSION ?= v2.17.3
+GINKGO_VERSION ?= v2.19.0
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"

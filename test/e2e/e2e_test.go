@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -76,8 +75,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 	Context("Simple", func() {
 		It("should deploy etcd cluster", func() {
 			const namespace = "test-simple-etcd-cluster"
-			var wg sync.WaitGroup
-			wg.Add(1)
 
 			CreateNamespace(namespace)
 			DeferCleanup(DeleteNamespaceCB(namespace))
@@ -96,14 +93,14 @@ var _ = Describe("etcd-operator", Ordered, func() {
 
 			var etcdClient *clientv3.Client
 
-			By("get etcd client", func() {
-				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			// By("get etcd client", func() {
+			etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				err := etcdClient.Close()
 				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					err := etcdClient.Close()
-					Expect(err).NotTo(HaveOccurred())
-				}()
-			})
+			}()
+			// })
 
 			By("check etcd cluster is healthy", func() {
 				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
@@ -116,8 +113,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 		It("should deploy etcd cluster with auth", func() {
 			var err error
 			const namespace = "test-tls-auth-etcd-cluster"
-			var wg sync.WaitGroup
-			wg.Add(1)
 
 			By("create namespace", func() {
 				cmd := exec.Command("sh", "-c", fmt.Sprintf("kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -", namespace)) //nolint:lll
@@ -138,7 +133,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
-					"--for", "jsonpath={.status.availableReplicas}=3",
+					"--for", "jsonpath={.status.readyReplicas}=3",
 					"--namespace", namespace,
 					"--timeout", "5m",
 				)
@@ -148,14 +143,14 @@ var _ = Describe("etcd-operator", Ordered, func() {
 
 			var etcdClient *clientv3.Client
 
-			By("get etcd client", func() {
-				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			// By("get etcd client", func() {
+			etcdClient, err = utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				err := etcdClient.Close()
 				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					err := etcdClient.Close()
-					Expect(err).NotTo(HaveOccurred())
-				}()
-			})
+			}()
+			// })
 
 			By("check etcd cluster is healthy", func() {
 				Expect(utils.IsEtcdClusterHealthy(ctx, etcdClient)).To(BeTrue())
@@ -200,14 +195,14 @@ var _ = Describe("etcd-operator", Ordered, func() {
 
 			var etcdClient *clientv3.Client
 
-			By("get etcd client", func() {
-				etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			// By("get etcd client", func() {
+			etcdClient, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				err := etcdClient.Close()
 				Expect(err).NotTo(HaveOccurred())
-				defer func() {
-					err := etcdClient.Close()
-					Expect(err).NotTo(HaveOccurred())
-				}()
-			})
+			}()
+			// })
 
 			WaitSTSReady("statefulset/test", namespace)
 
@@ -312,7 +307,7 @@ func WaitSTSReady(stsName, namespace string) {
 	By("wait for statefulset is ready", func() {
 		cmd := exec.Command("kubectl", "wait",
 			stsName,
-			"--for", "jsonpath={.status.availableReplicas}=3",
+			"--for", "jsonpath={.status.readyReplicas}=3",
 			"--namespace", namespace,
 			"--timeout", "5m",
 		)
