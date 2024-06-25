@@ -6,6 +6,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // etcdStatus holds the details of the status that an etcd endpoint
@@ -27,6 +28,7 @@ type observables struct {
 	etcdStatuses     []etcdStatus
 	clusterID        uint64
 	endpointsReached int
+	pvcs             []corev1.PersistentVolumeClaim
 }
 
 // setClusterID populates the clusterID field based on etcdStatuses
@@ -56,11 +58,23 @@ func (o *observables) inSplitbrain() bool {
 // with the endpoint's status and its perceived member list.
 func (s *etcdStatus) fill(ctx context.Context, c *clientv3.Client) {
 	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		s.endpointStatus, s.endpointStatusError = c.Status(ctx, c.Endpoints()[0])
 	}()
 	s.memberList, s.memberListError = c.MemberList(ctx)
 	wg.Wait()
+}
+
+// TODO: make a real function
+func (o *observables) desiredReplicas() int {
+	if o.etcdStatuses != nil {
+		for i := range o.etcdStatuses {
+			if o.etcdStatuses[i].memberList != nil {
+				return len(o.etcdStatuses[i].memberList.Members)
+			}
+		}
+	}
+	return 0
 }

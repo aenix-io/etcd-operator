@@ -11,8 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func NewEtcdClientSet(ctx context.Context, cluster *v1alpha1.EtcdCluster, client client.Client) (*clientv3.Client, []*clientv3.Client, error) {
-	cfg, err := configFromCluster(ctx, cluster, client)
+func NewEtcdClientSet(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli client.Client) (*clientv3.Client, []*clientv3.Client, error) {
+	cfg, err := configFromCluster(ctx, cluster, cli)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -35,12 +35,16 @@ func NewEtcdClientSet(ctx context.Context, cluster *v1alpha1.EtcdCluster, client
 	return clusterClient, singleClients, nil
 }
 
-func configFromCluster(ctx context.Context, cluster *v1alpha1.EtcdCluster, client client.Client) (clientv3.Config, error) {
+func configFromCluster(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli client.Client) (clientv3.Config, error) {
 	ep := v1.Endpoints{}
-	err := client.Get(ctx, types.NamespacedName{Name: GetHeadlessServiceName(cluster), Namespace: cluster.Namespace}, &ep)
-	if err != nil {
+	err := cli.Get(ctx, types.NamespacedName{Name: GetHeadlessServiceName(cluster), Namespace: cluster.Namespace}, &ep)
+	if client.IgnoreNotFound(err) != nil {
 		return clientv3.Config{}, err
 	}
+	if err != nil {
+		return clientv3.Config{Endpoints: []string{}}, nil
+	}
+
 	names := map[string]struct{}{}
 	urls := make([]string, 0, 8)
 	for _, v := range ep.Subsets {
