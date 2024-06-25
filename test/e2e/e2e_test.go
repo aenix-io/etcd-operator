@@ -97,15 +97,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			})
 
 			Eventually(func() error {
-				cmd := exec.Command("kubectl", "get",
-					"statefulset/test",
-					"--namespace", namespace,
-				)
-				_, err = utils.Run(cmd)
-				return err
-			}, time.Second*20, time.Second*2).Should(Succeed())
-
-			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.readyReplicas}=3",
@@ -113,8 +104,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -155,15 +146,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			})
 
 			Eventually(func() error {
-				cmd := exec.Command("kubectl", "get",
-					"statefulset/test",
-					"--namespace", namespace,
-				)
-				_, err = utils.Run(cmd)
-				return err
-			}, time.Second*20, time.Second*2).Should(Succeed())
-
-			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.readyReplicas}=3",
@@ -171,8 +153,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -212,15 +194,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			})
 
 			Eventually(func() error {
-				cmd := exec.Command("kubectl", "get",
-					"statefulset/test",
-					"--namespace", namespace,
-				)
-				_, err = utils.Run(cmd)
-				return err
-			}, time.Second*20, time.Second*2).Should(Succeed())
-
-			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.availableReplicas}=3",
@@ -228,8 +201,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())

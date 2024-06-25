@@ -133,7 +133,13 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	state.setClusterID()
 	if state.inSplitbrain() {
 		log.Error(ctx, fmt.Errorf("etcd cluster in splitbrain"), "etcd cluster in splitbrain, dropping from reconciliation queue")
-		return ctrl.Result{}, nil
+		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionError).
+			WithStatus(true).
+			WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeSplitbrain)).
+			WithMessage(string(etcdaenixiov1alpha1.EtcdErrorCondSplitbrainMessage)).
+			Complete(),
+		)
+		return r.updateStatus(ctx, instance)
 	}
 	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
