@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -95,7 +96,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
-			By("wait for statefulset is ready", func() {
+			Eventually(func() error {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.readyReplicas}=3",
@@ -103,8 +104,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -144,7 +145,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
-			By("wait for statefulset is ready", func() {
+			Eventually(func() error {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.readyReplicas}=3",
@@ -152,8 +153,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -192,7 +193,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
-			By("wait for statefulset is ready", func() {
+			Eventually(func() error {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.availableReplicas}=3",
@@ -200,8 +201,8 @@ var _ = Describe("etcd-operator", Ordered, func() {
 					"--timeout", "5m",
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
 
 			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
 			Expect(err).NotTo(HaveOccurred())
@@ -217,8 +218,10 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			auth := clientv3.NewAuth(client)
 
 			By("check root role is created", func() {
-				_, err = auth.RoleGet(ctx, "root")
-				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() error {
+					_, err = auth.RoleGet(ctx, "root")
+					return err
+				}, time.Second*20, time.Second*2).Should(Succeed())
 			})
 
 			By("check root user is created and has root role", func() {
