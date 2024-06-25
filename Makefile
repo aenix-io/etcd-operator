@@ -118,7 +118,10 @@ helm-crd-copy: yq kustomize ## Copy CRDs from kustomize to helm-chart
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build -o bin/manager cmd/manager/main.go
+
+build-plugin:
+	go build -o bin/kubectl-etcd cmd/kubectl-etcd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -200,11 +203,10 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 .PHONY: kind-create
 kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
-	fi
-	@if ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config test/e2e/config.yaml; \
+	elif ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes --name $(KIND_CLUSTER_NAME)) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
   		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config test/e2e/config.yaml; \
 	fi
 
 .PHONY: kind-delete
@@ -254,13 +256,13 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.15.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.59.0
+GOLANGCI_LINT_VERSION ?= v1.59.1
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
-HELM_VERSION ?= v3.15.1
+HELM_VERSION ?= v3.15.2
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.4.0
+HELM_SCHEMA_VERSION ?= v1.4.1
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq

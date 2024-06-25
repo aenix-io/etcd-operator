@@ -62,7 +62,7 @@ var _ = Describe("etcd-operator", Ordered, func() {
 
 	})
 
-	if os.Getenv("DO_NOT_CLEANUP_AFTER_E2E") == "true" {
+	if os.Getenv("DO_CLEANUP_AFTER_E2E") == "true" {
 		AfterAll(func() {
 			By("Delete kind environment", func() {
 				cmd := exec.Command("make", "kind-delete")
@@ -89,6 +89,55 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				dir, _ := utils.GetProjectDir()
 				cmd := exec.Command("kubectl", "apply",
 					"--filename", dir+"/examples/manifests/etcdcluster-simple.yaml",
+					"--namespace", namespace,
+				)
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			})
+
+			By("wait for statefulset is ready", func() {
+				cmd := exec.Command("kubectl", "wait",
+					"statefulset/test",
+					"--for", "jsonpath={.status.readyReplicas}=3",
+					"--namespace", namespace,
+					"--timeout", "5m",
+				)
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			})
+
+			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				err := client.Close()
+				Expect(err).NotTo(HaveOccurred())
+			}()
+
+			By("check etcd cluster is healthy", func() {
+				Expect(utils.IsEtcdClusterHealthy(ctx, client)).To(BeTrue())
+			})
+
+		})
+	})
+
+	Context("With emptyDir", func() {
+		It("should deploy etcd cluster", func() {
+			var err error
+			const namespace = "test-emtydir-etcd-cluster"
+			var wg sync.WaitGroup
+			wg.Add(1)
+
+			By("create namespace", func() {
+				cmd := exec.Command("sh", "-c",
+					fmt.Sprintf("kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -", namespace)) // nolint:lll
+				_, err = utils.Run(cmd)
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			})
+
+			By("apply etcd cluster with emptydir manifest", func() {
+				dir, _ := utils.GetProjectDir()
+				cmd := exec.Command("kubectl", "apply",
+					"--filename", dir+"/examples/manifests/etcdcluster-emptydir.yaml",
 					"--namespace", namespace,
 				)
 				_, err = utils.Run(cmd)

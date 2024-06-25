@@ -59,8 +59,9 @@ func CreateOrUpdateStatefulSet(
 		podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
 	}
 
-	volumeClaimTemplates := []corev1.PersistentVolumeClaim{
-		{
+	volumeClaimTemplates := make([]corev1.PersistentVolumeClaim, 0)
+	if cluster.Spec.Storage.EmptyDir == nil {
+		volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        GetPVCName(cluster),
 				Labels:      cluster.Spec.Storage.VolumeClaimTemplate.Labels,
@@ -68,7 +69,7 @@ func CreateOrUpdateStatefulSet(
 			},
 			Spec:   cluster.Spec.Storage.VolumeClaimTemplate.Spec,
 			Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
-		},
+		})
 	}
 
 	volumes := generateVolumes(cluster)
