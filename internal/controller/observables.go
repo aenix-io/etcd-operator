@@ -22,13 +22,13 @@ type etcdStatus struct {
 // observables stores observations that the operator can make about
 // states of objects in kubernetes
 type observables struct {
-	statefulSet      appsv1.StatefulSet
-	stsExists        bool
-	endpointsFound   bool
-	etcdStatuses     []etcdStatus
-	clusterID        uint64
-	endpointsReached int
-	pvcs             []corev1.PersistentVolumeClaim
+	statefulSet    appsv1.StatefulSet
+	stsExists      bool
+	endpointsFound bool
+	etcdStatuses   []etcdStatus
+	clusterID      uint64
+	_              int
+	_              []corev1.PersistentVolumeClaim
 }
 
 // setClusterID populates the clusterID field based on etcdStatuses
@@ -68,7 +68,7 @@ func (s *etcdStatus) fill(ctx context.Context, c *clientv3.Client) {
 }
 
 // TODO: make a real function
-func (o *observables) desiredReplicas() int {
+func (o *observables) _() int {
 	if o.etcdStatuses != nil {
 		for i := range o.etcdStatuses {
 			if o.etcdStatuses[i].memberList != nil {

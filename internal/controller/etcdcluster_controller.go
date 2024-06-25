@@ -111,6 +111,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if !state.endpointsFound {
 		if !state.stsExists {
 			// TODO: happy path for new cluster creation
+			log.Debug(ctx, "happy path for new cluster creation (not yet implemented)")
 		}
 	}
 

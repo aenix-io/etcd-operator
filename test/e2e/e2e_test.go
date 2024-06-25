@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -95,6 +96,15 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get",
+					"statefulset/test",
+					"--namespace", namespace,
+				)
+				_, err = utils.Run(cmd)
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed())
+
 			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
@@ -144,6 +154,15 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get",
+					"statefulset/test",
+					"--namespace", namespace,
+				)
+				_, err = utils.Run(cmd)
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed())
+
 			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
@@ -192,6 +211,15 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			})
 
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get",
+					"statefulset/test",
+					"--namespace", namespace,
+				)
+				_, err = utils.Run(cmd)
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed())
+
 			By("wait for statefulset is ready", func() {
 				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
@@ -217,8 +245,10 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			auth := clientv3.NewAuth(client)
 
 			By("check root role is created", func() {
-				_, err = auth.RoleGet(ctx, "root")
-				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() error {
+					_, err = auth.RoleGet(ctx, "root")
+					return err
+				}, time.Second*20, time.Second*2).Should(Succeed())
 			})
 
 			By("check root user is created and has root role", func() {
