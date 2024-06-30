@@ -22,30 +22,28 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
-	"go.uber.org/zap"
-	"go.uber.org/zap/exp/zapslog"
-	"go.uber.org/zap/zapcore"
 )
 
-func mapLogLevel(level string) zapcore.Level {
+func mapLogLevel(level string) slog.Level {
 	switch level {
 	case "debug":
-		return zapcore.DebugLevel
+		return slog.LevelDebug
 	case "info":
-		return zapcore.InfoLevel
+		return slog.LevelInfo
 	case "warn":
-		return zapcore.WarnLevel
+		return slog.LevelWarn
 	case "error":
-		return zapcore.ErrorLevel
+		return slog.LevelError
 	default:
-		return zapcore.InfoLevel
+		return slog.LevelInfo
 	}
 }
 
 type Parameters struct {
-	LogLevel        string
-	StacktraceLevel string
-	Development     bool
+	LogLevel         string
+	StacktraceLevel  string
+	EnableStacktrace bool
+	Development      bool
 }
 
 // Setup initializes the logger and returns a new context with the logger attached.
@@ -63,28 +61,15 @@ type Parameters struct {
 //	  Development:     true,
 //	})
 func Setup(ctx context.Context, p Parameters) context.Context {
-	encoderConfig := zapcore.EncoderConfig{
-		MessageKey:     "message",
-		LevelKey:       "level",
-		TimeKey:        "time",
-		CallerKey:      "caller",
-		StacktraceKey:  "stacktrace",
-		EncodeLevel:    zapcore.CapitalLevelEncoder,
-		EncodeTime:     zapcore.RFC3339TimeEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
-		EncodeCaller:   zapcore.ShortCallerEncoder,
-		EncodeName:     zapcore.FullNameEncoder,
-	}
-	encoder := zapcore.NewJSONEncoder(encoderConfig)
-	writer := os.Stderr
+	w := os.Stderr
 	if p.Development {
-		encoder = zapcore.NewConsoleEncoder(encoderConfig)
-		writer = os.Stdout
+		w = os.Stdout
 	}
-
-	core := zapcore.NewCore(encoder, writer, mapLogLevel(p.LogLevel))
-	logger := zap.New(core, zap.AddStacktrace(mapLogLevel(p.StacktraceLevel)))
-	l := slog.New(zapslog.NewHandler(logger.Core(), &zapslog.HandlerOptions{AddSource: p.Development}))
+	handler := NewHandler(
+		WithWriter(w),
+		WithLevel(mapLogLevel(p.LogLevel)),
+		WithStacktrace(p.EnableStacktrace, mapLogLevel(p.StacktraceLevel)))
+	l := slog.New(handler)
 	return logr.NewContextWithSlogLogger(ctx, l)
 }
 

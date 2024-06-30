@@ -28,16 +28,17 @@ import (
 )
 
 type Flags struct {
-	Kubeconfig      string
-	MetricsAddress  string
-	ProbeAddress    string
-	LeaderElection  bool
-	SecureMetrics   bool
-	EnableHTTP2     bool
-	DisableWebhooks bool
-	LogLevel        string
-	StacktraceLevel string
-	Dev             bool
+	Kubeconfig       string
+	MetricsAddress   string
+	ProbeAddress     string
+	LeaderElection   bool
+	SecureMetrics    bool
+	EnableHTTP2      bool
+	DisableWebhooks  bool
+	LogLevel         string
+	StacktraceLevel  string
+	EnableStacktrace bool
+	Dev              bool
 }
 
 func ParseCmdLine() Flags {
@@ -54,6 +55,7 @@ func ParseCmdLine() Flags {
 	pflag.Bool("enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers.")
 	pflag.Bool("disable-webhooks", false, "If set, the webhooks will be disabled.")
 	pflag.String("log-level", "info", "Logger verbosity level.Applicable values are debug, info, warn, error.")
+	pflag.Bool("enable-stacktrace", true, "If set log entries will contain stacktrace.")
 	pflag.String("stacktrace-level", "error", "Logger level to add stacktrace. "+
 		"Applicable values are debug, info, warn, error.")
 	pflag.Bool("dev", false, "development mode.")
@@ -75,16 +77,17 @@ func ParseCmdLine() Flags {
 	}
 
 	return Flags{
-		Kubeconfig:      viper.GetString("kubeconfig"),
-		MetricsAddress:  viper.GetString("metrics-bind-address"),
-		ProbeAddress:    viper.GetString("health-probe-bind-address"),
-		LeaderElection:  viper.GetBool("leader-elect"),
-		SecureMetrics:   viper.GetBool("metrics-secure"),
-		EnableHTTP2:     viper.GetBool("enable-http2"),
-		DisableWebhooks: viper.GetBool("disable-webhooks"),
-		LogLevel:        viper.GetString("log-level"),
-		StacktraceLevel: viper.GetString("stacktrace-level"),
-		Dev:             viper.GetBool("dev"),
+		Kubeconfig:       viper.GetString("kubeconfig"),
+		MetricsAddress:   viper.GetString("metrics-bind-address"),
+		ProbeAddress:     viper.GetString("health-probe-bind-address"),
+		LeaderElection:   viper.GetBool("leader-elect"),
+		SecureMetrics:    viper.GetBool("metrics-secure"),
+		EnableHTTP2:      viper.GetBool("enable-http2"),
+		DisableWebhooks:  viper.GetBool("disable-webhooks"),
+		LogLevel:         viper.GetString("log-level"),
+		StacktraceLevel:  viper.GetString("stacktrace-level"),
+		EnableStacktrace: viper.GetBool("enable-stacktrace"),
+		Dev:              viper.GetBool("dev"),
 	}
 }
 
@@ -107,8 +110,9 @@ func exitUsage(err error) {
 
 func LogParameters(flags Flags) log.Parameters {
 	return log.Parameters{
-		LogLevel:        flags.LogLevel,
-		StacktraceLevel: flags.StacktraceLevel,
-		Development:     flags.Dev,
+		LogLevel:         flags.LogLevel,
+		StacktraceLevel:  flags.StacktraceLevel,
+		EnableStacktrace: flags.EnableStacktrace,
+		Development:      flags.Dev,
 	}
 }
