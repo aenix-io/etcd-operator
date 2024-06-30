@@ -21,8 +21,16 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
+	"strings"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 )
+
+var sensitiveDataKeys = []string{"key", "crt", "password", "secret", "token"}
+
+const sensitiveDataReplacement = "OMITTED"
 
 type Handler struct {
 	slog.Handler
@@ -64,8 +72,12 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 }
 
 func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	redacted := make([]slog.Attr, 0)
+	for _, attr := range attrs {
+		redacted = append(redacted, redactAttr(attr))
+	}
 	handler := h.clone()
-	handler.Handler = handler.Handler.WithAttrs(attrs)
+	handler.Handler = handler.Handler.WithAttrs(redacted)
 	return handler
 }
 
@@ -96,4 +108,35 @@ func replaceCommonKeyValues(_ []string, a slog.Attr) slog.Attr {
 		a.Value = slog.StringValue(t)
 	}
 	return a
+}
+
+func redactAttr(attr slog.Attr) slog.Attr {
+	// more redacting function could be added
+	redacted := redactKubernetesSecretAttr(attr)
+	return redacted
+}
+
+func redactKubernetesSecretAttr(attr slog.Attr) slog.Attr {
+	val := attr.Value.Any()
+	sec, ok := val.(*corev1.Secret)
+	if !ok {
+		return attr
+	}
+	res := sec.DeepCopy()
+	data := res.Data
+	for k, v := range data {
+		if !slices.ContainsFunc(sensitiveDataKeys, func(s string) bool {
+			return strings.Contains(k, s)
+		}) {
+			data[k] = v
+			continue
+		}
+		data[k] = []byte(sensitiveDataReplacement)
+	}
+
+	res.Data = data
+	return slog.Attr{
+		Key:   attr.Key,
+		Value: slog.AnyValue(res),
+	}
 }
