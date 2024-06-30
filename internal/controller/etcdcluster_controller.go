@@ -378,7 +378,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 			log.Error(ctx, err, "failed to get server trusted CA secret")
 			return nil, err
 		}
-		log.Debug(ctx, "secret read", "server trusted CA secret") // serverCASecret,
+		log.Debug(ctx, "secret read", "server trusted CA secret", serverCASecret)
 
 		caCertPool = x509.NewCertPool()
 
@@ -398,7 +398,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 			log.Error(ctx, err, "failed to get root client secret")
 			return nil, err
 		}
-		log.Debug(ctx, "secret read", "root client secret") // rootSecret,
+		log.Debug(ctx, "secret read", "root client secret", rootSecret)
 
 		cert, err = tls.X509KeyPair(rootSecret.Data["tls.crt"], rootSecret.Data["tls.key"])
 		if err != nil {
