@@ -30,7 +30,7 @@ rules:
   - secrets
   verbs:
   - list
-  - view
+  - get
   - watch
 - apiGroups:
   - ""
