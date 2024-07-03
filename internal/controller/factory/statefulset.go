@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 
 	"github.com/aenix-io/etcd-operator/internal/log"
@@ -333,6 +334,8 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args = append(args, serverTlsSettings...)
 	args = append(args, clientTlsSettings...)
 	args = append(args, autoCompactionSettings...)
+
+	slices.Sort(args)
 
 	return args
 }
