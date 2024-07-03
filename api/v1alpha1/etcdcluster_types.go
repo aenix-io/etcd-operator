@@ -55,6 +55,7 @@ type EtcdClusterSpec struct {
 const (
 	EtcdConditionInitialized = "Initialized"
 	EtcdConditionReady       = "Ready"
+	EtcdConditionError       = "Error"
 )
 
 type EtcdCondType string
@@ -66,6 +67,7 @@ const (
 	EtcdCondTypeWaitingForFirstQuorum EtcdCondType = "WaitingForFirstQuorum"
 	EtcdCondTypeStatefulSetReady      EtcdCondType = "StatefulSetReady"
 	EtcdCondTypeStatefulSetNotReady   EtcdCondType = "StatefulSetNotReady"
+	EtcdCondTypeSplitbrain            EtcdCondType = "Splitbrain"
 )
 
 const (
@@ -74,6 +76,7 @@ const (
 	EtcdReadyCondNegMessage          EtcdCondMessage = "Cluster StatefulSet is not Ready"
 	EtcdReadyCondPosMessage          EtcdCondMessage = "Cluster StatefulSet is Ready"
 	EtcdReadyCondNegWaitingForQuorum EtcdCondMessage = "Waiting for first quorum to be established"
+	EtcdErrorCondSplitbrainMessage   EtcdCondMessage = "Etcd endpoints reporting more than one unique cluster ID"
 )
 
 // EtcdClusterStatus defines the observed state of EtcdCluster
