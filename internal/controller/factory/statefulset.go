@@ -23,7 +23,6 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/aenix-io/etcd-operator/internal/log"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -34,6 +33,7 @@ import (
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/k8sutils"
+	"github.com/aenix-io/etcd-operator/internal/log"
 )
 
 const (
@@ -256,36 +256,6 @@ func generateEtcdCommand() []string {
 func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
-	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
-		var size resource.Quantity
-		if cluster.Spec.Storage.EmptyDir != nil {
-			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
-				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
-			}
-		} else {
-			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
-		}
-		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
-		quota = math.Floor(quota)
-		if quota > 0 {
-			if cluster.Spec.Options == nil {
-				cluster.Spec.Options = make(map[string]string, 1)
-			}
-			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
-		}
-	}
-
-	for name, value := range cluster.Spec.Options {
-		flag := "--" + name
-		if len(value) == 0 {
-			args = append(args, flag)
-
-			continue
-		}
-
-		args = append(args, fmt.Sprintf("%s=%s", flag, value))
-	}
-
 	peerTlsSettings := []string{"--peer-auto-tls"}
 
 	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
@@ -335,7 +305,41 @@ func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args = append(args, clientTlsSettings...)
 	args = append(args, autoCompactionSettings...)
 
-	slices.Sort(args)
+	extraArgs := []string{}
+
+	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
+		var size resource.Quantity
+		if cluster.Spec.Storage.EmptyDir != nil {
+			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
+				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
+			}
+		} else {
+			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+		}
+		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
+		quota = math.Floor(quota)
+		if quota > 0 {
+			if cluster.Spec.Options == nil {
+				cluster.Spec.Options = make(map[string]string, 1)
+			}
+			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
+		}
+	}
+
+	for name, value := range cluster.Spec.Options {
+		flag := "--" + name
+		if len(value) == 0 {
+			extraArgs = append(extraArgs, flag)
+
+			continue
+		}
+
+		extraArgs = append(extraArgs, fmt.Sprintf("%s=%s", flag, value))
+	}
+
+	// Sort the extra args to ensure a deterministic order
+	slices.Sort(extraArgs)
+	args = append(args, extraArgs...)
 
 	return args
 }

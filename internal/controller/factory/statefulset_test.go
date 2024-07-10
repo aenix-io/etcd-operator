@@ -17,8 +17,6 @@ limitations under the License.
 package factory
 
 import (
-	"slices"
-
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -180,11 +178,6 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			By("Checking the extraArgs", func() {
 				Expect(statefulSet.Spec.Template.Spec.Containers[0].Args).To(Equal(generateEtcdArgs(&etcdcluster)))
-				By("Checking args are sorted", func() {
-					argsClone := slices.Clone(statefulSet.Spec.Template.Spec.Containers[0].Args)
-					slices.Sort(argsClone)
-					Expect(statefulSet.Spec.Template.Spec.Containers[0].Args).To(Equal(argsClone))
-				})
 			})
 
 			By("Checking the readinessGates", func() {
