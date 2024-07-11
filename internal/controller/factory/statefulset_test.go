@@ -17,6 +17,8 @@ limitations under the License.
 package factory
 
 import (
+	"slices"
+
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -64,6 +66,11 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				},
 				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
 					Replicas: ptr.To(int32(3)),
+					Options: map[string]string{
+						"foo":  "bar",
+						"key1": "value1",
+						"key2": "value2",
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
@@ -178,6 +185,16 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 
 			By("Checking the extraArgs", func() {
 				Expect(statefulSet.Spec.Template.Spec.Containers[0].Args).To(Equal(generateEtcdArgs(&etcdcluster)))
+				By("Checking args are sorted", func() {
+					// Check that only the extra args are sorted, which means we need to check elements starting from n,
+					// where n is the length of the default args. So we subtract the length of the extra args from the all args.
+					// For example: if we have 3 extra args and 10 total args, we need to check elements starting from 10-3 = 7,
+					// because the first 7 elements are default args and the elements args[7], args[8], and args[9] are extra args.
+					n := len(statefulSet.Spec.Template.Spec.Containers[0].Args) - len(etcdcluster.Spec.Options)
+					argsClone := slices.Clone(statefulSet.Spec.Template.Spec.Containers[0].Args[n:])
+					slices.Sort(argsClone)
+					Expect(statefulSet.Spec.Template.Spec.Containers[0].Args[n:]).To(Equal(argsClone))
+				})
 			})
 
 			By("Checking the readinessGates", func() {
