@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/aenix-io/etcd-operator/pkg/set"
@@ -30,7 +32,7 @@ type observables struct {
 	etcdStatuses   []etcdStatus
 	clusterID      uint64
 	_              int
-	_              []corev1.PersistentVolumeClaim
+	pvcs           []corev1.PersistentVolumeClaim
 }
 
 // setClusterID populates the clusterID field based on etcdStatuses
@@ -95,6 +97,21 @@ func (s *etcdStatus) fill(ctx context.Context, c *clientv3.Client) {
 	}()
 	s.memberList, s.memberListError = c.MemberList(ctx)
 	wg.Wait()
+}
+
+func (o *observables) pvcMaxIndex() int {
+	idx := -1
+	for i := range o.pvcs {
+		subs := strings.Split(o.pvcs[i].Name, "-")
+		index, err := strconv.Atoi(subs[len(subs)-1])
+		if err != nil {
+			continue
+		}
+		if index > idx {
+			idx = index
+		}
+	}
+	return idx
 }
 
 // TODO: make a real function to determine the right number of replicas.

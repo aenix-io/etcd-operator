@@ -115,6 +115,12 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	// fetch PVCs
+	state.pvcs, err = factory.PVCs(ctx, instance, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// get status of every endpoint and member list from every endpoint
 	state.etcdStatuses = make([]etcdStatus, len(singleClients))
 	{

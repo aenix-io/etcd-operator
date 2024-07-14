@@ -16,7 +16,13 @@ limitations under the License.
 
 package factory
 
-import etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+import (
+	"context"
+
+	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
 
 func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	if len(cluster.Spec.Storage.VolumeClaimTemplate.Name) > 0 {
@@ -24,4 +30,14 @@ func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	}
 	//nolint:goconst
 	return "data"
+}
+
+func PVCs(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) ([]corev1.PersistentVolumeClaim, error) {
+	labels := PVCLabels(cluster)
+	pvcs := corev1.PersistentVolumeClaimList{}
+	err := cli.List(ctx, &pvcs, client.MatchingLabels(labels))
+	if err != nil {
+		return nil, err
+	}
+	return pvcs.Items, nil
 }
