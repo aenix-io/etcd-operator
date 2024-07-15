@@ -37,6 +37,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,7 +66,7 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;watch;delete;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;create;delete;update;patch;list;watch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=view;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;create;delete;update;patch;list;watch
 
@@ -133,17 +135,37 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	state.setClusterID()
 	if state.inSplitbrain() {
 		log.Error(ctx, fmt.Errorf("etcd cluster in splitbrain"), "etcd cluster in splitbrain, dropping from reconciliation queue")
-		factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionError).
-			WithStatus(true).
-			WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeSplitbrain)).
-			WithMessage(string(etcdaenixiov1alpha1.EtcdErrorCondSplitbrainMessage)).
-			Complete(),
+		meta.SetStatusCondition(
+			&instance.Status.Conditions,
+			metav1.Condition{
+				Type:    etcdaenixiov1alpha1.EtcdConditionError,
+				Status:  metav1.ConditionTrue,
+				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeSplitbrain),
+				Message: string(etcdaenixiov1alpha1.EtcdErrorCondSplitbrainMessage),
+			},
 		)
 		return r.updateStatus(ctx, instance)
 	}
 	// fill conditions
 	if len(instance.Status.Conditions) == 0 {
-		factory.FillConditions(instance)
+		meta.SetStatusCondition(
+			&instance.Status.Conditions,
+			metav1.Condition{
+				Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
+				Status:  metav1.ConditionFalse,
+				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
+				Message: string(etcdaenixiov1alpha1.EtcdInitCondNegMessage),
+			},
+		)
+		meta.SetStatusCondition(
+			&instance.Status.Conditions,
+			metav1.Condition{
+				Type:    etcdaenixiov1alpha1.EtcdConditionReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
+				Message: string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum),
+			},
+		)
 	}
 
 	// ensure managed resources
@@ -152,11 +174,15 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster initialization condition
-	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionInitialized).
-		WithStatus(true).
-		WithReason(string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete)).
-		WithMessage(string(etcdaenixiov1alpha1.EtcdInitCondPosMessage)).
-		Complete())
+	meta.SetStatusCondition(
+		&instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
+			Status:  metav1.ConditionTrue,
+			Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitComplete),
+			Message: string(etcdaenixiov1alpha1.EtcdInitCondPosMessage),
+		},
+	)
 
 	// check sts condition
 	clusterReady, err := r.isStatefulSetReady(ctx, instance)
@@ -173,7 +199,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// set cluster readiness condition
-	existingCondition := factory.GetCondition(instance, etcdaenixiov1alpha1.EtcdConditionReady)
+	existingCondition := meta.FindStatusCondition(instance.Status.Conditions, etcdaenixiov1alpha1.EtcdConditionReady)
 	if existingCondition != nil &&
 		existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) &&
 		!clusterReady {
@@ -186,16 +212,22 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// StatefulSet is or isn't ready.
 	reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
 	message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
+	ready := metav1.ConditionFalse
 	if clusterReady {
 		reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
 		message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
+		ready = metav1.ConditionTrue
 	}
 
-	factory.SetCondition(instance, factory.NewCondition(etcdaenixiov1alpha1.EtcdConditionReady).
-		WithStatus(clusterReady).
-		WithReason(string(reason)).
-		WithMessage(string(message)).
-		Complete())
+	meta.SetStatusCondition(
+		&instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionReady,
+			Status:  ready,
+			Reason:  string(reason),
+			Message: string(message),
+		},
+	)
 	return r.updateStatus(ctx, instance)
 }
 
