@@ -48,6 +48,7 @@ import (
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -69,6 +70,8 @@ type EtcdClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="apps",resources=statefulsets,verbs=get;create;delete;update;patch;list;watch
 // +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;create;delete;update;patch;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;patch;watch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get
 
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -168,6 +171,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		)
 	}
 
+	// if size is different we have to remove statefulset it will be recreated in the next step
+	if err := r.checkAndDeleteStatefulSetIfNecessary(ctx, &state, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// ensure managed resources
 	if err = r.ensureConditionalClusterObjects(ctx, instance); err != nil {
 		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
@@ -231,6 +239,28 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.updateStatus(ctx, instance)
 }
 
+// checkAndDeleteStatefulSetIfNecessary deletes the StatefulSet if the specified storage size has changed.
+func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context.Context, state *observables, instance *etcdaenixiov1alpha1.EtcdCluster) error {
+	for _, volumeClaimTemplate := range state.statefulSet.Spec.VolumeClaimTemplates {
+		if volumeClaimTemplate.Name != "data" {
+			continue
+		}
+		currentStorage := volumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+		desiredStorage := instance.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+		if desiredStorage.Cmp(currentStorage) != 0 {
+			deletePolicy := metav1.DeletePropagationOrphan
+			log.Info(ctx, "Deleting StatefulSet due to storage change", "statefulSet", state.statefulSet.Name)
+			err := r.Delete(ctx, &state.statefulSet, &client.DeleteOptions{PropagationPolicy: &deletePolicy})
+			if err != nil {
+				log.Error(ctx, err, "Failed to delete StatefulSet")
+				return err
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
 // ensureConditionalClusterObjects creates or updates all objects owned by cluster CR
 func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
@@ -243,6 +273,11 @@ func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 
 	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile statefulset failed")
+		return err
+	}
+
+	if err := factory.UpdatePersistentVolumeClaims(ctx, cluster, r.Client); err != nil {
+		log.Error(ctx, err, "reconcile persistentVolumeClaims failed")
 		return err
 	}
 	log.Debug(ctx, "statefulset reconciled")
