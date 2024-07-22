@@ -41,7 +41,7 @@ func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 // UpdatePersistentVolumeClaims checks and updates the sizes of PVCs in an EtcdCluster if the specified storage size is larger than the current.
 func UpdatePersistentVolumeClaims(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, rclient client.Client) error {
 	labelSelector := labels.SelectorFromSet(labels.Set{
-		"app.kubernetes.io/name": cluster.Name,
+		"app.kubernetes.io/instance": cluster.Name,
 	})
 	listOptions := &client.ListOptions{
 		Namespace:     cluster.Namespace,

@@ -83,7 +83,9 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 					Name:      "data-test-cluster-0",
 					Namespace: ns.Name,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": cluster.Name,
+						"app.kubernetes.io/instance":   cluster.Name,
+						"app.kubernetes.io/managed-by": "etcd-operator",
+						"app.kubernetes.io/name":       "etcd",
 					},
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
@@ -118,7 +120,9 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 					Name:      "data-test-cluster-0",
 					Namespace: ns.Name,
 					Labels: map[string]string{
-						"app.kubernetes.io/name": cluster.Name,
+						"app.kubernetes.io/instance":   cluster.Name,
+						"app.kubernetes.io/managed-by": "etcd-operator",
+						"app.kubernetes.io/name":       "etcd",
 					},
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
