@@ -107,11 +107,26 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 	etcdclusterlog.Info("validate update", "name", r.Name)
 	var warnings admission.Warnings
 	oldCluster := old.(*EtcdCluster)
+
+	// Check if replicas are being resized
 	if *oldCluster.Spec.Replicas != *r.Spec.Replicas {
 		warnings = append(warnings, "cluster resize is not currently supported")
 	}
 
 	var allErrors field.ErrorList
+
+	// Check if storage size is being decreased
+	oldStorage := oldCluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+	newStorage := r.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+	if newStorage.Cmp(oldStorage) < 0 {
+		allErrors = append(allErrors, field.Invalid(
+			field.NewPath("spec", "storage", "volumeClaimTemplate", "resources", "requests", "storage"),
+			newStorage.String(),
+			"decreasing storage size is not allowed"),
+		)
+	}
+
+	// Check if storage type is changing
 	if oldCluster.Spec.Storage.EmptyDir == nil && r.Spec.Storage.EmptyDir != nil ||
 		oldCluster.Spec.Storage.EmptyDir != nil && r.Spec.Storage.EmptyDir == nil {
 		allErrors = append(allErrors, field.Invalid(
@@ -121,6 +136,7 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		)
 	}
 
+	// Validate PodDisruptionBudget
 	pdbWarnings, pdbErr := r.validatePdb()
 	if pdbErr != nil {
 		allErrors = append(allErrors, pdbErr...)
@@ -129,11 +145,13 @@ func (r *EtcdCluster) ValidateUpdate(old runtime.Object) (admission.Warnings, er
 		warnings = append(warnings, pdbWarnings...)
 	}
 
+	// Validate Security
 	securityErr := r.validateSecurity()
 	if securityErr != nil {
 		allErrors = append(allErrors, securityErr...)
 	}
 
+	// Validate Options
 	if errOptions := validateOptions(r); errOptions != nil {
 		allErrors = append(allErrors, field.Invalid(
 			field.NewPath("spec", "options"),
