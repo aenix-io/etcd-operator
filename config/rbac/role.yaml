@@ -29,8 +29,8 @@ rules:
   resources:
   - secrets
   verbs:
-  - list
   - get
+  - list
   - watch
 - apiGroups:
   - ""
