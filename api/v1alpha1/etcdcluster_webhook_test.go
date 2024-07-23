@@ -111,6 +111,46 @@ var _ = Describe("EtcdCluster Webhook", func() {
 			}
 		})
 
+		It("Should reject decreasing storage size", func() {
+			etcdCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage: StorageSpec{
+						VolumeClaimTemplate: EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: map[corev1.ResourceName]resource.Quantity{
+										corev1.ResourceStorage: resource.MustParse("5Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			oldCluster := &EtcdCluster{
+				Spec: EtcdClusterSpec{
+					Replicas: ptr.To(int32(1)),
+					Storage: StorageSpec{
+						VolumeClaimTemplate: EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: map[corev1.ResourceName]resource.Quantity{
+										corev1.ResourceStorage: resource.MustParse("10Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			_, err := etcdCluster.ValidateUpdate(oldCluster)
+			if Expect(err).To(HaveOccurred()) {
+				statusErr := err.(*errors.StatusError)
+				Expect(statusErr.ErrStatus.Message).To(ContainSubstring("decreasing storage size is not allowed"))
+			}
+		})
+
 		It("Should allow changing emptydir size", func() {
 			etcdCluster := &EtcdCluster{
 				Spec: EtcdClusterSpec{
