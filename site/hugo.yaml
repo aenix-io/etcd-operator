@@ -53,11 +53,11 @@ params:
 
   version_menu: Releases
   archived_version: false
-  version: v0.3
+  version: v0.4
   url_latest_version: https://etcd.aenix.io/docs/latest
   versions:
-    - version: v0.3
-      url: https://etcd.aenix.io/docs/v0.3
+    - version: v0.4
+      url: https://etcd.aenix.io/docs/v0.4
 
   copyright:
     authors: "Aenix.io | "
