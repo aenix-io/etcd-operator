@@ -23,6 +23,7 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/log"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,7 +84,7 @@ func CreateOrUpdateClusterStateConfigMap(
 // isEtcdClusterReady returns true if condition "Ready" has progressed
 // from reason v1alpha1.EtcdCondTypeWaitingForFirstQuorum.
 func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
-	cond := GetCondition(cluster, etcdaenixiov1alpha1.EtcdConditionReady)
+	cond := meta.FindStatusCondition(cluster.Status.Conditions, etcdaenixiov1alpha1.EtcdConditionReady)
 	return cond != nil && (cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady) ||
 		cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady))
 }

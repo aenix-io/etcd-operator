@@ -27,10 +27,19 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
-  - list
   - get
+  - list
   - watch
 - apiGroups:
   - ""
@@ -94,3 +103,10 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list

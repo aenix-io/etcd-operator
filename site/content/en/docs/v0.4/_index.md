@@ -1,9 +1,9 @@
 ---
-title: v0.3 docs
+title: v0.4 docs
 cascade:
-  version: v0.3
-  versName: &name v0.3
-  git_version_tag: v0.3
+  version: v0.4
+  versName: &name v0.4
+  git_version_tag: v0.4
   exclude_search: false
 linkTitle: *name
 simple_list: true

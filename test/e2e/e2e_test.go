@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,7 +61,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 		})
-
 	})
 
 	if os.Getenv("DO_CLEANUP_AFTER_E2E") == "true" {
@@ -72,59 +72,89 @@ var _ = Describe("etcd-operator", Ordered, func() {
 		})
 	}
 
-	Context("Simple", func() {
-		It("should deploy etcd cluster", func() {
-			var err error
-			const namespace = "test-simple-etcd-cluster"
-			var wg sync.WaitGroup
-			wg.Add(1)
+	Context("With PVC and resize", func() {
+		const namespace = "test-pvc-and-resize-etcd-cluster"
+		const storageClass = `
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard-with-expansion
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+`
 
+		It("should resize PVCs of the etcd cluster", func() {
+			var err error
 			By("create namespace", func() {
-				cmd := exec.Command("sh", "-c",
-					fmt.Sprintf("kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -", namespace)) // nolint:lll
+				cmd := exec.Command("kubectl", "create", "namespace", namespace)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+				Expect(err).NotTo(HaveOccurred())
 			})
 
-			By("apply simple etcd cluster manifest", func() {
+			By("create StorageClass", func() {
+				cmd := exec.Command("kubectl", "apply", "-f", "-")
+				cmd.Stdin = strings.NewReader(storageClass)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			By("deploying etcd cluster with initial PVC size", func() {
 				dir, _ := utils.GetProjectDir()
 				cmd := exec.Command("kubectl", "apply",
-					"--filename", dir+"/examples/manifests/etcdcluster-simple.yaml",
+					"--filename", dir+"/examples/manifests/etcdcluster-persistent.yaml",
 					"--namespace", namespace,
 				)
 				_, err = utils.Run(cmd)
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			})
-
-			Eventually(func() error {
-				cmd := exec.Command("kubectl", "wait",
-					"statefulset/test",
-					"--for", "jsonpath={.status.readyReplicas}=3",
-					"--namespace", namespace,
-					"--timeout", "5m",
-				)
-				_, err = utils.Run(cmd)
-				return err
-			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for statefulset is ready")
-
-			client, err := utils.GetEtcdClient(ctx, client.ObjectKey{Namespace: namespace, Name: "test"})
-			Expect(err).NotTo(HaveOccurred())
-			defer func() {
-				err := client.Close()
 				Expect(err).NotTo(HaveOccurred())
-			}()
-
-			By("check etcd cluster is healthy", func() {
-				Expect(utils.IsEtcdClusterHealthy(ctx, client)).To(BeTrue())
 			})
 
+			By("waiting for statefulset to be ready", func() {
+				Eventually(func() error {
+					cmd := exec.Command("kubectl", "wait",
+						"statefulset/test",
+						"--for", "jsonpath={.status.readyReplicas}=3",
+						"--namespace", namespace,
+						"--timeout", "5m",
+					)
+					_, err = utils.Run(cmd)
+					return err
+				}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			})
+
+			By("updating the storage request", func() {
+				// Patch the EtcdCluster to increase storage size
+				patch := `{"spec": {"storage": {"volumeClaimTemplate": {"spec": {"resources": {"requests": {"storage": "8Gi"}}}}}}}`
+				cmd := exec.Command("kubectl", "patch", "etcdcluster", "test", "--namespace", namespace, "--type", "merge", "--patch", patch) //nolint:lll
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			By("checking that PVC sizes have been updated", func() {
+				Eventually(func() bool {
+					cmd := exec.Command("kubectl", "get", "pvc", "-n", namespace, "-o", "jsonpath={.items[*].spec.resources.requests.storage}") //nolint:lll
+					output, err := utils.Run(cmd)
+					if err != nil {
+						return false
+					}
+					// Split the output into individual sizes and check each one
+					sizes := strings.Fields(string(output))
+					for _, size := range sizes {
+						if size != "8Gi" {
+							return false
+						}
+					}
+					return true
+				}, 5*time.Minute, 10*time.Second).Should(BeTrue(), "PVCs should be resized to 8Gi")
+			})
 		})
 	})
 
 	Context("With emptyDir", func() {
 		It("should deploy etcd cluster", func() {
 			var err error
-			const namespace = "test-emtydir-etcd-cluster"
+			const namespace = "test-emptydir-etcd-cluster"
 			var wg sync.WaitGroup
 			wg.Add(1)
 
@@ -166,7 +196,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			By("check etcd cluster is healthy", func() {
 				Expect(utils.IsEtcdClusterHealthy(ctx, client)).To(BeTrue())
 			})
-
 		})
 	})
 
@@ -235,8 +264,6 @@ var _ = Describe("etcd-operator", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(authStatus.Enabled).To(BeTrue())
 			})
-
 		})
 	})
-
 })
