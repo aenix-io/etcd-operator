@@ -125,16 +125,28 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	if !state.endpointsFound {
 		if !state.stsExists {
-			cm := factory.TemplateClusterStateConfigMap(instance, "new", state.desiredReplicas())
-			err := ctrl.SetControllerReference(instance, cm, r.Scheme)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			err = r.patchOrCreateObject(ctx, cm)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+			return r.createClusterFromScratch(ctx, &state) // TODO: needs implementing
 		}
+		// else try reconciling the sts
+		existingSts := state.statefulSet.DeepCopy()
+		desiredSts := factory.TemplateStatefulSet() // TODO: needs implementing
+		existingSts.Spec.Template.Spec = desiredSts.Spec.Template.Spec
+		err := r.patchOrCreateObject(ctx, existingSts)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		state.statefulSet = *existingSts
+		if existingSts.Status.ReadyReplicas != *existingSts.Spec.Replicas { // TODO: this check might not be the best to check for a ready sts
+			return ctrl.Result{}, fmt.Errorf("waiting for statefulset to become ready")
+		}
+		if *existingSts.Spec.Replicas > 0 {
+			return ctrl.Result{}, fmt.Errorf("reached an impossible state (no endpoints, but active pods)")
+		}
+		if *instance.Spec.Replicas == 0 {
+			// cluster successfully scaled down to zero
+			return ctrl.Result{}, nil
+		}
+		return r.scaleUpFromZero(ctx, &state) // TODO: needs implementing
 	}
 
 	// get status of every endpoint and member list from every endpoint
@@ -689,4 +701,23 @@ func (r *EtcdClusterReconciler) patchOrCreateObject(ctx context.Context, obj cli
 		err = r.Create(ctx, obj)
 	}
 	return err
+}
+
+// TODO!
+func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, state *observables) (ctrl.Result, error) {
+	cm := factory.TemplateClusterStateConfigMap(state.instance, "new", state.desiredReplicas())
+	err := ctrl.SetControllerReference(state.instance, cm, r.Scheme)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	err = r.patchOrCreateObject(ctx, cm)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	panic("not yet implemented")
+}
+
+// TODO!
+func (r *EtcdClusterReconciler) scaleUpFromZero(ctx context.Context, state *observables) (ctrl.Result, error) {
+	panic("not yet implemented")
 }

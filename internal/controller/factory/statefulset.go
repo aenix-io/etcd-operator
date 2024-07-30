@@ -41,6 +41,11 @@ const (
 	defaultBackendQuotaBytesFraction = 0.95
 )
 
+// TODO!
+func TemplateStatefulSet() *appsv1.StatefulSet {
+	panic("not yet implemented")
+}
+
 func PodLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
 	labels := NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy()
 
