@@ -38,6 +38,16 @@ func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return "data"
 }
 
+func PVCs(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) ([]corev1.PersistentVolumeClaim, error) {
+	labels := PVCLabels(cluster)
+	pvcs := corev1.PersistentVolumeClaimList{}
+	err := cli.List(ctx, &pvcs, client.MatchingLabels(labels))
+	if err != nil {
+		return nil, err
+	}
+	return pvcs.Items, nil
+}
+
 // UpdatePersistentVolumeClaims checks and updates the sizes of PVCs in an EtcdCluster if the specified storage size is larger than the current.
 func UpdatePersistentVolumeClaims(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, rclient client.Client) error {
 	labelSelector := labels.SelectorFromSet(labels.Set{
