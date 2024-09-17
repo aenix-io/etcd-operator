@@ -30,12 +30,30 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+func PVCLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
+	labels := PodLabels(cluster)
+	for key, value := range cluster.Spec.Storage.VolumeClaimTemplate.Labels {
+		labels[key] = value
+	}
+	return labels
+}
+
 func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	if len(cluster.Spec.Storage.VolumeClaimTemplate.Name) > 0 {
 		return cluster.Spec.Storage.VolumeClaimTemplate.Name
 	}
 	//nolint:goconst
 	return "data"
+}
+
+func PVCs(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) ([]corev1.PersistentVolumeClaim, error) {
+	labels := PVCLabels(cluster)
+	pvcs := corev1.PersistentVolumeClaimList{}
+	err := cli.List(ctx, &pvcs, client.MatchingLabels(labels))
+	if err != nil {
+		return nil, err
+	}
+	return pvcs.Items, nil
 }
 
 // UpdatePersistentVolumeClaims checks and updates the sizes of PVCs in an EtcdCluster if the specified storage size is larger than the current.
