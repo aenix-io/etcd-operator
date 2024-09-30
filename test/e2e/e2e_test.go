@@ -61,6 +61,18 @@ var _ = Describe("etcd-operator", Ordered, func() {
 			_, err = utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 		})
+
+		By("wait until etcd-operator webhook is ready", func() {
+			cmd := exec.Command("kubectl", "apply", "-f", "test/e2e/webhook-checker.yaml")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "wait", "--namespace",
+				"etcd-operator-system", "pod/webhook-checker",
+				"--for", "jsonpath={.status.conditions[?(@.type==\"Ready\")].status}=True", "--timeout=5m")
+			_, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		})
 	})
 
 	if os.Getenv("DO_CLEANUP_AFTER_E2E") == "true" {
