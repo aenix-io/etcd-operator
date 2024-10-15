@@ -41,19 +41,30 @@ const (
 	defaultBackendQuotaBytesFraction = 0.95
 )
 
+// TODO!
+func TemplateStatefulSet() *appsv1.StatefulSet {
+	panic("not yet implemented")
+}
+
+func PodLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
+	labels := NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy()
+
+	if cluster.Spec.PodTemplate.Labels != nil {
+		for key, value := range cluster.Spec.PodTemplate.Labels {
+			labels[key] = value
+		}
+	}
+
+	return labels
+}
+
 func CreateOrUpdateStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
 	podMetadata := metav1.ObjectMeta{
-		Labels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
-	}
-
-	if cluster.Spec.PodTemplate.Labels != nil {
-		for key, value := range cluster.Spec.PodTemplate.Labels {
-			podMetadata.Labels[key] = value
-		}
+		Labels: PodLabels(cluster),
 	}
 
 	if cluster.Spec.PodTemplate.Annotations != nil {

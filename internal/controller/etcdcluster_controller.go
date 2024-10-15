@@ -91,6 +91,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	state := observables{}
+	state.instance = instance
 
 	// create two services and the pdb
 	err = r.ensureUnconditionalObjects(ctx, instance)
@@ -660,4 +661,38 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		}
 	}
 	return nil
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) patchOrCreateObject(ctx context.Context, obj client.Object) error {
+	err := r.Patch(ctx, obj, client.Apply, &client.PatchOptions{FieldManager: "etcd-operator"}, client.ForceOwnership)
+	if err == nil {
+		return nil
+	}
+	if client.IgnoreNotFound(err) == nil {
+		err = r.Create(ctx, obj)
+	}
+	return err
+}
+
+// TODO!
+// nolint:unparam,unused
+func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, state *observables) (ctrl.Result, error) {
+	cm := factory.TemplateClusterStateConfigMap(state.instance, "new", state.desiredReplicas())
+	err := ctrl.SetControllerReference(state.instance, cm, r.Scheme)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	err = r.patchOrCreateObject(ctx, cm)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	panic("not yet implemented")
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) scaleUpFromZero(ctx context.Context, state *observables) (ctrl.Result, error) {
+	panic("not yet implemented")
 }

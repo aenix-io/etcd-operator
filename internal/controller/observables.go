@@ -2,8 +2,12 @@ package controller
 
 import (
 	"context"
+	// "strconv"
+	// "strings"
 	"sync"
 
+	"github.com/aenix-io/etcd-operator/api/v1alpha1"
+	// "github.com/aenix-io/etcd-operator/pkg/set"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,16 +23,18 @@ type etcdStatus struct {
 	memberListError     error
 }
 
+// TODO: nolint
 // observables stores observations that the operator can make about
 // states of objects in kubernetes
 type observables struct {
+	instance       *v1alpha1.EtcdCluster
 	statefulSet    appsv1.StatefulSet
 	stsExists      bool
+	endpoints      []string //nolint:unused
 	endpointsFound bool
 	etcdStatuses   []etcdStatus
 	clusterID      uint64
-	_              int
-	_              []corev1.PersistentVolumeClaim
+	pvcs           []corev1.PersistentVolumeClaim //nolint:unused
 }
 
 // setClusterID populates the clusterID field based on etcdStatuses
@@ -68,7 +74,8 @@ func (s *etcdStatus) fill(ctx context.Context, c *clientv3.Client) {
 }
 
 // TODO: make a real function
-func (o *observables) _() int {
+// nolint:unused
+func (o *observables) desiredReplicas() int {
 	if o.etcdStatuses != nil {
 		for i := range o.etcdStatuses {
 			if o.etcdStatuses[i].memberList != nil {
