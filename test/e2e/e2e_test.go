@@ -224,6 +224,17 @@ allowVolumeExpansion: true
 
 			Eventually(func() error {
 				cmd := exec.Command("kubectl", "wait",
+					"certificate/client-certificate",
+					"--for", "condition=Ready",
+					"--namespace", namespace,
+					"--timeout", "5m",
+				)
+				_, err = utils.Run(cmd)
+				return err
+			}, time.Second*20, time.Second*2).Should(Succeed(), "wait for client cert ready")
+
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "wait",
 					"statefulset/test",
 					"--for", "jsonpath={.status.availableReplicas}=3",
 					"--namespace", namespace,

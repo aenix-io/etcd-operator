@@ -44,7 +44,7 @@ spec:
   secretName: ca-peer-secret
   privateKey:
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: selfsigned-issuer
     kind: Issuer
@@ -70,7 +70,7 @@ spec:
   secretName: ca-server-secret
   privateKey:
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: selfsigned-issuer
     kind: Issuer
@@ -96,7 +96,7 @@ spec:
   secretName: ca-client-secret
   privateKey:
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: selfsigned-issuer
     kind: Issuer
@@ -162,7 +162,7 @@ spec:
   privateKey:
     rotationPolicy: Always
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: ca-issuer-server
 ---
@@ -197,7 +197,7 @@ spec:
   privateKey:
     rotationPolicy: Always
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: ca-issuer-peer
 ---
@@ -216,7 +216,7 @@ spec:
   privateKey:
     rotationPolicy: Always
     algorithm: RSA
-    size: 4096
+    size: 2048
   issuerRef:
     name: ca-issuer-client
     kind: Issuer
