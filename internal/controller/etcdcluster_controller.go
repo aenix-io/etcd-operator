@@ -75,8 +75,9 @@ type EtcdClusterReconciler struct {
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log.Debug(ctx, "reconciling object")
-	instance := &etcdaenixiov1alpha1.EtcdCluster{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+	state := observables{}
+	state.instance = &etcdaenixiov1alpha1.EtcdCluster{}
+	err := r.Get(ctx, req.NamespacedName, state.instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Debug(ctx, "object not found")
@@ -86,15 +87,12 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, err
 	}
 	// If object is being deleted, skipping reconciliation
-	if !instance.DeletionTimestamp.IsZero() {
+	if !state.instance.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
 
-	state := observables{}
-	state.instance = instance
-
 	// create two services and the pdb
-	err = r.ensureUnconditionalObjects(ctx, instance)
+	err = r.ensureUnconditionalObjects(ctx, state.instance)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -107,7 +105,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	state.stsExists = state.statefulSet.UID != ""
 
 	// fetch endpoints
-	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
+	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, state.instance, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -118,7 +116,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// fetch PVCs
-	state.pvcs, err = factory.PVCs(ctx, instance, r.Client)
+	state.pvcs, err = factory.PVCs(ctx, state.instance, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -127,25 +125,27 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if !state.stsExists {
 			return r.createClusterFromScratch(ctx, &state) // TODO: needs implementing
 		}
-		// else try reconciling the sts
-		existingSts := state.statefulSet.DeepCopy()
-		desiredSts := factory.TemplateStatefulSet() // TODO: needs implementing
-		existingSts.Spec.Template.Spec = desiredSts.Spec.Template.Spec
-		err := r.patchOrCreateObject(ctx, existingSts)
-		if err != nil {
-			return ctrl.Result{}, err
+
+		// update sts pod template (and only pod template) if it doesn't match desired state
+		if !state.statefulSetPodSpecCorrect() { // TODO: needs implementing
+			desiredSts := factory.TemplateStatefulSet() // TODO: needs implementing
+			state.statefulSet.Spec.Template.Spec = desiredSts.Spec.Template.Spec
+			return ctrl.Result{}, r.patchOrCreateObject(ctx, &state.statefulSet)
 		}
-		state.statefulSet = *existingSts
-		if existingSts.Status.ReadyReplicas != *existingSts.Spec.Replicas { // TODO: this check might not be the best to check for a ready sts
+
+		if !state.statefulSetReady() { // TODO: needs improved implementation?
 			return ctrl.Result{}, fmt.Errorf("waiting for statefulset to become ready")
 		}
-		if *existingSts.Spec.Replicas > 0 {
+
+		if *state.statefulSet.Spec.Replicas > 0 {
 			return ctrl.Result{}, fmt.Errorf("reached an impossible state (no endpoints, but active pods)")
 		}
-		if *instance.Spec.Replicas == 0 {
+
+		if *state.instance.Spec.Replicas == 0 {
 			// cluster successfully scaled down to zero
 			return ctrl.Result{}, nil
 		}
+
 		return r.scaleUpFromZero(ctx, &state) // TODO: needs implementing
 	}
 
@@ -164,11 +164,24 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		wg.Wait()
 		cancel()
 	}
+
+	memberReached := false
+	for i := range state.etcdStatuses {
+		if state.etcdStatuses[i].endpointStatus != nil {
+			memberReached = true
+			break
+		}
+	}
+
+	if !memberReached {
+		return r.createOrUpdateStatefulSet(ctx, &state, state.instance)
+	}
+
 	state.setClusterID()
 	if state.inSplitbrain() {
 		log.Error(ctx, fmt.Errorf("etcd cluster in splitbrain"), "etcd cluster in splitbrain, dropping from reconciliation queue")
 		meta.SetStatusCondition(
-			&instance.Status.Conditions,
+			&state.instance.Status.Conditions,
 			metav1.Condition{
 				Type:    etcdaenixiov1alpha1.EtcdConditionError,
 				Status:  metav1.ConditionTrue,
@@ -176,43 +189,35 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				Message: string(etcdaenixiov1alpha1.EtcdErrorCondSplitbrainMessage),
 			},
 		)
-		return r.updateStatus(ctx, instance)
-	}
-	// fill conditions
-	if len(instance.Status.Conditions) == 0 {
-		meta.SetStatusCondition(
-			&instance.Status.Conditions,
-			metav1.Condition{
-				Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
-				Status:  metav1.ConditionFalse,
-				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
-				Message: string(etcdaenixiov1alpha1.EtcdInitCondNegMessage),
-			},
-		)
-		meta.SetStatusCondition(
-			&instance.Status.Conditions,
-			metav1.Condition{
-				Type:    etcdaenixiov1alpha1.EtcdConditionReady,
-				Status:  metav1.ConditionFalse,
-				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
-				Message: string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum),
-			},
-		)
+		return r.updateStatus(ctx, state.instance)
 	}
 
-	// if size is different we have to remove statefulset it will be recreated in the next step
-	if err := r.checkAndDeleteStatefulSetIfNecessary(ctx, &state, instance); err != nil {
+	if !state.clusterHasQuorum() {
+		// we can't do anything about this but we still return an error to check on the cluster from time to time
+		return ctrl.Result{}, fmt.Errorf("cluster has lost quorum")
+	}
+
+	if state.hasLearners() {
+		return ctrl.Result{}, r.promoteLearners(ctx, &state)
+	}
+
+	if err := r.createOrUpdateClusterStateConfigMap(ctx, &state); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// ensure managed resources
-	if err = r.ensureConditionalClusterObjects(ctx, instance); err != nil {
-		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
+	if !state.statefulSetPodSpecCorrect() {
+		return ctrl.Result{}, r.createOrUpdateStatefulSet(ctx, &state)
 	}
 
+	// if size is different we have to remove statefulset it will be recreated in the next step
+	if err := r.checkAndDeleteStatefulSetIfNecessary(ctx, &state, state.instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	/* Saved as an example
 	// set cluster initialization condition
 	meta.SetStatusCondition(
-		&instance.Status.Conditions,
+		&state.instance.Status.Conditions,
 		metav1.Condition{
 			Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
 			Status:  metav1.ConditionTrue,
@@ -220,52 +225,8 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message: string(etcdaenixiov1alpha1.EtcdInitCondPosMessage),
 		},
 	)
-
-	// check sts condition
-	clusterReady, err := r.isStatefulSetReady(ctx, instance)
-	if err != nil {
-		log.Error(ctx, err, "failed to check etcd cluster state")
-		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
-	}
-
-	if clusterReady && *instance.Spec.Replicas != int32(0) {
-		err := r.configureAuth(ctx, instance)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// set cluster readiness condition
-	existingCondition := meta.FindStatusCondition(instance.Status.Conditions, etcdaenixiov1alpha1.EtcdConditionReady)
-	if existingCondition != nil &&
-		existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) &&
-		!clusterReady {
-		// if we are still "waiting for first quorum establishment" and the StatefulSet
-		// isn't ready yet, don't update the EtcdConditionReady, but circuit-break.
-		return r.updateStatus(ctx, instance)
-	}
-
-	// otherwise, EtcdConditionReady is set to true/false with the reason that the
-	// StatefulSet is or isn't ready.
-	reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
-	message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
-	ready := metav1.ConditionFalse
-	if clusterReady {
-		reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
-		message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
-		ready = metav1.ConditionTrue
-	}
-
-	meta.SetStatusCondition(
-		&instance.Status.Conditions,
-		metav1.Condition{
-			Type:    etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:  ready,
-			Reason:  string(reason),
-			Message: string(message),
-		},
-	)
-	return r.updateStatus(ctx, instance)
+	*/
+	return r.updateStatus(ctx, state.instance)
 }
 
 // checkAndDeleteStatefulSetIfNecessary deletes the StatefulSet if the specified storage size has changed.
@@ -716,6 +677,29 @@ func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, st
 	err = r.patchOrCreateObject(ctx, cm)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+	meta.SetStatusCondition(
+		&state.instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
+			Status:  metav1.ConditionFalse,
+			Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
+			Message: string(etcdaenixiov1alpha1.EtcdInitCondNegMessage),
+		},
+	)
+	meta.SetStatusCondition(
+		&state.instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
+			Message: string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum),
+		},
+	)
+
+	// ensure managed resources
+	if err = r.ensureConditionalClusterObjects(ctx, state.instance); err != nil {
+		return r.updateStatusOnErr(ctx, state.instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
 	}
 	panic("not yet implemented")
 }

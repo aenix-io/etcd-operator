@@ -173,3 +173,13 @@ func (o *observables) desiredReplicas() (max int) {
 	}
 	return max + 1
 }
+
+// TODO: compare the desired sts with what exists
+func (o *observables) statefulSetPodSpecCorrect() bool {
+	return true
+}
+
+// TODO: also use updated replicas field?
+func (o *observables) statefulSetReady() bool {
+	return o.statefulSet.Status.ReadyReplicas == *o.statefulSet.Spec.Replicas
+}
