@@ -183,3 +183,13 @@ func (o *observables) statefulSetPodSpecCorrect() bool {
 func (o *observables) statefulSetReady() bool {
 	return o.statefulSet.Status.ReadyReplicas == *o.statefulSet.Spec.Replicas
 }
+
+// TODO:
+func (o *observables) clusterHasQuorum() bool {
+	return false
+}
+
+// TODO:
+func (o *observables) hasLearners() bool {
+	return false
+}
