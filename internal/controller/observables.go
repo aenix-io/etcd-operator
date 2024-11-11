@@ -52,7 +52,7 @@ func (o *observables) setClusterID() {
 // Also if members have different opinions on the list of members, this is
 // also a splitbrain.
 func (o *observables) inSplitbrain() bool {
-	return o.clusterIDsAllEqual() && o.memberListsAllEqual()
+	return !o.clusterIDsAllEqual() || !o.memberListsAllEqual()
 }
 
 func (o *observables) clusterIDsAllEqual() bool {
@@ -184,12 +184,22 @@ func (o *observables) statefulSetReady() bool {
 	return o.statefulSet.Status.ReadyReplicas == *o.statefulSet.Spec.Replicas
 }
 
-// TODO:
 func (o *observables) clusterHasQuorum() bool {
-	return false
+	size := len(o.etcdStatuses)
+	membersInQuorum := size
+	for i := range o.etcdStatuses {
+		if o.etcdStatuses[i].endpointStatus == nil || o.etcdStatuses[i].endpointStatus.Leader == 0 {
+			membersInQuorum--
+		}
+	}
+	return membersInQuorum*2 > size
 }
 
-// TODO:
 func (o *observables) hasLearners() bool {
+	for i := range o.etcdStatuses {
+		if stat := o.etcdStatuses[i].endpointStatus; stat != nil && stat.IsLearner {
+			return true
+		}
+	}
 	return false
 }

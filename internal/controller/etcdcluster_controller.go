@@ -706,23 +706,23 @@ func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, st
 // TODO!
 // nolint:unused
 func (r *EtcdClusterReconciler) scaleUpFromZero(ctx context.Context) error {
-	panic("not yet implemented")
+	return fmt.Errorf("not yet implemented")
 }
 
 // TODO!
 // nolint:unused
 func (r *EtcdClusterReconciler) createOrUpdateClusterStateConfigMap(ctx context.Context) error {
-	panic("not yet implemented")
+	return fmt.Errorf("not yet implemented")
 }
 
 // TODO!
 // nolint:unused
 func (r *EtcdClusterReconciler) createOrUpdateStatefulSet(ctx context.Context) error {
-	panic("not yet implemented")
+	return fmt.Errorf("not yet implemented")
 }
 
 // TODO!
 // nolint:unused
 func (r *EtcdClusterReconciler) promoteLearners(ctx context.Context) error {
-	panic("not yet implemented")
+	return fmt.Errorf("not yet implemented")
 }
