@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,4 +203,78 @@ func (o *observables) hasLearners() bool {
 		}
 	}
 	return false
+}
+
+// allMembersManaged checks if all members are managed by the operator.
+func (o *observables) allMembersManaged() bool {
+	for _, status := range o.etcdStatuses {
+		if status.memberList != nil {
+			for _, member := range status.memberList.Members {
+				if !strings.HasPrefix(member.Name, o.instance.Name) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// allMembersHealthy checks if all members are healthy.
+func (o *observables) allMembersHealthy() bool {
+	for _, status := range o.etcdStatuses {
+		if status.endpointStatusError != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// allPodsInMemberList checks if all StatefulSet pods are present in the member list.
+func (o *observables) allPodsInMemberList() bool {
+	memberNames := make(map[string]struct{})
+	for _, status := range o.etcdStatuses {
+		if status.memberList != nil {
+			for _, member := range status.memberList.Members {
+				memberNames[member.Name] = struct{}{}
+			}
+		}
+	}
+
+	expectedPodNames := o.getExpectedPodNames()
+	for _, podName := range expectedPodNames {
+		if _, exists := memberNames[podName]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+// getExpectedPodNames returns the expected pod names based on the StatefulSet.
+func (o *observables) getExpectedPodNames() []string {
+	var podNames []string
+	replicas := int(*o.statefulSet.Spec.Replicas)
+	for i := 0; i < replicas; i++ {
+		podNames = append(podNames, fmt.Sprintf("%s-%d", o.instance.Name, i))
+	}
+	return podNames
+}
+
+// maxMemberOrdinal finds the maximum ordinal of the etcd members.
+func (o *observables) maxMemberOrdinal() int {
+	maxOrdinal := -1
+	for _, status := range o.etcdStatuses {
+		if status.memberList != nil {
+			for _, member := range status.memberList.Members {
+				parts := strings.Split(member.Name, "-")
+				if len(parts) > 1 {
+					ordinalStr := parts[len(parts)-1]
+					ordinal, err := strconv.Atoi(ordinalStr)
+					if err == nil && ordinal > maxOrdinal {
+						maxOrdinal = ordinal
+					}
+				}
+			}
+		}
+	}
+	return maxOrdinal
 }
