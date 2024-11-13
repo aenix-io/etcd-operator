@@ -167,8 +167,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `minAvailable` _[IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30.0/#intorstring-intstr-util)_ | MinAvailable describes minimum ready replicas. If both are empty, controller will implicitly<br />calculate MaxUnavailable based on number of replicas<br />Mutually exclusive with MaxUnavailable. |  |  |
-| `maxUnavailable` _[IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.30.0/#intorstring-intstr-util)_ | MinAvailable describes maximum not ready replicas. If both are empty, controller will implicitly<br />calculate MaxUnavailable based on number of replicas<br />Mutually exclusive with MinAvailable |  |  |
+| `minAvailable` _[IntOrString](#intorstring)_ | MinAvailable describes minimum ready replicas. If both are empty, controller will implicitly<br />calculate MaxUnavailable based on number of replicas<br />Mutually exclusive with MaxUnavailable. |  |  |
+| `maxUnavailable` _[IntOrString](#intorstring)_ | MinAvailable describes maximum not ready replicas. If both are empty, controller will implicitly<br />calculate MaxUnavailable based on number of replicas<br />Mutually exclusive with MinAvailable |  |  |
 
 
 #### PodTemplate

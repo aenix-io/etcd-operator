@@ -27,14 +27,13 @@ type etcdStatus struct {
 // observables stores observations that the operator can make about
 // states of objects in kubernetes
 type observables struct {
-	instance       *v1alpha1.EtcdCluster
-	statefulSet    appsv1.StatefulSet
-	stsExists      bool
-	endpoints      []string //nolint:unused
-	endpointsFound bool
-	etcdStatuses   []etcdStatus
-	clusterID      uint64
-	pvcs           []corev1.PersistentVolumeClaim //nolint:unused
+	instance      *v1alpha1.EtcdCluster
+	statefulSet   appsv1.StatefulSet
+	etcdStatuses  []etcdStatus
+	clusterID     uint64
+	pvcs          []corev1.PersistentVolumeClaim //nolint:unused
+	clusterClient *clientv3.Client
+	singleClients []*clientv3.Client
 }
 
 // setClusterID populates the clusterID field based on etcdStatuses
@@ -117,8 +116,8 @@ func (o *observables) pvcMaxIndex() (max int) {
 }
 
 func (o *observables) endpointMaxIndex() (max int) {
-	for i := range o.endpoints {
-		tokens := strings.Split(o.endpoints[i], ":")
+	for i := range o.endpoints() {
+		tokens := strings.Split(o.endpoints()[i], ":")
 		if len(tokens) < 2 {
 			continue
 		}
@@ -174,6 +173,18 @@ func (o *observables) desiredReplicas() (max int) {
 	return max + 1
 }
 
+func (o *observables) statefulSetExists() bool {
+	return o.statefulSet.UID != ""
+}
+
+func (o *observables) endpoints() []string {
+	return o.clusterClient.Endpoints()
+}
+
+func (o *observables) endpointsFound() bool {
+	return o.clusterClient != nil && o.singleClients != nil
+}
+
 // TODO: compare the desired sts with what exists
 func (o *observables) statefulSetPodSpecCorrect() bool {
 	return true
@@ -182,6 +193,14 @@ func (o *observables) statefulSetPodSpecCorrect() bool {
 // TODO: also use updated replicas field?
 func (o *observables) statefulSetReady() bool {
 	return o.statefulSet.Status.ReadyReplicas == *o.statefulSet.Spec.Replicas
+}
+
+func (o *observables) statefulSetReplicasIsZero() bool {
+	return *o.statefulSet.Spec.Replicas == 0
+}
+
+func (o *observables) etcdClusterReplicasIsZero() bool {
+	return *o.instance.Spec.Replicas == 0
 }
 
 func (o *observables) clusterHasQuorum() bool {
@@ -202,4 +221,19 @@ func (o *observables) hasLearners() bool {
 		}
 	}
 	return false
+}
+
+// TODO: check if the pods are in the member list
+func (o *observables) podsPresentInMembersList() bool {
+	return true
+}
+
+// TODO: check whether all members are healthy
+func (o *observables) allMembersAreHealthy() bool {
+	return true
+}
+
+// TODO: check whether all members are managed
+func (o *observables) allMembersAreManaged() bool {
+	return true
 }
