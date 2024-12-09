@@ -248,15 +248,17 @@ HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
+CTLPTL ?= $(LOCALBIN)/ctlptl
+TILT ?= $(LOCALBIN)/tilt
 
 ## Tool Versions
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
-KUSTOMIZE_VERSION ?= v5.3.0
+KUSTOMIZE_VERSION ?= v5.5.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.16.5
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.59.1
+GOLANGCI_LINT_VERSION ?= v1.62.2
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
@@ -267,6 +269,9 @@ HELM_SCHEMA_VERSION ?= v1.4.1
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.44.1
+
+CTLPTL_VERSION ?= v0.8.36
+TILT_VERSION ?= 0.33.21
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -330,3 +335,30 @@ helm-docs: $(LOCALBIN)
 yq: $(LOCALBIN)
 	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
+.PHONY: ctlptl
+ctlptl: $(LOCALBIN)
+	@test -x $(CTLPTL) && $(CTLPTL) version | grep -q $(CTLPTL_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/tilt-dev/ctlptl/cmd/ctlptl@$(CTLPTL_VERSION)
+
+ifeq (darwin,$(shell go env GOOS))
+TILT_OS=mac
+else
+TILT_OS=$(shell go env GOOS)
+endif
+
+TILT_ARCH ?= $(shell go env GOARCH)
+
+TILT_ARCHIVE=tilt.$(TILT_VERSION).$(TILT_OS).$(TILT_ARCH).tar.gz
+.PHONY: tilt
+tilt: $(LOCALBIN)
+	@test -x $(TILT) && $(TILT) version | grep -q $(TILT_VERSION) || \
+	rm -f $(TILT) && \
+	curl -sL https://github.com/tilt-dev/tilt/releases/download/v$(TILT_VERSION)/$(TILT_ARCHIVE) -o /tmp/$(TILT_ARCHIVE) && \
+	tar xzf /tmp/$(TILT_ARCHIVE) -C $(LOCALBIN) && \
+	rm -f /tmp/$(TILT_ARCHIVE)
+
+.PHONY: tilt-up
+tilt-up: kustomize kind ctlptl tilt
+	$(CTLPTL) apply -f config/dev/ctlptl-kind.yaml
+	$(TILT) up
