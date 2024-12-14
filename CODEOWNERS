@@ -1,11 +1,11 @@
-/.github @hiddenmarten @AlexGluck @aobort
-/api @sircthulhu @Kirill-Garbar
-/charts @hiddenmarten @AlexGluck @aobort
-/cmd @sircthulhu @Kirill-Garbar
-/config @sircthulhu @Kirill-Garbar
-/hack @sircthulhu @Kirill-Garbar
-/internal @sircthulhu @Kirill-Garbar @sergeyshevch @lllamnyp
-/pkg @lllamnyp
-/test @sircthulhu @Kirill-Garbar @hiddenmarten @AlexGluck @aobort
-/site @sergeyshevch @Kirill-Garbar
-/*.md @kvaps @Kirill-Garbar
+/.github @kvaps @lllamnyp @Kirill-Garbar @aobort
+/api @kvaps @lllamnyp @Kirill-Garbar @aobort
+/charts @kvaps @lllamnyp @Kirill-Garbar @aobort
+/cmd @kvaps @lllamnyp @Kirill-Garbar @aobort
+/config @kvaps @lllamnyp @Kirill-Garbar @aobort
+/hack @kvaps @lllamnyp @Kirill-Garbar @aobort
+/internal @kvaps @lllamnyp @Kirill-Garbar @aobort
+/pkg @kvaps @lllamnyp @Kirill-Garbar @aobort
+/test @kvaps @lllamnyp @Kirill-Garbar @aobort
+/site @kvaps @lllamnyp @Kirill-Garbar @aobort
+/*.md @kvaps @lllamnyp @Kirill-Garbar @aobort
