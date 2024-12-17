@@ -102,18 +102,20 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if client.IgnoreNotFound(err) != nil {
 		return ctrl.Result{}, fmt.Errorf("couldn't get statefulset: %w", err)
 	}
-	state.stsExists = state.statefulSet.UID != ""
+	// state.stsExists = state.statefulSet.UID != ""
 
 	// fetch endpoints
 	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, state.instance, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	state.endpointsFound = clusterClient != nil && singleClients != nil
+	// state.endpointsFound = clusterClient != nil && singleClients != nil
 
-	if clusterClient != nil {
-		state.endpoints = clusterClient.Endpoints()
-	}
+	// if clusterClient != nil {
+	// 	state.endpoints = clusterClient.Endpoints()
+	// }
+	state.clusterClient = clusterClient
+	state.singleClients = singleClients
 
 	// fetch PVCs
 	state.pvcs, err = factory.PVCs(ctx, state.instance, r.Client)
@@ -121,8 +123,8 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	if !state.endpointsFound {
-		if !state.stsExists {
+	if !state.endpointsFound() {
+		if !state.statefulSetExists() {
 			return r.createClusterFromScratch(ctx, state) // TODO: needs implementing
 		}
 
