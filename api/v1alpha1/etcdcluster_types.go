@@ -55,6 +55,7 @@ type EtcdClusterSpec struct {
 const (
 	EtcdConditionInitialized = "Initialized"
 	EtcdConditionReady       = "Ready"
+	EtcdConditionError       = "Error"
 )
 
 type EtcdCondType string
@@ -66,6 +67,7 @@ const (
 	EtcdCondTypeWaitingForFirstQuorum EtcdCondType = "WaitingForFirstQuorum"
 	EtcdCondTypeStatefulSetReady      EtcdCondType = "StatefulSetReady"
 	EtcdCondTypeStatefulSetNotReady   EtcdCondType = "StatefulSetNotReady"
+	EtcdCondTypeSplitbrain            EtcdCondType = "Splitbrain"
 )
 
 const (
@@ -74,6 +76,7 @@ const (
 	EtcdReadyCondNegMessage          EtcdCondMessage = "Cluster StatefulSet is not Ready"
 	EtcdReadyCondPosMessage          EtcdCondMessage = "Cluster StatefulSet is Ready"
 	EtcdReadyCondNegWaitingForQuorum EtcdCondMessage = "Waiting for first quorum to be established"
+	EtcdErrorCondSplitbrainMessage   EtcdCondMessage = "Etcd endpoints reporting more than one unique cluster ID"
 )
 
 // EtcdClusterStatus defines the observed state of EtcdCluster
@@ -96,6 +99,18 @@ type EtcdCluster struct {
 // CalculateQuorumSize returns minimum quorum size for current number of replicas
 func (r *EtcdCluster) CalculateQuorumSize() int {
 	return int(*r.Spec.Replicas)/2 + 1
+}
+
+func (c *EtcdCluster) IsClientSecurityEnabled() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ClientSecret != ""
+}
+
+func (c *EtcdCluster) IsServerSecurityEnabled() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ServerSecret != ""
+}
+
+func (c *EtcdCluster) IsServerTrustedCADefined() bool {
+	return c.Spec.Security != nil && c.Spec.Security.TLS.ServerTrustedCASecret != ""
 }
 
 // +kubebuilder:object:root=true
@@ -174,24 +189,36 @@ type SecuritySpec struct {
 	// Section for user-managed tls certificates
 	// +optional
 	TLS TLSSpec `json:"tls,omitempty"`
+	// Section to enable etcd auth
+	EnableAuth bool `json:"enableAuth,omitempty"`
 }
 
 // TLSSpec defines user-managed certificates names.
 type TLSSpec struct {
-	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt field in the secret.
+	// Trusted CA certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have ca.crt field in the secret.
+	// This secret must be created in the namespace with etcdCluster CR.
 	// +optional
 	PeerTrustedCASecret string `json:"peerTrustedCASecret,omitempty"`
 	// Certificate secret to secure peer-to-peer communication between etcd nodes. It is expected to have tls.crt and tls.key fields in the secret.
+	// This secret must be created in the namespace with etcdCluster CR.
 	// +optional
 	PeerSecret string `json:"peerSecret,omitempty"`
+	// Trusted CA for etcd server certificates for client-server communication. Is necessary to set trust between operator and etcd.
+	// It is expected to have ca.crt field in the secret. If it is not specified, then insecure communication will be used.
+	// This secret must be created in the namespace with etcdCluster CR.
+	// +optional
+	ServerTrustedCASecret string `json:"serverTrustedCASecret,omitempty"`
 	// Server certificate secret to secure client-server communication. Is provided to the client who connects to etcd by client port (2379 by default).
 	// It is expected to have tls.crt and tls.key fields in the secret.
+	// This secret must be created in the namespace with etcdCluster CR.
 	// +optional
 	ServerSecret string `json:"serverSecret,omitempty"`
-	// Trusted CA for client certificates that are provided by client to etcd. It is expected to have tls.crt field in the secret.
+	// Trusted CA for client certificates that are provided by client to etcd. It is expected to have ca.crt field in the secret.
+	// This secret must be created in the namespace with etcdCluster CR.
 	// +optional
 	ClientTrustedCASecret string `json:"clientTrustedCASecret,omitempty"`
 	// Client certificate for etcd-operator to do maintenance. It is expected to have tls.crt and tls.key fields in the secret.
+	// This secret must be created in the namespace with etcdCluster CR.
 	// +optional
 	ClientSecret string `json:"clientSecret,omitempty"`
 }

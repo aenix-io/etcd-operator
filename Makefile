@@ -1,10 +1,10 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/aenix-io/etcd-operator:latest
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+# K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes
-ENVTEST_K8S_VERSION ?= v1.30.0
-ENVTEST_K8S_VERSION_TRIMMED_V = $(subst v,,$(ENVTEST_K8S_VERSION))
+K8S_VERSION ?= v1.30.0
+K8S_VERSION_TRIMMED_V = $(subst v,,$(K8S_VERSION))
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -55,6 +55,11 @@ manifests: controller-gen yq ## Generate WebhookConfiguration, ClusterRole and C
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
+.PHONY: generate-docs
+generate-docs: yq crd-ref-docs ## Generate CRD reference documentation.
+	@$(eval VERSION := $(shell $(YQ) '.params.version' site/hugo.yaml))
+	$(CRD_REF_DOCS) --config=.crd-docs.yaml --renderer=markdown --templates-dir="site/reference-templates" --output-path="site/content/en/docs/$(VERSION)/reference/api.md"
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -69,7 +74,9 @@ mod-tidy: ## Run go mod tidy against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	@echo "Check for kubernetes version $(K8S_VERSION_TRIMMED_V) in $(ENVTEST)"
+	@$(ENVTEST) list | grep -q $(K8S_VERSION_TRIMMED_V)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(K8S_VERSION_TRIMMED_V) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
@@ -111,7 +118,10 @@ helm-crd-copy: yq kustomize ## Copy CRDs from kustomize to helm-chart
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build -o bin/manager cmd/manager/main.go
+
+build-plugin:
+	go build -o bin/kubectl-etcd cmd/kubectl-etcd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -155,9 +165,9 @@ KIND_CLUSTER_NAME ?= etcd-operator-kind
 NAMESPACE ?= etcd-operator-system
 
 # renovate: datasource=github-tags depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION ?= v0.73.2
+PROMETHEUS_OPERATOR_VERSION ?= v0.74.0
 # renovate: datasource=github-tags depName=jetstack/cert-manager
-CERT_MANAGER_VERSION ?= v1.14.5
+CERT_MANAGER_VERSION ?= v1.15.0
 
 ifndef ignore-not-found
   ignore-not-found = false
@@ -191,9 +201,12 @@ kind-load: docker-build kind ## Build and upload docker image to the local Kind 
 	$(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER_NAME)
 
 .PHONY: kind-create
-kind-create: kind ## Create kubernetes cluster using Kind.
+kind-create: kind yq ## Create kubernetes cluster using Kind.
 	@if ! $(KIND) get clusters | grep -q $(KIND_CLUSTER_NAME); then \
-		$(KIND) create cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config test/e2e/config.yaml; \
+	elif ! $(CONTAINER_TOOL) container inspect $$($(KIND) get nodes --name $(KIND_CLUSTER_NAME)) | $(YQ) e '.[0].Config.Image' | grep -q $(K8S_VERSION); then \
+  		$(KIND) delete cluster --name $(KIND_CLUSTER_NAME); \
+		$(KIND) create cluster --name $(KIND_CLUSTER_NAME) --image kindest/node:$(K8S_VERSION) --config test/e2e/config.yaml; \
 	fi
 
 .PHONY: kind-delete
@@ -234,6 +247,7 @@ KIND ?= $(LOCALBIN)/kind
 HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
@@ -242,17 +256,17 @@ KUSTOMIZE_VERSION ?= v5.3.0
 CONTROLLER_TOOLS_VERSION ?= v0.15.0
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.58.0
+GOLANGCI_LINT_VERSION ?= v1.59.1
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
-KIND_VERSION ?= v0.22.0
+KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
-HELM_VERSION ?= v3.14.4
+HELM_VERSION ?= v3.15.2
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.3.0
+HELM_SCHEMA_VERSION ?= v1.4.1
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
-YQ_VERSION ?= v4.43.1
+YQ_VERSION ?= v4.44.1
 
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
@@ -273,6 +287,10 @@ controller-gen: $(LOCALBIN)
 .PHONY: envtest
 envtest: $(LOCALBIN)
 	@test -x $(ENVTEST) || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(LOCALBIN)
+	@test -x $(CRD_REF_DOCS) || GOBIN=$(LOCALBIN) go install github.com/elastic/crd-ref-docs@latest
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN)

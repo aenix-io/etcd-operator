@@ -17,11 +17,13 @@ limitations under the License.
 package factory
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/aenix-io/etcd-operator/internal/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
@@ -44,6 +46,13 @@ import (
 var cfg *rest.Config
 var k8sClient, clientWithEmptyScheme client.Client
 var testEnv *envtest.Environment
+
+// global context for test suites
+var ctx = log.Setup(context.TODO(), log.Parameters{
+	LogLevel:        "debug",
+	StacktraceLevel: "error",
+	Development:     true,
+})
 
 func TestFactories(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -87,6 +96,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 	SetClient(k8sClient)
+	SetContext(ctx)
 })
 
 var _ = AfterSuite(func() {
