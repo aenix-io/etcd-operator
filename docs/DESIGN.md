@@ -42,7 +42,15 @@ flowchart TD
 
                 AAAAAA --> |No| AAAAAAB([Not implemented,\nstop.])
 
-              AAAAA --> |No| AAAAAB([Either the cluster will\nsoon recover when\nall pods are back online\nor something caused\ndata loss and majority\n failure simultaneously.])
+              AAAAA --> |No| AAAAAB([Quorum Loss Detected:
+              1. Check for temporary issues:
+                 - Network partitions
+                 - Pod scheduling problems
+              2. If temporary, wait for recovery
+              3. If permanent:
+                 - Alert operators
+                 - Document disaster recovery steps
+                 - Consider backup restoration])
 
             AAAA --> |No| AAAAB[Cluster is in\nsplit-brain. Set\nerror status.]
               AAAAB --> AAAABStop([Stop])
