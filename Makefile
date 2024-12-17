@@ -56,7 +56,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: generate-docs
-generate-docs: crd-ref-docs ## Generate CRD reference documentation.
+generate-docs: yq crd-ref-docs ## Generate CRD reference documentation.
 	@$(eval VERSION := $(shell $(YQ) '.params.version' site/hugo.yaml))
 	$(CRD_REF_DOCS) --config=.crd-docs.yaml --renderer=markdown --templates-dir="site/reference-templates" --output-path="site/content/en/docs/$(VERSION)/reference/api.md"
 

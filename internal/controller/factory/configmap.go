@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/log"
@@ -39,39 +40,16 @@ func CreateOrUpdateClusterStateConfigMap(
 	rclient client.Client,
 ) error {
 	var err error
-	initialCluster := ""
-	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
-	for i := int32(0); i < *cluster.Spec.Replicas; i++ {
-		if i > 0 {
-			initialCluster += ","
-		}
-		podName := fmt.Sprintf("%s-%d", cluster.Name, i)
-		initialCluster += fmt.Sprintf("%s=https://%s.%s",
-			podName, podName, clusterService,
-		)
+	state := "new"
+	if isEtcdClusterReady(cluster) {
+		state = "existing"
 	}
-
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: cluster.Namespace,
-			Name:      GetClusterStateConfigMapName(cluster),
-		},
-		Data: map[string]string{
-			"ETCD_INITIAL_CLUSTER_STATE": "new",
-			"ETCD_INITIAL_CLUSTER":       initialCluster,
-			"ETCD_INITIAL_CLUSTER_TOKEN": cluster.Name + "-" + cluster.Namespace,
-		},
-	}
+	configMap := TemplateClusterStateConfigMap(cluster, state, int(*cluster.Spec.Replicas))
 	ctx, err = contextWithGVK(ctx, configMap, rclient.Scheme())
 	if err != nil {
 		return err
 	}
 
-	if isEtcdClusterReady(cluster) {
-		// update cluster state to existing
-		log.Debug(ctx, "updating cluster state")
-		configMap.Data["ETCD_INITIAL_CLUSTER_STATE"] = "existing"
-	}
 	log.Debug(ctx, "configmap data generated", "data", configMap.Data)
 
 	if err := ctrl.SetControllerReference(cluster, configMap, rclient.Scheme()); err != nil {
@@ -87,4 +65,33 @@ func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
 	cond := meta.FindStatusCondition(cluster.Status.Conditions, etcdaenixiov1alpha1.EtcdConditionReady)
 	return cond != nil && (cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady) ||
 		cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady))
+}
+func TemplateClusterStateConfigMap(cluster *etcdaenixiov1alpha1.EtcdCluster, state string, replicas int) *corev1.ConfigMap {
+
+	initialClusterMembers := make([]string, replicas)
+	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
+	for i := 0; i < replicas; i++ {
+		podName := fmt.Sprintf("%s-%d", cluster.Name, i)
+		initialClusterMembers[i] = fmt.Sprintf("%s=https://%s.%s",
+			podName, podName, clusterService,
+		)
+	}
+	initialCluster := strings.Join(initialClusterMembers, ",")
+
+	configMap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-cluster-state", cluster.Name),
+			Namespace: cluster.Namespace,
+		},
+		Data: map[string]string{
+			"ETCD_INITIAL_CLUSTER_STATE": state,
+			"ETCD_INITIAL_CLUSTER":       initialCluster,
+			"ETCD_INITIAL_CLUSTER_TOKEN": fmt.Sprintf("%s-%s", cluster.Name, cluster.Namespace),
+		},
+	}
+	return configMap
 }
