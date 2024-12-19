@@ -13,6 +13,9 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+GOARCH := $(shell go env GOARCH)
+GOOS   := $(shell go env GOOS)
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -174,25 +177,25 @@ ifndef ignore-not-found
 endif
 
 .PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests kustomize kubectl ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: manifests kustomize kubectl ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize kubectl ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/aenix-io/etcd-operator=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) -n $(NAMESPACE) apply -f -
 	$(KUBECTL) wait deployment.apps/etcd-operator-controller-manager --for condition=Available --namespace $(NAMESPACE) --timeout 5m
 
 .PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+undeploy: kustomize kubectl ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete -n $(NAMESPACE) --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: redeploy
-redeploy: deploy ## Redeploy controller with new docker image.
+redeploy: deploy kubectl ## Redeploy controller with new docker image.
 	# force recreate pods
 	$(KUBECTL) rollout restart -n $(NAMESPACE) deploy/etcd-operator-controller-manager
 
@@ -216,7 +219,7 @@ kind-delete: kind ## Create kubernetes cluster using Kind.
 	fi
 
 .PHONY: kind-prepare
-kind-prepare: kind-create
+kind-prepare: kind-create kubectl
 	# Install prometheus operator
 	$(KUBECTL) apply --server-side -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_OPERATOR_VERSION)/bundle.yaml"
 	$(KUBECTL) wait deployment.apps/prometheus-operator --for condition=Available --namespace default --timeout 5m
@@ -237,7 +240,7 @@ $(HELM_PLUGINS):
 	mkdir -p $(HELM_PLUGINS)
 
 ## Tool Binaries
-KUBECTL ?= kubectl
+KUBECTL ?= $(LOCALBIN)/kubectl
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
@@ -248,15 +251,17 @@ HELM ?= $(LOCALBIN)/helm
 HELM_DOCS ?= $(LOCALBIN)/helm-docs
 YQ = $(LOCALBIN)/yq
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
+CTLPTL ?= $(LOCALBIN)/ctlptl
+TILT ?= $(LOCALBIN)/tilt
 
 ## Tool Versions
 # renovate: datasource=github-tags depName=kubernetes-sigs/kustomize
-KUSTOMIZE_VERSION ?= v5.3.0
+KUSTOMIZE_VERSION ?= v5.5.0
 # renovate: datasource=github-tags depName=kubernetes-sigs/controller-tools
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
+CONTROLLER_TOOLS_VERSION ?= v0.16.5
 ENVTEST_VERSION ?= latest
 # renovate: datasource=github-tags depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v1.59.1
+GOLANGCI_LINT_VERSION ?= v1.62.2
 # renovate: datasource=github-tags depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
@@ -268,9 +273,19 @@ HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
 YQ_VERSION ?= v4.44.1
 
+CTLPTL_VERSION ?= v0.8.36
+TILT_VERSION ?= 0.33.21
+
 ## Tool install scripts
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 HELM_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+
+CURL_RETRIES=3
+.PHONY: kubectl
+kubectl: $(LOCALBIN)
+	@test -x $(KUBECTL) && ! $(KUBECTL) version 2>/dev/null | grep -q $(K8S_VERSION) || \
+	curl --retry $(CURL_RETRIES) -fsL https://dl.k8s.io/release/$(K8S_VERSION)/bin/$(GOOS)/$(GOARCH)/kubectl -o $(KUBECTL) && \
+	chmod +x $(KUBECTL)
 
 .PHONY: kustomize
 kustomize: $(LOCALBIN)
@@ -330,3 +345,38 @@ helm-docs: $(LOCALBIN)
 yq: $(LOCALBIN)
 	@test -x $(YQ) && $(YQ) version | grep -q $(YQ_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)
+
+.PHONY: ctlptl
+ctlptl: $(LOCALBIN)
+	@test -x $(CTLPTL) && $(CTLPTL) version | grep -q $(CTLPTL_VERSION) || \
+	GOBIN=$(LOCALBIN) go install github.com/tilt-dev/ctlptl/cmd/ctlptl@$(CTLPTL_VERSION)
+
+ifeq (darwin,$(GOOS))
+TILT_OS=mac
+else
+TILT_OS=$(GOOS)
+endif
+
+TILT_ARCH ?= $(GOARCH)
+
+TILT_ARCHIVE_NAME=tilt.$(TILT_VERSION).$(TILT_OS).$(TILT_ARCH).tar.gz
+.PHONY: tilt
+tilt: $(LOCALBIN)
+	@if ! test -x $(TILT) || ! $(TILT) version | grep -q $(TILT_VERSION); then \
+    	TMPDIR=$$(mktemp -d) && \
+    	trap 'rm -rf "$$TMPDIR"' EXIT && \
+    	curl -sL https://github.com/tilt-dev/tilt/releases/download/v$(TILT_VERSION)/$(TILT_ARCHIVE_NAME) -o "$$TMPDIR/$(TILT_ARCHIVE_NAME)" && \
+    	curl -sL https://github.com/tilt-dev/tilt/releases/download/v$(TILT_VERSION)/$(TILT_ARCHIVE_NAME).sha256 -o "$$TMPDIR/$(TILT_ARCHIVE_NAME).sha256" && \
+    	cd "$$TMPDIR" && sha256sum -c "$(TILT_ARCHIVE_NAME).sha256" && \
+    	tar xzf "$(TILT_ARCHIVE_NAME)" -C $(LOCALBIN) || exit 1; \
+    fi
+
+.PHONY: tilt-up
+tilt-up: kustomize kind ctlptl tilt
+	$(CTLPTL) apply -f config/dev/ctlptl-kind.yaml
+	$(TILT) up
+
+.PHONY: tilt-cleanup
+tilt-cleanup: ctlptl
+	$(TILT) down
+	$(CTLPTL) delete -f config/dev/ctlptl-kind.yaml
