@@ -130,7 +130,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		// update sts pod template (and only pod template) if it doesn't match desired state
 		if !state.statefulSetPodSpecCorrect() { // TODO: needs implementing
-			desiredSts := factory.TemplateStatefulSet() // TODO: needs implementing
+			desiredSts := factory.TemplateStatefulSet(state.instance) // TODO: needs implementing
 			state.statefulSet.Spec.Template.Spec = desiredSts.Spec.Template.Spec
 			return ctrl.Result{}, r.patchOrCreateObject(ctx, &state.statefulSet)
 		}
