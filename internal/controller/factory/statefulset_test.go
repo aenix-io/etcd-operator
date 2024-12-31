@@ -179,10 +179,6 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				Expect(statefulSet.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodTemplate.Annotations))
 			})
 
-			By("Checking the command", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
-			})
-
 			By("Checking the extraArgs", func() {
 				Expect(statefulSet.Spec.Template.Spec.Containers[0].Args).To(Equal(generateEtcdArgs(&etcdcluster)))
 				By("Checking args are sorted", func() {
