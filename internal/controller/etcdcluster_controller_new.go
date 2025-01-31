@@ -333,7 +333,13 @@ func (r *ClusterReconciler) etcdClusterConfig(ctx context.Context, cluster *etcd
 
 // todo: implement this
 func (r *ClusterReconciler) createClusterFromScratch(ctx context.Context, state *observables) error {
-	panic("not implemented")
+	if err := r.createOrUpdateClusterStateConfigMap(ctx, state); err != nil {
+		return err
+	}
+	if err := r.createOrUpdateStatefulSet(ctx, state); err != nil {
+		return err
+	}
+	return nil
 }
 
 // todo: implement this
