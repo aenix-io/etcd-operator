@@ -73,6 +73,10 @@ func (r *ClusterReconciler) reconcile(ctx context.Context, state *observables) (
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	defer clusterClient.Close()
+	for _, c := range singleClients {
+		defer c.Close()
+	}
 
 	state.clusterClient = clusterClient
 	state.singleClients = singleClients
