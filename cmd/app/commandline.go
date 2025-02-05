@@ -29,6 +29,7 @@ import (
 
 type Flags struct {
 	Kubeconfig       string
+	ClusterDomain    string
 	MetricsAddress   string
 	ProbeAddress     string
 	LeaderElection   bool
@@ -47,6 +48,7 @@ func ParseCmdLine() Flags {
 	pflag.CommandLine = pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
 
 	pflag.String("kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	pflag.String("cluster-domain", "cluster.local", "The cluster domain configured in kube-dns")
 	pflag.String("metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	pflag.String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	pflag.Bool("leader-elect", false, "Enable leader election for controller manager. "+
@@ -78,6 +80,7 @@ func ParseCmdLine() Flags {
 
 	return Flags{
 		Kubeconfig:       viper.GetString("kubeconfig"),
+		ClusterDomain:    viper.GetString("cluster-domain"),
 		MetricsAddress:   viper.GetString("metrics-bind-address"),
 		ProbeAddress:     viper.GetString("health-probe-bind-address"),
 		LeaderElection:   viper.GetBool("leader-elect"),

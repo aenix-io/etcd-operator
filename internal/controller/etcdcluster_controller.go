@@ -75,8 +75,9 @@ type EtcdClusterReconciler struct {
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log.Debug(ctx, "reconciling object")
-	instance := &etcdaenixiov1alpha1.EtcdCluster{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+	state := &observables{}
+	state.instance = &etcdaenixiov1alpha1.EtcdCluster{}
+	err := r.Get(ctx, req.NamespacedName, state.instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Debug(ctx, "object not found")
@@ -86,15 +87,12 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return reconcile.Result{}, err
 	}
 	// If object is being deleted, skipping reconciliation
-	if !instance.DeletionTimestamp.IsZero() {
+	if !state.instance.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
 
-	state := observables{}
-	state.instance = instance
-
 	// create two services and the pdb
-	err = r.ensureUnconditionalObjects(ctx, instance)
+	err = r.ensureUnconditionalObjects(ctx, state)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -104,20 +102,53 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if client.IgnoreNotFound(err) != nil {
 		return ctrl.Result{}, fmt.Errorf("couldn't get statefulset: %w", err)
 	}
-	state.stsExists = state.statefulSet.UID != ""
+	// state.stsExists = state.statefulSet.UID != ""
 
 	// fetch endpoints
-	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
+	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, state.instance, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	state.endpointsFound = clusterClient != nil && singleClients != nil
+	// state.endpointsFound = clusterClient != nil && singleClients != nil
 
-	if !state.endpointsFound {
-		if !state.stsExists {
-			// TODO: happy path for new cluster creation
-			log.Debug(ctx, "happy path for new cluster creation (not yet implemented)")
+	// if clusterClient != nil {
+	// 	state.endpoints = clusterClient.Endpoints()
+	// }
+	state.clusterClient = clusterClient
+	state.singleClients = singleClients
+
+	// fetch PVCs
+	state.pvcs, err = factory.PVCs(ctx, state.instance, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if !state.endpointsFound() {
+		if !state.statefulSetExists() {
+			return r.createClusterFromScratch(ctx, state) // TODO: needs implementing
 		}
+
+		// update sts pod template (and only pod template) if it doesn't match desired state
+		if !state.statefulSetPodSpecCorrect() { // TODO: needs implementing
+			desiredSts := factory.TemplateStatefulSet(state.instance) // TODO: needs implementing
+			state.statefulSet.Spec.Template.Spec = desiredSts.Spec.Template.Spec
+			return ctrl.Result{}, r.patchOrCreateObject(ctx, &state.statefulSet)
+		}
+
+		if !state.statefulSetReady() { // TODO: needs improved implementation?
+			return ctrl.Result{}, fmt.Errorf("waiting for statefulset to become ready")
+		}
+
+		if *state.statefulSet.Spec.Replicas > 0 {
+			return ctrl.Result{}, fmt.Errorf("reached an impossible state (no endpoints, but active pods)")
+		}
+
+		if *state.instance.Spec.Replicas == 0 {
+			// cluster successfully scaled down to zero
+			return ctrl.Result{}, nil
+		}
+
+		return ctrl.Result{}, r.scaleUpFromZero(ctx) // TODO: needs implementing
 	}
 
 	// get status of every endpoint and member list from every endpoint
@@ -135,11 +166,24 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		wg.Wait()
 		cancel()
 	}
+
+	memberReached := false
+	for i := range state.etcdStatuses {
+		if state.etcdStatuses[i].endpointStatus != nil {
+			memberReached = true
+			break
+		}
+	}
+
+	if !memberReached {
+		return ctrl.Result{}, r.createOrUpdateStatefulSet(ctx)
+	}
+
 	state.setClusterID()
 	if state.inSplitbrain() {
 		log.Error(ctx, fmt.Errorf("etcd cluster in splitbrain"), "etcd cluster in splitbrain, dropping from reconciliation queue")
 		meta.SetStatusCondition(
-			&instance.Status.Conditions,
+			&state.instance.Status.Conditions,
 			metav1.Condition{
 				Type:    etcdaenixiov1alpha1.EtcdConditionError,
 				Status:  metav1.ConditionTrue,
@@ -147,43 +191,35 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				Message: string(etcdaenixiov1alpha1.EtcdErrorCondSplitbrainMessage),
 			},
 		)
-		return r.updateStatus(ctx, instance)
-	}
-	// fill conditions
-	if len(instance.Status.Conditions) == 0 {
-		meta.SetStatusCondition(
-			&instance.Status.Conditions,
-			metav1.Condition{
-				Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
-				Status:  metav1.ConditionFalse,
-				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
-				Message: string(etcdaenixiov1alpha1.EtcdInitCondNegMessage),
-			},
-		)
-		meta.SetStatusCondition(
-			&instance.Status.Conditions,
-			metav1.Condition{
-				Type:    etcdaenixiov1alpha1.EtcdConditionReady,
-				Status:  metav1.ConditionFalse,
-				Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
-				Message: string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum),
-			},
-		)
+		return r.updateStatus(ctx, state)
 	}
 
-	// if size is different we have to remove statefulset it will be recreated in the next step
-	if err := r.checkAndDeleteStatefulSetIfNecessary(ctx, &state, instance); err != nil {
+	if !state.clusterHasQuorum() {
+		// we can't do anything about this but we still return an error to check on the cluster from time to time
+		return ctrl.Result{}, fmt.Errorf("cluster has lost quorum")
+	}
+
+	if state.hasLearners() {
+		return ctrl.Result{}, r.promoteLearners(ctx)
+	}
+
+	if err := r.createOrUpdateClusterStateConfigMap(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// ensure managed resources
-	if err = r.ensureConditionalClusterObjects(ctx, instance); err != nil {
-		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
+	if !state.statefulSetPodSpecCorrect() {
+		return ctrl.Result{}, r.createOrUpdateStatefulSet(ctx)
 	}
 
+	// if size is different we have to remove statefulset it will be recreated in the next step
+	if err := r.checkAndDeleteStatefulSetIfNecessary(ctx, state); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	/* Saved as an example
 	// set cluster initialization condition
 	meta.SetStatusCondition(
-		&instance.Status.Conditions,
+		&state.instance.Status.Conditions,
 		metav1.Condition{
 			Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
 			Status:  metav1.ConditionTrue,
@@ -191,62 +227,18 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			Message: string(etcdaenixiov1alpha1.EtcdInitCondPosMessage),
 		},
 	)
-
-	// check sts condition
-	clusterReady, err := r.isStatefulSetReady(ctx, instance)
-	if err != nil {
-		log.Error(ctx, err, "failed to check etcd cluster state")
-		return r.updateStatusOnErr(ctx, instance, fmt.Errorf("cannot check Cluster readiness: %w", err))
-	}
-
-	if clusterReady && *instance.Spec.Replicas != int32(0) {
-		err := r.configureAuth(ctx, instance)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// set cluster readiness condition
-	existingCondition := meta.FindStatusCondition(instance.Status.Conditions, etcdaenixiov1alpha1.EtcdConditionReady)
-	if existingCondition != nil &&
-		existingCondition.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum) &&
-		!clusterReady {
-		// if we are still "waiting for first quorum establishment" and the StatefulSet
-		// isn't ready yet, don't update the EtcdConditionReady, but circuit-break.
-		return r.updateStatus(ctx, instance)
-	}
-
-	// otherwise, EtcdConditionReady is set to true/false with the reason that the
-	// StatefulSet is or isn't ready.
-	reason := etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady
-	message := etcdaenixiov1alpha1.EtcdReadyCondNegMessage
-	ready := metav1.ConditionFalse
-	if clusterReady {
-		reason = etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady
-		message = etcdaenixiov1alpha1.EtcdReadyCondPosMessage
-		ready = metav1.ConditionTrue
-	}
-
-	meta.SetStatusCondition(
-		&instance.Status.Conditions,
-		metav1.Condition{
-			Type:    etcdaenixiov1alpha1.EtcdConditionReady,
-			Status:  ready,
-			Reason:  string(reason),
-			Message: string(message),
-		},
-	)
-	return r.updateStatus(ctx, instance)
+	*/
+	return r.updateStatus(ctx, state)
 }
 
 // checkAndDeleteStatefulSetIfNecessary deletes the StatefulSet if the specified storage size has changed.
-func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context.Context, state *observables, instance *etcdaenixiov1alpha1.EtcdCluster) error {
+func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context.Context, state *observables) error {
 	for _, volumeClaimTemplate := range state.statefulSet.Spec.VolumeClaimTemplates {
 		if volumeClaimTemplate.Name != "data" {
 			continue
 		}
 		currentStorage := volumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
-		desiredStorage := instance.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+		desiredStorage := state.instance.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
 		if desiredStorage.Cmp(currentStorage) != 0 {
 			deletePolicy := metav1.DeletePropagationOrphan
 			log.Info(ctx, "Deleting StatefulSet due to storage change", "statefulSet", state.statefulSet.Name)
@@ -262,21 +254,20 @@ func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context
 }
 
 // ensureConditionalClusterObjects creates or updates all objects owned by cluster CR
-func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
-	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(ctx context.Context, state *observables) error {
 
-	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
+	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, state.instance, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile cluster state configmap failed")
 		return err
 	}
 	log.Debug(ctx, "cluster state configmap reconciled")
 
-	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
+	if err := factory.CreateOrUpdateStatefulSet(ctx, state.instance, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile statefulset failed")
 		return err
 	}
 
-	if err := factory.UpdatePersistentVolumeClaims(ctx, cluster, r.Client); err != nil {
+	if err := factory.UpdatePersistentVolumeClaims(ctx, state.instance, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile persistentVolumeClaims failed")
 		return err
 	}
@@ -286,11 +277,11 @@ func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
-func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, err error) (ctrl.Result, error) {
+func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, state *observables, err error) (ctrl.Result, error) {
 	// The function 'updateStatusOnErr' will always return non-nil error. Hence, the ctrl.Result will always be ignored.
 	// Therefore, the ctrl.Result returned by 'updateStatus' function can be discarded.
 	// REF: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile@v0.17.3#Reconciler
-	_, statusErr := r.updateStatus(ctx, cluster)
+	_, statusErr := r.updateStatus(ctx, state)
 	if statusErr != nil {
 		return ctrl.Result{}, goerrors.Join(statusErr, err)
 	}
@@ -298,8 +289,8 @@ func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *
 }
 
 // updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
-func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (ctrl.Result, error) {
-	err := r.Status().Update(ctx, cluster)
+func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, state *observables) (ctrl.Result, error) {
+	err := r.Status().Update(ctx, state.instance)
 	if err == nil {
 		return ctrl.Result{}, nil
 	}
@@ -312,9 +303,9 @@ func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, cluster *etcda
 }
 
 // isStatefulSetReady gets managed StatefulSet and checks its readiness.
-func (r *EtcdClusterReconciler) isStatefulSetReady(ctx context.Context, c *etcdaenixiov1alpha1.EtcdCluster) (bool, error) {
+func (r *EtcdClusterReconciler) isStatefulSetReady(ctx context.Context, state *observables) (bool, error) {
 	sts := &appsv1.StatefulSet{}
-	err := r.Get(ctx, client.ObjectKeyFromObject(c), sts)
+	err := r.Get(ctx, client.ObjectKeyFromObject(state.instance), sts)
 	if err == nil {
 		return sts.Status.ReadyReplicas == *sts.Spec.Replicas, nil
 	}
@@ -332,11 +323,11 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
+func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, state *observables) error {
 
 	var err error
 
-	cli, err := r.GetEtcdClient(ctx, cluster)
+	cli, err := r.GetEtcdClient(ctx, state.instance)
 	if err != nil {
 		return err
 	}
@@ -352,7 +343,7 @@ func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, cluster *etcd
 
 	auth := clientv3.NewAuth(cli)
 
-	if cluster.Spec.Security != nil && cluster.Spec.Security.EnableAuth {
+	if state.instance.Spec.Security != nil && state.instance.Spec.Security.EnableAuth {
 
 		if err := r.createRoleIfNotExists(ctx, auth, "root"); err != nil {
 			return err
@@ -403,12 +394,12 @@ func testMemberList(ctx context.Context, cli *clientv3.Client) error {
 	return err
 }
 
-func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (*clientv3.Client, error) {
+func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, instance *etcdaenixiov1alpha1.EtcdCluster) (*clientv3.Client, error) {
 
-	endpoints := getEndpointsSlice(cluster)
+	endpoints := getEndpointsSlice(instance)
 	log.Debug(ctx, "endpoints built", "endpoints", endpoints)
 
-	tlsConfig, err := r.getTLSConfig(ctx, cluster)
+	tlsConfig, err := r.getTLSConfig(ctx, instance)
 	if err != nil {
 		log.Error(ctx, err, "failed to build tls config")
 		return nil, err
@@ -431,17 +422,17 @@ func (r *EtcdClusterReconciler) GetEtcdClient(ctx context.Context, cluster *etcd
 
 }
 
-func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) (*tls.Config, error) {
+func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, instance *etcdaenixiov1alpha1.EtcdCluster) (*tls.Config, error) {
 
 	var err error
 
 	caCertPool := &x509.CertPool{}
 
-	if cluster.IsServerTrustedCADefined() {
+	if instance.IsServerTrustedCADefined() {
 
 		serverCASecret := &corev1.Secret{}
 
-		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ServerTrustedCASecret}, serverCASecret); err != nil {
+		if err = r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: instance.Spec.Security.TLS.ServerTrustedCASecret}, serverCASecret); err != nil {
 			log.Error(ctx, err, "failed to get server trusted CA secret")
 			return nil, err
 		}
@@ -458,10 +449,10 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 
 	cert := tls.Certificate{}
 
-	if cluster.IsClientSecurityEnabled() {
+	if instance.IsClientSecurityEnabled() {
 
 		rootSecret := &corev1.Secret{}
-		if err = r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Spec.Security.TLS.ClientSecret}, rootSecret); err != nil {
+		if err = r.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: instance.Spec.Security.TLS.ClientSecret}, rootSecret); err != nil {
 			log.Error(ctx, err, "failed to get root client secret")
 			return nil, err
 		}
@@ -475,7 +466,7 @@ func (r *EtcdClusterReconciler) getTLSConfig(ctx context.Context, cluster *etcda
 	}
 
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: !cluster.IsServerTrustedCADefined(),
+		InsecureSkipVerify: !instance.IsServerTrustedCADefined(),
 		RootCAs:            caCertPool,
 		Certificates: []tls.Certificate{
 			cert,
@@ -612,7 +603,7 @@ func (r *EtcdClusterReconciler) disableAuth(ctx context.Context, authClient clie
 // ensureUnconditionalObjects creates the two services and the PDB
 // which can be created at the start of the reconciliation loop
 // without any risk of disrupting the etcd cluster
-func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, instance *etcdaenixiov1alpha1.EtcdCluster) error {
+func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, state *observables) error {
 	const concurrentOperations = 3
 	c := make(chan error)
 	defer close(c)
@@ -630,7 +621,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdateClientService(ctx, instance, r.Client),
+		case c <- wrapWithMsg(factory.CreateOrUpdateClientService(ctx, state.instance, r.Client),
 			"couldn't ensure client service"):
 		}
 	}(c)
@@ -638,7 +629,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdateHeadlessService(ctx, instance, r.Client),
+		case c <- wrapWithMsg(factory.CreateOrUpdateHeadlessService(ctx, state.instance, r.Client),
 			"couldn't ensure headless service"):
 		}
 	}(c)
@@ -646,7 +637,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdatePdb(ctx, instance, r.Client),
+		case c <- wrapWithMsg(factory.CreateOrUpdatePdb(ctx, state.instance, r.Client),
 			"couldn't ensure pod disruption budget"):
 		}
 	}(c)
@@ -688,11 +679,52 @@ func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, st
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	meta.SetStatusCondition(
+		&state.instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionInitialized,
+			Status:  metav1.ConditionFalse,
+			Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeInitStarted),
+			Message: string(etcdaenixiov1alpha1.EtcdInitCondNegMessage),
+		},
+	)
+	meta.SetStatusCondition(
+		&state.instance.Status.Conditions,
+		metav1.Condition{
+			Type:    etcdaenixiov1alpha1.EtcdConditionReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
+			Message: string(etcdaenixiov1alpha1.EtcdReadyCondNegWaitingForQuorum),
+		},
+	)
+
+	// ensure managed resources
+	if err = r.ensureConditionalClusterObjects(ctx, state); err != nil {
+		return r.updateStatusOnErr(ctx, state, fmt.Errorf("cannot create Cluster auxiliary objects: %w", err))
+	}
 	panic("not yet implemented")
 }
 
 // TODO!
 // nolint:unused
-func (r *EtcdClusterReconciler) scaleUpFromZero(ctx context.Context, state *observables) (ctrl.Result, error) {
-	panic("not yet implemented")
+func (r *EtcdClusterReconciler) scaleUpFromZero(ctx context.Context) error {
+	return fmt.Errorf("not yet implemented")
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) createOrUpdateClusterStateConfigMap(ctx context.Context) error {
+	return fmt.Errorf("not yet implemented")
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) createOrUpdateStatefulSet(ctx context.Context) error {
+	return fmt.Errorf("not yet implemented")
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) promoteLearners(ctx context.Context) error {
+	return fmt.Errorf("not yet implemented")
 }

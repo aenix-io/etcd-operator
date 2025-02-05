@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"github.com/spf13/viper"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,7 +57,7 @@ func configFromCluster(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli c
 		}
 	}
 	for name := range names {
-		urls = append(urls, fmt.Sprintf("%s:%s", name, "2379"))
+		urls = append(urls, fmt.Sprintf("%s.%s.%s.svc.%s:%s", name, ep.Name, cluster.Namespace, viper.GetString("cluster-domain"), "2379"))
 	}
 
 	return clientv3.Config{Endpoints: urls}, nil
