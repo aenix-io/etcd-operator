@@ -140,7 +140,7 @@
                         "maxAllowed": {
                             "properties": {
                                 "cpu": {
-                                    "type": "integer"
+                                    "type": "string"
                                 },
                                 "memory": {
                                     "type": "string"

@@ -27,7 +27,7 @@
 | etcdOperator.service.port | int | `9443` | Service port |
 | etcdOperator.service.type | string | `"ClusterIP"` | Service type |
 | etcdOperator.vpa.enabled | bool | `true` |  |
-| etcdOperator.vpa.maxAllowed.cpu | int | `1` |  |
+| etcdOperator.vpa.maxAllowed.cpu | string | `"1000m"` |  |
 | etcdOperator.vpa.maxAllowed.memory | string | `"1Gi"` |  |
 | etcdOperator.vpa.minAllowed.cpu | string | `"100m"` |  |
 | etcdOperator.vpa.minAllowed.memory | string | `"128Mi"` |  |
