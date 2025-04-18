@@ -74,10 +74,13 @@ type EtcdClusterReconciler struct {
 
 // Reconcile checks CR and current cluster state and performs actions to transform current state to desired.
 func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	var state State
 	log.Debug(ctx, "reconciling object")
-	state := &observables{}
-	state.instance = &etcdaenixiov1alpha1.EtcdCluster{}
-	err := r.Get(ctx, req.NamespacedName, state.instance)
+
+	// TODO: marry abstract interface with actual object pointer
+	// state := &observables{}
+	// state.instance = &etcdaenixiov1alpha1.EtcdCluster{}
+	err := state.GetEtcdCluster()
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Debug(ctx, "object not found")
@@ -86,9 +89,10 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Error retrieving object, requeue
 		return reconcile.Result{}, err
 	}
-	// If object is being deleted, skipping reconciliation
-	if !state.instance.DeletionTimestamp.IsZero() {
-		return reconcile.Result{}, nil
+
+	// If object is being deleted, handle finalizers, dependent objects, etc
+	if state.PendingDeletion() {
+		return ctrl.Result{}, r.handleDeletion(ctx, state)
 	}
 
 	// create two services and the pdb
@@ -232,7 +236,7 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // checkAndDeleteStatefulSetIfNecessary deletes the StatefulSet if the specified storage size has changed.
-func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context.Context, state *observables) error {
+func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context.Context, state State) error {
 	for _, volumeClaimTemplate := range state.statefulSet.Spec.VolumeClaimTemplates {
 		if volumeClaimTemplate.Name != "data" {
 			continue
@@ -254,7 +258,7 @@ func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context
 }
 
 // ensureConditionalClusterObjects creates or updates all objects owned by cluster CR
-func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(ctx context.Context, state *observables) error {
+func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(ctx context.Context, state State) error {
 
 	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, state.instance, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile cluster state configmap failed")
@@ -277,7 +281,7 @@ func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(ctx context.Cont
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
-func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, state *observables, err error) (ctrl.Result, error) {
+func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, state State, err error) (ctrl.Result, error) {
 	// The function 'updateStatusOnErr' will always return non-nil error. Hence, the ctrl.Result will always be ignored.
 	// Therefore, the ctrl.Result returned by 'updateStatus' function can be discarded.
 	// REF: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile@v0.17.3#Reconciler
@@ -289,7 +293,7 @@ func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, state *ob
 }
 
 // updateStatus updates EtcdCluster status and returns error and requeue in case status could not be updated due to conflict
-func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, state *observables) (ctrl.Result, error) {
+func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, state State) (ctrl.Result, error) {
 	err := r.Status().Update(ctx, state.instance)
 	if err == nil {
 		return ctrl.Result{}, nil
@@ -303,7 +307,7 @@ func (r *EtcdClusterReconciler) updateStatus(ctx context.Context, state *observa
 }
 
 // isStatefulSetReady gets managed StatefulSet and checks its readiness.
-func (r *EtcdClusterReconciler) isStatefulSetReady(ctx context.Context, state *observables) (bool, error) {
+func (r *EtcdClusterReconciler) isStatefulSetReady(ctx context.Context, state State) (bool, error) {
 	sts := &appsv1.StatefulSet{}
 	err := r.Get(ctx, client.ObjectKeyFromObject(state.instance), sts)
 	if err == nil {
@@ -323,7 +327,7 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, state *observables) error {
+func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, state State) error {
 
 	var err error
 
@@ -603,7 +607,7 @@ func (r *EtcdClusterReconciler) disableAuth(ctx context.Context, authClient clie
 // ensureUnconditionalObjects creates the two services and the PDB
 // which can be created at the start of the reconciliation loop
 // without any risk of disrupting the etcd cluster
-func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, state *observables) error {
+func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, state State) error {
 	const concurrentOperations = 3
 	c := make(chan error)
 	defer close(c)
@@ -669,7 +673,7 @@ func (r *EtcdClusterReconciler) patchOrCreateObject(ctx context.Context, obj cli
 
 // TODO!
 // nolint:unparam,unused
-func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, state *observables) (ctrl.Result, error) {
+func (r *EtcdClusterReconciler) createClusterFromScratch(ctx context.Context, state State) (ctrl.Result, error) {
 	cm := factory.TemplateClusterStateConfigMap(state.instance, "new", state.desiredReplicas())
 	err := ctrl.SetControllerReference(state.instance, cm, r.Scheme)
 	if err != nil {
@@ -726,5 +730,11 @@ func (r *EtcdClusterReconciler) createOrUpdateStatefulSet(ctx context.Context) e
 // TODO!
 // nolint:unused
 func (r *EtcdClusterReconciler) promoteLearners(ctx context.Context) error {
+	return fmt.Errorf("not yet implemented")
+}
+
+// TODO!
+// nolint:unused
+func (r *EtcdClusterReconciler) handleDeletion(ctx context.Context, state State) error {
 	return fmt.Errorf("not yet implemented")
 }
