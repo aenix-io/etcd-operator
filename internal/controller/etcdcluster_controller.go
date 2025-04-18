@@ -111,6 +111,16 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	defer func() {
+		if clusterClient != nil {
+			clusterClient.Close()
+		}
+		for i := range singleClients {
+			if singleClients[i] != nil {
+				singleClients[i].Close()
+			}
+		}
+	}()
 	state.endpointsFound = clusterClient != nil && singleClients != nil
 
 	if !state.endpointsFound {
