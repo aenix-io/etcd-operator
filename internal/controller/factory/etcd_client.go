@@ -29,6 +29,7 @@ func NewEtcdClientSet(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli cl
 		cfg.Endpoints = []string{ep}
 		singleClients[i], err = clientv3.New(cfg)
 		if err != nil {
+			clusterClient.Close()
 			return nil, nil, fmt.Errorf("error building etcd single-endpoint client for endpoint %s: %w", ep, err)
 		}
 	}
@@ -56,7 +57,7 @@ func configFromCluster(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli c
 		}
 	}
 	for name := range names {
-		urls = append(urls, fmt.Sprintf("%s:%s", name, "2379"))
+		urls = append(urls, fmt.Sprintf("%s.%s.%s:%s", name, ep.Name, ep.Namespace, "2379"))
 	}
 
 	return clientv3.Config{Endpoints: urls}, nil
