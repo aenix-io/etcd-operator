@@ -33,6 +33,7 @@ func NewEtcdClientSet(ctx context.Context, cluster *v1alpha1.EtcdCluster, cli cl
 		cfg.Endpoints = []string{ep}
 		singleClients[i], err = clientv3.New(cfg)
 		if err != nil {
+			// nolint:errcheck
 			clusterClient.Close()
 			return nil, nil, fmt.Errorf("error building etcd single-endpoint client for endpoint %s: %w", ep, err)
 		}

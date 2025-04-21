@@ -113,10 +113,12 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	defer func() {
 		if clusterClient != nil {
+			// nolint:errcheck
 			clusterClient.Close()
 		}
 		for i := range singleClients {
 			if singleClients[i] != nil {
+				// nolint:errcheck
 				singleClients[i].Close()
 			}
 		}
@@ -296,6 +298,8 @@ func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 }
 
 // updateStatusOnErr wraps error and updates EtcdCluster status
+// TODO: refactor this so the linter doesn't complain
+// nolint:unparam
 func (r *EtcdClusterReconciler) updateStatusOnErr(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, err error) (ctrl.Result, error) {
 	// The function 'updateStatusOnErr' will always return non-nil error. Hence, the ctrl.Result will always be ignored.
 	// Therefore, the ctrl.Result returned by 'updateStatus' function can be discarded.
@@ -351,9 +355,8 @@ func (r *EtcdClusterReconciler) configureAuth(ctx context.Context, cluster *etcd
 		return err
 	}
 
-	defer func() {
-		err = cli.Close()
-	}()
+	// nolint:errcheck
+	defer cli.Close()
 
 	err = testMemberList(ctx, cli)
 	if err != nil {
