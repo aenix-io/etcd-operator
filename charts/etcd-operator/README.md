@@ -26,6 +26,11 @@
 | etcdOperator.securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}` | ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ |
 | etcdOperator.service.port | int | `9443` | Service port |
 | etcdOperator.service.type | string | `"ClusterIP"` | Service type |
+| etcdOperator.vpa.enabled | bool | `true` |  |
+| etcdOperator.vpa.maxAllowed.cpu | string | `"1000m"` |  |
+| etcdOperator.vpa.maxAllowed.memory | string | `"1Gi"` |  |
+| etcdOperator.vpa.minAllowed.cpu | string | `"100m"` |  |
+| etcdOperator.vpa.minAllowed.memory | string | `"128Mi"` |  |
 | fullnameOverride | string | `""` | Override a full name of helm release |
 | imagePullSecrets | list | `[]` |  |
 | kubeRbacProxy.args[0] | string | `"--secure-listen-address=0.0.0.0:8443"` |  |
@@ -41,6 +46,11 @@
 | kubeRbacProxy.securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}` | ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ |
 | kubeRbacProxy.service.port | int | `8443` | Service port |
 | kubeRbacProxy.service.type | string | `"ClusterIP"` | Service type |
+| kubeRbacProxy.vpa.enabled | bool | `true` |  |
+| kubeRbacProxy.vpa.maxAllowed.cpu | string | `"500m"` |  |
+| kubeRbacProxy.vpa.maxAllowed.memory | string | `"256Mi"` |  |
+| kubeRbacProxy.vpa.minAllowed.cpu | string | `"50m"` |  |
+| kubeRbacProxy.vpa.minAllowed.memory | string | `"64Mi"` |  |
 | kubernetesClusterDomain | string | `"cluster.local"` | Kubernetes cluster domain prefix |
 | nameOverride | string | `""` | Override a name of helm release |
 | nodeSelector | object | `{}` | ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/ |
@@ -51,4 +61,5 @@
 | serviceAccount.annotations | object | `{}` | Annotations to add to the service account |
 | serviceAccount.create | bool | `true` | Specifies whether a service account should be created |
 | tolerations | list | `[]` | ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/ |
+| vpa.updatePolicy | string | `"Auto"` |  |
 
