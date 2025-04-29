@@ -84,6 +84,15 @@ etcdOperator:
       drop:
         - ALL
 
+  vpa:
+    enabled: true
+    minAllowed:
+      cpu: 100m
+      memory: 128Mi
+    maxAllowed:
+      cpu: 1000m
+      memory: 1Gi
+
 kubeRbacProxy:
 
   image:
@@ -142,6 +151,15 @@ kubeRbacProxy:
       drop:
           - ALL
 
+  vpa:
+    enabled: true
+    minAllowed:
+      cpu: 50m
+      memory: 64Mi
+    maxAllowed:
+      cpu: 500m
+      memory: 256Mi
+
 # -- Kubernetes cluster domain prefix
 kubernetesClusterDomain: cluster.local
 
@@ -182,3 +200,6 @@ tolerations: []
 
 # -- ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
 affinity: {}
+
+vpa:
+  updatePolicy: "Auto"

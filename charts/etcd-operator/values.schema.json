@@ -131,6 +131,36 @@
                         }
                     },
                     "type": "object"
+                },
+                "vpa": {
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "maxAllowed": {
+                            "properties": {
+                                "cpu": {
+                                    "type": "string"
+                                },
+                                "memory": {
+                                    "type": "string"
+                                }
+                            },
+                            "type": "object"
+                        },
+                        "minAllowed": {
+                            "properties": {
+                                "cpu": {
+                                    "type": "string"
+                                },
+                                "memory": {
+                                    "type": "string"
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
                 }
             },
             "type": "object"
@@ -227,6 +257,36 @@
                         }
                     },
                     "type": "object"
+                },
+                "vpa": {
+                    "properties": {
+                        "enabled": {
+                            "type": "boolean"
+                        },
+                        "maxAllowed": {
+                            "properties": {
+                                "cpu": {
+                                    "type": "string"
+                                },
+                                "memory": {
+                                    "type": "string"
+                                }
+                            },
+                            "type": "object"
+                        },
+                        "minAllowed": {
+                            "properties": {
+                                "cpu": {
+                                    "type": "string"
+                                },
+                                "memory": {
+                                    "type": "string"
+                                }
+                            },
+                            "type": "object"
+                        }
+                    },
+                    "type": "object"
                 }
             },
             "type": "object"
@@ -270,6 +330,14 @@
         },
         "tolerations": {
             "type": "array"
+        },
+        "vpa": {
+            "properties": {
+                "updatePolicy": {
+                    "type": "string"
+                }
+            },
+            "type": "object"
         }
     },
     "type": "object"
