@@ -217,7 +217,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					TimeoutSeconds:   1,
 					PeriodSeconds:    5,
 					SuccessThreshold: 1,
-					FailureThreshold: 3,
+					FailureThreshold: 10,
 				}))
 			})
 
