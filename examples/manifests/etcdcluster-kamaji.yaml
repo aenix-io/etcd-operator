@@ -135,6 +135,7 @@ spec:
   secretName: etcd-server-tls
   isCA: false
   usages:
+    - "client auth"
     - "server auth"
     - "signing"
     - "key encipherment"
