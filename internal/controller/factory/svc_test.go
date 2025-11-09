@@ -167,8 +167,8 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 					Type: corev1.ServiceTypeLoadBalancer,
 					Ports: []corev1.ServicePort{
 						{
-							Name:     "client",
-							Port:     2379,
+							Name:     "customport",
+							Port:     1234,
 							Protocol: corev1.ProtocolUDP,
 						},
 					},
@@ -181,10 +181,19 @@ var _ = Describe("CreateOrUpdateService handlers", func() {
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeLoadBalancer)),
 				HaveField("Spec.LoadBalancerClass", Equal(ptr.To("someClass"))),
 				HaveField("Spec.Ports", SatisfyAll(
-					HaveLen(1),
-					HaveEach(SatisfyAll(
+					ContainElements(SatisfyAll(
 						HaveField("Name", Equal("client")),
 						HaveField("Port", Equal(int32(2379))),
+						HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+					)),
+					ContainElements(SatisfyAll(
+						HaveField("Name", Equal("metrics")),
+						HaveField("Port", Equal(int32(2381))),
+						HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+					)),
+					ContainElements(SatisfyAll(
+						HaveField("Name", Equal("customport")),
+						HaveField("Port", Equal(int32(1234))),
 						HaveField("Protocol", Equal(corev1.ProtocolUDP)),
 					)),
 				)),
