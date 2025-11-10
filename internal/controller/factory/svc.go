@@ -109,6 +109,7 @@ func CreateOrUpdateClientService(
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{Name: "client", TargetPort: intstr.FromInt32(2379), Port: 2379, Protocol: corev1.ProtocolTCP},
+				{Name: "metrics", TargetPort: intstr.FromInt32(2381), Port: 2381, Protocol: corev1.ProtocolTCP},
 			},
 			Type:     corev1.ServiceTypeClusterIP,
 			Selector: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
