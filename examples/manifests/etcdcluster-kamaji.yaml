@@ -21,9 +21,7 @@ metadata:
 spec:
   driver: etcd
   endpoints:
-  - etcd-0.etcd-headless.kamaji-system.svc:2379
-  - etcd-1.etcd-headless.kamaji-system.svc:2379
-  - etcd-2.etcd-headless.kamaji-system.svc:2379
+  - etcd.kamaji-system.svc
   tlsConfig:
     certificateAuthority:
       certificate:
@@ -140,6 +138,9 @@ spec:
     - "signing"
     - "key encipherment"
   dnsNames:
+  - etcd
+  - etcd.kamaji-system.svc
+  - etcd.kamaji-system.svc.cluster.local
   - etcd-0
   - etcd-0.etcd-headless
   - etcd-0.etcd-headless.kamaji-system.svc
@@ -175,6 +176,9 @@ spec:
     - "signing"
     - "key encipherment"
   dnsNames:
+  - etcd
+  - etcd.kamaji-system.svc
+  - etcd.kamaji-system.svc.cluster.local
   - etcd-0
   - etcd-0.etcd-headless
   - etcd-0.etcd-headless.kamaji-system.svc
