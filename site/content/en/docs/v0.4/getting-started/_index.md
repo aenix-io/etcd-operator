@@ -14,7 +14,7 @@ Pre-requisites:
 
 1. Install etcd-operator:
     ```bash
-    kubectl apply -f https://github.com/aenix-io/etcd-operator/releases/latest/download/etcd-operator.yaml
+    kubectl apply -f https://github.com/aenix-io/etcd-operator/releases/download/v0.4.0/etcd-operator.yaml
     ```
 2. Check the operator is running:
     ```bash
