@@ -411,7 +411,8 @@ func getStartupProbe() *corev1.Probe {
 				Port: intstr.FromInt32(2381),
 			},
 		},
-		PeriodSeconds: 5,
+		PeriodSeconds:    5,
+		FailureThreshold: 10,
 	}
 }
 
