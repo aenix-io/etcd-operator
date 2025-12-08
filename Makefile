@@ -262,7 +262,7 @@ KIND_VERSION ?= v0.23.0
 # renovate: datasource=github-tags depName=helm/helm
 HELM_VERSION ?= v3.15.2
 # renovate: datasource=github-tags depName=losisin/helm-values-schema-json
-HELM_SCHEMA_VERSION ?= v1.4.1
+HELM_SCHEMA_VERSION ?= v2.3.1
 # renovate: datasource=github-tags depName=norwoodj/helm-docs
 HELM_DOCS_VERSION ?= v1.13.1
 # renovate: datasource=github-tags depName=mikefarah/yq
