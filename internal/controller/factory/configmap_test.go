@@ -71,4 +71,40 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			})
 		})
 	})
+
+	Context("when ensuring a configMap for existing cluster", func() {
+    var etcdcluster etcdaenixiov1alpha1.EtcdCluster
+
+   		BeforeEach(func() {
+   		    etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+   		        ObjectMeta: metav1.ObjectMeta{
+   		            GenerateName: "test-etcdcluster-",
+   		            Namespace:    ns.GetName(),
+   		            UID:          types.UID(uuid.NewString()),
+   		        },
+   		        Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+   		            Replicas: ptr.To(int32(3)),
+   		        },
+   		        Status: etcdaenixiov1alpha1.EtcdClusterStatus{
+   		            Conditions: []metav1.Condition{
+   		                {
+   		                    Type:   etcdaenixiov1alpha1.EtcdConditionReady,
+   		                    Reason: string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
+   		                    Status: metav1.ConditionTrue,
+   		                },
+   		            },
+   		        },
+   		    }
+   		    Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+   		    Eventually(Get(&etcdcluster)).Should(Succeed())
+   		    DeferCleanup(k8sClient.Delete, &etcdcluster)
+   		})
+
+   		It("should generate configmap with state 'existing' for ready cluster", func() {
+   		    configMapObj, err := GetClusterStateConfigMap(ctx, &etcdcluster, k8sClient)
+   		    Expect(err).ShouldNot(HaveOccurred())
+   		    Expect(configMapObj).NotTo(BeNil())
+   		    Expect(configMapObj.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("existing"))
+   		})
+	})
 })
