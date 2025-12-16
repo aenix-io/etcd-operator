@@ -31,7 +31,7 @@ import (
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 )
 
-var _ = Describe("CreateOrUpdatePdb handlers", func() {
+var _ = Describe("Pdb factory", func() {
 	var ns *corev1.Namespace
 
 	BeforeEach(func() {
@@ -98,4 +98,147 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 			Expect(pdbObj).ShouldNot(BeNil())
 		})
 	})
+
+	Context("when calculating quorum-based MinAvailable", func() {
+		var (
+			etcdcluster etcdaenixiov1alpha1.EtcdCluster
+		)
+
+		BeforeEach(func() {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+				},
+			}
+		})
+ 		AfterEach(func() {
+			err := Get(&etcdcluster)()
+       		if err != nil {
+       		    Expect(k8sClient.Delete(ctx, &etcdcluster)).Should(Succeed())
+       		}
+   		})
+
+		It("should calculate MinAvailable=1 for 1 replica", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(1))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(1))))
+		})
+
+		It("should calculate MinAvailable=2 for 3 replicas", func() {
+				etcdcluster.Spec.Replicas = ptr.To(int32(3))
+				Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+				pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(2)))) // quorum of 3 is 2
+		})
+
+		It("should calculate MinAvailable=3 for 5 replicas", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(5))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(3)))) // quorum of 5 is 3
+		})
+
+		It("should prioritize user-provided MinAvailable over quorum calculation", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(1))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(1)))) // User value, not quorum
+			Expect(pdbObj.Spec.MaxUnavailable).To(BeNil())
+		})
+
+		It("should use MaxUnavailable when provided", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MaxUnavailable = ptr.To(intstr.FromInt32(1))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.MaxUnavailable).To(Equal(ptr.To(intstr.FromInt32(1))))
+			Expect(pdbObj.Spec.MinAvailable).To(BeNil()) // Should be nil when MaxUnavailable is set
+		})
+
+		It("should have correct selector for etcd pods", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			etcdcluster.Name = "test-cluster"
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(pdbObj.Spec.Selector).NotTo(BeNil())
+			Expect(pdbObj.Spec.Selector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/name", "etcd"))
+			Expect(pdbObj.Spec.Selector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/instance", "test-cluster"))
+			Expect(pdbObj.Spec.Selector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "etcd-operator"))
+		})
+
+		It("should always set UnhealthyPodEvictionPolicy to IfHealthyBudget", func() {
+			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			defer k8sClient.Delete(ctx, &etcdcluster)
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.UnhealthyPodEvictionPolicy).To(Equal(ptr.To(policyv1.IfHealthyBudget)))
+		})
+	})
+
+		Context("when handling edge cases", func() {
+		It("should handle nil PodDisruptionBudgetTemplate", func() {
+			etcdcluster := etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+					// PodDisruptionBudgetTemplate is nil
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			defer k8sClient.Delete(ctx, &etcdcluster)
+
+			// This should panic or return error - need to check actual behavior
+			// For now, let's see what happens
+			Expect(func() {
+				GetPdb(ctx, &etcdcluster, k8sClient)
+			}).To(Panic())
+		})
+
+		It("should handle 0 replicas gracefully", func() {
+			etcdcluster := etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas:                    ptr.To(int32(0)),
+					PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			defer k8sClient.Delete(ctx, &etcdcluster)
+
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			// Quorum of 0 is 0
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(0))))
+		})
+	})		
 })

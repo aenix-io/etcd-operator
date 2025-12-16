@@ -30,7 +30,7 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
-var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
+var _ = Describe("ClusterStateConfigMap factory", func() {
 	var ns *corev1.Namespace
 
 	BeforeEach(func() {
