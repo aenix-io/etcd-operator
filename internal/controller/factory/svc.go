@@ -47,11 +47,11 @@ func GetHeadlessServiceName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
 	return fmt.Sprintf("%s-headless", cluster.Name)
 }
 
-func CreateOrUpdateHeadlessService(
+func GetHeadlessService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) error {
+) (*corev1.Service, error) {
 	var err error
 
 	metadata := metav1.ObjectMeta{
@@ -63,7 +63,8 @@ func CreateOrUpdateHeadlessService(
 	if cluster.Spec.HeadlessServiceTemplate != nil {
 		metadata, err = k8sutils.StrategicMerge(metadata, cluster.Spec.HeadlessServiceTemplate.ToObjectMeta())
 		if err != nil {
-			return fmt.Errorf("cannot strategic-merge base svc metadata with headlessServiceTemplate.metadata: %w", err)
+			return nil, fmt.Errorf(
+				"cannot strategic-merge base svc metadata with headlessServiceTemplate.metadata: %w", err)
 		}
 	}
 
@@ -82,22 +83,22 @@ func CreateOrUpdateHeadlessService(
 	}
 	ctx, err = contextWithGVK(ctx, svc, rclient.Scheme())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Debug(ctx, "cluster service spec generated", "spec", svc.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, svc, rclient.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
+		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileOwnedResource(ctx, rclient, svc)
+	return svc, nil
 }
 
-func CreateOrUpdateClientService(
+func GetClientService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) error {
+) (*corev1.Service, error)  {
 	var err error
 
 	svc := corev1.Service{
@@ -121,18 +122,19 @@ func CreateOrUpdateClientService(
 			Spec:       cluster.Spec.ServiceTemplate.Spec,
 		})
 		if err != nil {
-			return fmt.Errorf("cannot strategic-merge base svc with serviceTemplate: %w", err)
+			return nil, fmt.Errorf(
+				"cannot strategic-merge base svc with serviceTemplate: %w", err)
 		}
 	}
 	ctx, err = contextWithGVK(ctx, &svc, rclient.Scheme())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Debug(ctx, "client service spec generated", "spec", svc.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, &svc, rclient.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
+		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileOwnedResource(ctx, rclient, &svc)
+	return &svc, nil 
 }

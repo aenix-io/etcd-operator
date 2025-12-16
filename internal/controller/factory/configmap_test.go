@@ -18,14 +18,12 @@ package factory
 
 import (
 	"github.com/google/uuid"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -46,12 +44,7 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 	})
 
 	Context("when ensuring a configMap", func() {
-		var (
-			etcdcluster etcdaenixiov1alpha1.EtcdCluster
-			configMap   corev1.ConfigMap
-
-			err error
-		)
+		var etcdcluster etcdaenixiov1alpha1.EtcdCluster
 
 		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
@@ -67,64 +60,15 @@ var _ = Describe("CreateOrUpdateClusterStateConfigMap handlers", func() {
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 			Eventually(Get(&etcdcluster)).Should(Succeed())
 			DeferCleanup(k8sClient.Delete, &etcdcluster)
-
-			configMap = corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns.GetName(),
-					Name:      GetClusterStateConfigMapName(&etcdcluster),
-				},
-			}
 		})
 
-		AfterEach(func() {
-			err = Get(&configMap)()
-			if err == nil {
-				Expect(k8sClient.Delete(ctx, &configMap)).Should(Succeed())
-			} else {
-				Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
-		})
-
-		It("should successfully ensure the configmap", func() {
-			var configMapUID types.UID
+		It("should successfully create the configmap object", func() {
 			By("processing new etcd cluster", func() {
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
-				Eventually(Get(&configMap)).Should(Succeed())
-				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
-				configMapUID = configMap.GetUID()
+			 	configMapObj, err := GetClusterStateConfigMap(ctx, &etcdcluster, k8sClient)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(configMapObj).NotTo(BeNil())
+				Expect(configMapObj.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
 			})
-
-			By("processing ready etcd cluster", func() {
-				meta.SetStatusCondition(
-					&etcdcluster.Status.Conditions,
-					metav1.Condition{
-						Type:   etcdaenixiov1alpha1.EtcdConditionReady,
-						Status: metav1.ConditionTrue,
-						Reason: string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
-					},
-				)
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
-				Eventually(Object(&configMap)).Should(HaveField("ObjectMeta.UID", Equal(configMapUID)))
-				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("existing"))
-			})
-
-			By("updating the configmap for updated cluster", func() {
-				meta.SetStatusCondition(
-					&etcdcluster.Status.Conditions,
-					metav1.Condition{
-						Type:   etcdaenixiov1alpha1.EtcdConditionReady,
-						Status: metav1.ConditionTrue,
-						Reason: string(etcdaenixiov1alpha1.EtcdCondTypeWaitingForFirstQuorum),
-					},
-				)
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
-				Eventually(Object(&configMap)).Should(HaveField("ObjectMeta.UID", Equal(configMapUID)))
-				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
-			})
-		})
-
-		It("should fail to create the configmap with invalid owner reference", func() {
-			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 	})
 })

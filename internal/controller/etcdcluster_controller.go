@@ -277,13 +277,13 @@ func (r *EtcdClusterReconciler) checkAndDeleteStatefulSetIfNecessary(ctx context
 func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster) error {
 
-	if err := factory.CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
+	if err := CreateOrUpdateClusterStateConfigMap(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile cluster state configmap failed")
 		return err
 	}
 	log.Debug(ctx, "cluster state configmap reconciled")
 
-	if err := factory.CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
+	if err := CreateOrUpdateStatefulSet(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile statefulset failed")
 		return err
 	}
@@ -643,7 +643,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdateClientService(ctx, instance, r.Client),
+		case c <- wrapWithMsg(CreateOrUpdateClientService(ctx, instance, r.Client),
 			"couldn't ensure client service"):
 		}
 	}(c)
@@ -651,7 +651,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdateHeadlessService(ctx, instance, r.Client),
+		case c <- wrapWithMsg(CreateOrUpdateHeadlessService(ctx, instance, r.Client),
 			"couldn't ensure headless service"):
 		}
 	}(c)
@@ -659,7 +659,7 @@ func (r *EtcdClusterReconciler) ensureUnconditionalObjects(ctx context.Context, 
 		defer wg.Done()
 		select {
 		case <-ctx.Done():
-		case c <- wrapWithMsg(factory.CreateOrUpdatePdb(ctx, instance, r.Client),
+		case c <- wrapWithMsg(CreateOrUpdatePdb(ctx, instance, r.Client),
 			"couldn't ensure pod disruption budget"):
 		}
 	}(c)

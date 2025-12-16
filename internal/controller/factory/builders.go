@@ -21,8 +21,6 @@ import (
 	"fmt"
 
 	"github.com/aenix-io/etcd-operator/internal/log"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -50,32 +48,3 @@ func contextWithGVK(ctx context.Context, resource client.Object, scheme *runtime
 	return ctx, nil
 }
 
-func reconcileOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
-	if resource == nil {
-		return fmt.Errorf("resource cannot be nil")
-	}
-	log.Debug(ctx, "reconciling owned resource")
-
-	base := resource.DeepCopyObject().(client.Object)
-	err := c.Get(ctx, client.ObjectKeyFromObject(resource), base)
-	if err == nil {
-		log.Debug(ctx, "updating owned resource")
-		resource.SetAnnotations(labels.Merge(base.GetAnnotations(), resource.GetAnnotations()))
-		resource.SetResourceVersion(base.GetResourceVersion())
-		log.Debug(ctx, "owned resource annotations merged", "annotations", resource.GetAnnotations())
-		return c.Update(ctx, resource)
-	}
-	if errors.IsNotFound(err) {
-		log.Debug(ctx, "creating new owned resource")
-		return c.Create(ctx, resource)
-	}
-	return fmt.Errorf("error getting owned resource: %w", err)
-}
-
-func deleteOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
-	if resource == nil {
-		return fmt.Errorf("resource cannot be nil")
-	}
-	log.Debug(ctx, "deleting owned resource")
-	return client.IgnoreNotFound(c.Delete(ctx, resource))
-}

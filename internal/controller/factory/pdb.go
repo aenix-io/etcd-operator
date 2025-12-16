@@ -30,22 +30,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func CreateOrUpdatePdb(
+func GetPdb(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) error {
+) (*v1.PodDisruptionBudget, error) {
 	var err error
-
-	if cluster.Spec.PodDisruptionBudgetTemplate == nil {
-		ctx = log.WithValues(ctx, "group", "policy/v1", "kind", "PodDisruptionBudget", "name", cluster.Name)
-		return deleteOwnedResource(ctx, rclient, &v1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: cluster.Namespace,
-				Name:      cluster.Name,
-			},
-		})
-	}
 
 	pdb := &v1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
@@ -67,13 +57,13 @@ func CreateOrUpdatePdb(
 	}
 	ctx, err = contextWithGVK(ctx, pdb, rclient.Scheme())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Debug(ctx, "pdb spec generated", "spec", pdb.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, pdb, rclient.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
+		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileOwnedResource(ctx, rclient, pdb)
+	return pdb, nil
 }

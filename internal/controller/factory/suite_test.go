@@ -26,7 +26,7 @@ import (
 	"github.com/aenix-io/etcd-operator/internal/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	kruntime "k8s.io/apimachinery/pkg/runtime"
+	// kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,7 +44,8 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var cfg *rest.Config
-var k8sClient, clientWithEmptyScheme client.Client
+var k8sClient client.Client
+// var clientWithEmptyScheme client.Client
 var testEnv *envtest.Environment
 
 // global context for test suites
@@ -89,7 +90,7 @@ var _ = BeforeSuite(func() {
 
 	// +kubebuilder:scaffold:scheme
 
-	clientWithEmptyScheme, err = client.New(cfg, client.Options{Scheme: kruntime.NewScheme()})
+	// clientWithEmptyScheme, err = client.New(cfg, client.Options{Scheme: kruntime.NewScheme()})
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})

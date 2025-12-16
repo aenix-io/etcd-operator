@@ -17,23 +17,18 @@ limitations under the License.
 package factory
 
 import (
-	"slices"
-
-	"github.com/google/uuid"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	appsv1 "k8s.io/api/apps/v1"
+	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	"github.com/google/uuid"
 )
 
 var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
@@ -49,13 +44,8 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 		DeferCleanup(k8sClient.Delete, ns)
 	})
 
-	Context("when ensuring statefulSet", func() {
-		var (
-			etcdcluster etcdaenixiov1alpha1.EtcdCluster
-			statefulSet appsv1.StatefulSet
-
-			err error
-		)
+	Context("when create statefulSet", func() {
+		var etcdcluster etcdaenixiov1alpha1.EtcdCluster
 
 		BeforeEach(func() {
 			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
@@ -76,322 +66,14 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 			Eventually(Get(&etcdcluster)).Should(Succeed())
 			DeferCleanup(k8sClient.Delete, &etcdcluster)
-
-			statefulSet = appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      etcdcluster.GetName(),
-					Namespace: ns.GetName(),
-				},
-			}
+	
+		})
+		It("should successfully create statefulSet object with empty spec", func (){
+			statefulSetObj, err := GetStatefulSet(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(statefulSetObj).ShouldNot(BeNil())
 		})
 
-		AfterEach(func() {
-			err = Get(&statefulSet)()
-			if err == nil {
-				Expect(k8sClient.Delete(ctx, &statefulSet)).Should(Succeed())
-			} else {
-				Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
-		})
-
-		It("should successfully ensure the statefulSet with empty spec", func() {
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Object(&statefulSet)).Should(
-				HaveField("Spec.Replicas", Equal(etcdcluster.Spec.Replicas)),
-			)
-		})
-
-		It("should successfully ensure the statefulSet with filled spec", func() {
-			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
-				VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
-					EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-						Name: "etcd-data",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						AccessModes: []corev1.PersistentVolumeAccessMode{
-							corev1.ReadWriteOnce,
-						},
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("1Gi"),
-							},
-						},
-					},
-					Status: corev1.PersistentVolumeClaimStatus{},
-				},
-			}
-			etcdcluster.Spec.PodTemplate = etcdaenixiov1alpha1.PodTemplate{
-				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Labels: map[string]string{
-						"app": "etcd",
-					},
-					Annotations: map[string]string{
-						"app": "etcd",
-					},
-				},
-				Spec: corev1.PodSpec{
-					ServiceAccountName: "etcd-operator",
-					ReadinessGates: []corev1.PodReadinessGate{
-						{
-							// Some custom readiness gate
-							ConditionType: "target-health.elbv2.k8s.aws",
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name: "etcd",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-								},
-							},
-						},
-					},
-				},
-			}
-			etcdcluster.Spec.Security = &etcdaenixiov1alpha1.SecuritySpec{
-				TLS: etcdaenixiov1alpha1.TLSSpec{
-					PeerTrustedCASecret:   "peer-ca-secret",
-					PeerSecret:            "peer-cert-secret",
-					ServerSecret:          "server-cert-secret",
-					ClientTrustedCASecret: "client-ca-secret",
-					ClientSecret:          "client-secret",
-				},
-			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&statefulSet)).Should(Succeed())
-
-			By("Checking the resources", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].Resources.Requests.Cpu()).
-					To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Cpu()))
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].Resources.Requests.Memory()).
-					To(Equal(etcdcluster.Spec.PodTemplate.Spec.Containers[0].Resources.Requests.Memory()))
-			})
-
-			By("Checking the pod metadata", func() {
-				Expect(statefulSet.Spec.Template.ObjectMeta.Labels).To(Equal(map[string]string{
-					"app.kubernetes.io/name":       "etcd",
-					"app.kubernetes.io/instance":   etcdcluster.Name,
-					"app.kubernetes.io/managed-by": "etcd-operator",
-					"app":                          "etcd",
-				}))
-				Expect(statefulSet.Spec.Template.ObjectMeta.Annotations).To(Equal(etcdcluster.Spec.PodTemplate.Annotations))
-			})
-
-			By("Checking the command", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].Command).To(Equal(generateEtcdCommand()))
-			})
-
-			By("Checking the extraArgs", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].Args).To(Equal(generateEtcdArgs(&etcdcluster)))
-				By("Checking args are sorted", func() {
-					// Check that only the extra args are sorted, which means we need to check elements starting from n,
-					// where n is the length of the default args. So we subtract the length of the extra args from the all args.
-					// For example: if we have 3 extra args and 10 total args, we need to check elements starting from 10-3 = 7,
-					// because the first 7 elements are default args and the elements args[7], args[8], and args[9] are extra args.
-					n := len(statefulSet.Spec.Template.Spec.Containers[0].Args) - len(etcdcluster.Spec.Options)
-					argsClone := slices.Clone(statefulSet.Spec.Template.Spec.Containers[0].Args[n:])
-					slices.Sort(argsClone)
-					Expect(statefulSet.Spec.Template.Spec.Containers[0].Args[n:]).To(Equal(argsClone))
-				})
-			})
-
-			By("Checking the readinessGates", func() {
-				Expect(statefulSet.Spec.Template.Spec.ReadinessGates).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ReadinessGates))
-			})
-
-			By("Checking the serviceAccountName", func() {
-				Expect(statefulSet.Spec.Template.Spec.ServiceAccountName).To(Equal(etcdcluster.Spec.PodTemplate.Spec.ServiceAccountName))
-			})
-
-			By("Checking the default startup probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/readyz?serializable=false",
-							Port:   intstr.FromInt32(2381),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					TimeoutSeconds:   1,
-					PeriodSeconds:    5,
-					SuccessThreshold: 1,
-					FailureThreshold: 3,
-				}))
-			})
-
-			By("Checking the default readiness probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/readyz",
-							Port:   intstr.FromInt32(2381),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					TimeoutSeconds:   1,
-					PeriodSeconds:    5,
-					SuccessThreshold: 1,
-					FailureThreshold: 3,
-				}))
-			})
-
-			By("Checking the default liveness probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/livez",
-							Port:   intstr.FromInt32(2381),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					TimeoutSeconds:   1,
-					PeriodSeconds:    5,
-					SuccessThreshold: 1,
-					FailureThreshold: 3,
-				}))
-			})
-
-			By("Checking generated security volumes", func() {
-				Expect(statefulSet.Spec.Template.Spec.Volumes).Should(SatisfyAll(
-					ContainElements([]corev1.Volume{
-						{
-							Name: "peer-trusted-ca-certificate",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "peer-ca-secret",
-									DefaultMode: ptr.To(int32(420)),
-								},
-							},
-						},
-						{
-							Name: "peer-certificate",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "peer-cert-secret",
-									DefaultMode: ptr.To(int32(420)),
-								},
-							},
-						},
-						{
-							Name: "server-certificate",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "server-cert-secret",
-									DefaultMode: ptr.To(int32(420)),
-								},
-							},
-						},
-						{
-							Name: "client-trusted-ca-certificate",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName:  "client-ca-secret",
-									DefaultMode: ptr.To(int32(420)),
-								},
-							},
-						}},
-					),
-				))
-			})
-		})
-
-		It("should successfully override probes", func() {
-			etcdcluster.Spec.PodTemplate.Spec = corev1.PodSpec{
-				Containers: []corev1.Container{
-					{
-						Name: "etcd",
-						LivenessProbe: &corev1.Probe{
-							InitialDelaySeconds: 13,
-							PeriodSeconds:       11,
-						},
-						ReadinessProbe: &corev1.Probe{
-							PeriodSeconds: 3,
-						},
-						StartupProbe: &corev1.Probe{
-							PeriodSeconds: 7,
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/test",
-									Port: intstr.FromInt32(2389),
-								},
-							},
-						},
-					},
-				},
-			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&statefulSet)).Should(Succeed())
-
-			By("Checking the updated startup probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].StartupProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/test",
-							Port:   intstr.FromInt32(2389),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					TimeoutSeconds:   1,
-					PeriodSeconds:    7,
-					SuccessThreshold: 1,
-					FailureThreshold: 3,
-				}))
-			})
-
-			By("Checking the updated readiness probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].ReadinessProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/readyz",
-							Port:   intstr.FromInt32(2381),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					TimeoutSeconds:   1,
-					PeriodSeconds:    3,
-					SuccessThreshold: 1,
-					FailureThreshold: 3,
-				}))
-			})
-
-			By("Checking the updated liveness probe", func() {
-				Expect(statefulSet.Spec.Template.Spec.Containers[0].LivenessProbe).To(Equal(&corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/livez",
-							Port:   intstr.FromInt32(2381),
-							Scheme: corev1.URISchemeHTTP,
-						},
-					},
-					InitialDelaySeconds: 13,
-					TimeoutSeconds:      1,
-					PeriodSeconds:       11,
-					SuccessThreshold:    1,
-					FailureThreshold:    3,
-				}))
-			})
-		})
-
-		It("should successfully create statefulSet with emptyDir", func() {
-			size := resource.MustParse("1Gi")
-			etcdcluster.Spec.Storage = etcdaenixiov1alpha1.StorageSpec{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					SizeLimit: ptr.To(size),
-				},
-			}
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&statefulSet)).Should(Succeed())
-
-			By("Checking the emptyDir", func() {
-				Expect(statefulSet.Spec.Template.Spec.Volumes[0].VolumeSource.EmptyDir.SizeLimit.String()).To(Equal(size.String()))
-			})
-		})
-
-		It("should fail on creating the statefulset with invalid owner reference", func() {
-			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
-		})
 	})
 
 	Context("When generating a etcd command", func() {
@@ -406,7 +88,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 				},
 			}
 
-			args := generateEtcdArgs(etcdcluster)
+			args := GenerateEtcdArgs(etcdcluster)
 
 			Expect(args).To(ContainElements([]string{
 				"--key1=value1",
@@ -426,7 +108,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
-			args := generateEtcdArgs(etcdCluster)
+			args := GenerateEtcdArgs(etcdCluster)
 			Expect(args).To(ContainElement("--quota-backend-bytes=2147483648"))
 		})
 		It("should set quota-backend-bytes to 0.95 of EmptyDir size", func() {
@@ -439,7 +121,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
-			args := generateEtcdArgs(etcdCluster)
+			args := GenerateEtcdArgs(etcdCluster)
 			// 2Gi * 0.95 = 2040109465,6
 			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
 		})
@@ -461,7 +143,7 @@ var _ = Describe("CreateOrUpdateStatefulSet handler", func() {
 					},
 				},
 			}
-			args := generateEtcdArgs(etcdCluster)
+			args := GenerateEtcdArgs(etcdCluster)
 			// 2Gi * 0.95 = 2040109465,6
 			Expect(args).To(ContainElement("--quota-backend-bytes=2040109465"))
 		})

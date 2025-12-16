@@ -34,11 +34,11 @@ func GetClusterStateConfigMapName(cluster *etcdaenixiov1alpha1.EtcdCluster) stri
 	return cluster.Name + "-cluster-state"
 }
 
-func CreateOrUpdateClusterStateConfigMap(
+func GetClusterStateConfigMap(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) error {
+) (*corev1.ConfigMap, error) {
 	var err error
 	state := "new"
 	if isEtcdClusterReady(cluster) {
@@ -47,16 +47,16 @@ func CreateOrUpdateClusterStateConfigMap(
 	configMap := TemplateClusterStateConfigMap(cluster, state, int(*cluster.Spec.Replicas))
 	ctx, err = contextWithGVK(ctx, configMap, rclient.Scheme())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Debug(ctx, "configmap data generated", "data", configMap.Data)
 
 	if err := ctrl.SetControllerReference(cluster, configMap, rclient.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
+		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileOwnedResource(ctx, rclient, configMap)
+	return configMap, nil
 }
 
 // isEtcdClusterReady returns true if condition "Ready" has progressed
@@ -66,10 +66,13 @@ func isEtcdClusterReady(cluster *etcdaenixiov1alpha1.EtcdCluster) bool {
 	return cond != nil && (cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady) ||
 		cond.Reason == string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetNotReady))
 }
-func TemplateClusterStateConfigMap(cluster *etcdaenixiov1alpha1.EtcdCluster, state string, replicas int) *corev1.ConfigMap {
+
+func TemplateClusterStateConfigMap(
+	cluster *etcdaenixiov1alpha1.EtcdCluster, state string, replicas int) *corev1.ConfigMap {
 
 	initialClusterMembers := make([]string, replicas)
-	clusterService := fmt.Sprintf("%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
+	clusterService := fmt.Sprintf(
+		"%s.%s.svc:2380", GetHeadlessServiceName(cluster), cluster.Namespace)
 	for i := 0; i < replicas; i++ {
 		podName := fmt.Sprintf("%s-%d", cluster.Name, i)
 		initialClusterMembers[i] = fmt.Sprintf("%s=https://%s.%s",

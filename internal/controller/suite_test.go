@@ -29,6 +29,8 @@ import (
 	. "github.com/onsi/gomega"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
+	kruntime "k8s.io/apimachinery/pkg/runtime"
+
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,6 +48,8 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+
+var clientWithEmptyScheme client.Client
 
 // global context for test suites
 var ctx = log.Setup(context.TODO(), log.Parameters{
@@ -89,6 +93,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
+
+	clientWithEmptyScheme, err = client.New(cfg, client.Options{Scheme: kruntime.NewScheme()})
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

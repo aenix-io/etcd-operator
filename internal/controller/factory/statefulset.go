@@ -58,11 +58,11 @@ func PodLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
 	return labels
 }
 
-func CreateOrUpdateStatefulSet(
+func GetStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) error {
+) (*appsv1.StatefulSet, error) {
 	podMetadata := metav1.ObjectMeta{
 		Labels: PodLabels(cluster),
 	}
@@ -95,7 +95,7 @@ func CreateOrUpdateStatefulSet(
 	}
 	finalPodSpec, err := k8sutils.StrategicMerge(basePodSpec, cluster.Spec.PodTemplate.Spec)
 	if err != nil {
-		return fmt.Errorf("cannot strategic-merge base podspec with podTemplate.spec: %w", err)
+		return nil, fmt.Errorf("cannot strategic-merge base podspec with podTemplate.spec: %w", err)
 	}
 
 	statefulSet := &appsv1.StatefulSet{
@@ -120,15 +120,15 @@ func CreateOrUpdateStatefulSet(
 	}
 	ctx, err = contextWithGVK(ctx, statefulSet, rclient.Scheme())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	log.Debug(ctx, "statefulset spec generated", "spec", statefulSet.Spec)
 
 	if err = ctrl.SetControllerReference(cluster, statefulSet, rclient.Scheme()); err != nil {
-		return fmt.Errorf("cannot set controller reference: %w", err)
+		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return reconcileOwnedResource(ctx, rclient, statefulSet)
+	return statefulSet, nil
 }
 
 func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
@@ -258,13 +258,13 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 	return volumeMounts
 }
 
-func generateEtcdCommand() []string {
+func GenerateEtcdCommand() []string {
 	return []string{
 		"etcd",
 	}
 }
 
-func generateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
 	peerTlsSettings := []string{"--peer-auto-tls"}
@@ -378,8 +378,8 @@ func generateContainer(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Containe
 	c := corev1.Container{}
 	c.Name = etcdContainerName
 	c.Image = etcdaenixiov1alpha1.DefaultEtcdImage
-	c.Command = generateEtcdCommand()
-	c.Args = generateEtcdArgs(cluster)
+	c.Command = GenerateEtcdCommand()
+	c.Args = GenerateEtcdArgs(cluster)
 	c.Ports = []corev1.ContainerPort{
 		{Name: "peer", ContainerPort: 2380},
 		{Name: "client", ContainerPort: 2379},

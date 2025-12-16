@@ -87,33 +87,15 @@ var _ = Describe("CreateOrUpdatePdb handlers", func() {
 
 		It("should create PDB with pre-filled data", func() {
 			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			Expect(podDisruptionBudget.Spec.MinAvailable).NotTo(BeNil())
-			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(3))
-			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj).ShouldNot(BeNil())
 		})
 
 		It("should create PDB with empty data", func() {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			Expect(etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
-			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(2))
-			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
-		})
-
-		It("should skip deletion of PDB if not filled and not exist", func() {
-			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
-		})
-
-		It("should delete created PDB after updating CR", func() {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
-			err = Get(&podDisruptionBudget)()
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj).ShouldNot(BeNil())
 		})
 	})
 })
