@@ -197,7 +197,7 @@ var _ = Describe("Pdb factory", func() {
 		})
 	})
 
-		Context("when handling edge cases", func() {
+	Context("when handling edge cases", func() {
 		It("should handle nil PodDisruptionBudgetTemplate", func() {
 			etcdcluster := etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -213,8 +213,6 @@ var _ = Describe("Pdb factory", func() {
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 			defer k8sClient.Delete(ctx, &etcdcluster)
 
-			// This should panic or return error - need to check actual behavior
-			// For now, let's see what happens
 			Expect(func() {
 				GetPdb(ctx, &etcdcluster, k8sClient)
 			}).To(Panic())
@@ -237,7 +235,6 @@ var _ = Describe("Pdb factory", func() {
 
 			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			// Quorum of 0 is 0
 			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(0))))
 		})
 	})		

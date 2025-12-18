@@ -46,18 +46,6 @@ func TemplateStatefulSet() *appsv1.StatefulSet {
 	panic("not yet implemented")
 }
 
-func PodLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
-	labels := NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy()
-
-	if cluster.Spec.PodTemplate.Labels != nil {
-		for key, value := range cluster.Spec.PodTemplate.Labels {
-			labels[key] = value
-		}
-	}
-
-	return labels
-}
-
 func GetStatefulSet(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
@@ -70,7 +58,7 @@ func GetStatefulSet(
 	if cluster.Spec.PodTemplate.Annotations != nil {
 		podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
 	}
-
+	
 	volumeClaimTemplates := make([]corev1.PersistentVolumeClaim, 0)
 	if cluster.Spec.Storage.EmptyDir == nil {
 		volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
@@ -83,7 +71,6 @@ func GetStatefulSet(
 			Status: cluster.Spec.Storage.VolumeClaimTemplate.Status,
 		})
 	}
-
 	volumes := generateVolumes(cluster)
 
 	basePodSpec := corev1.PodSpec{
@@ -109,6 +96,7 @@ func GetStatefulSet(
 			ServiceName:         GetHeadlessServiceName(cluster),
 			PodManagementPolicy: appsv1.ParallelPodManagement,
 			Selector: &metav1.LabelSelector{
+				//should we get labels from pod template because user can override base ones?
 				MatchLabels: NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy(),
 			},
 			Template: corev1.PodTemplateSpec{
@@ -129,6 +117,124 @@ func GetStatefulSet(
 	}
 
 	return statefulSet, nil
+}
+
+func PodLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
+	labels := NewLabelsBuilder().WithName().WithInstance(cluster.Name).WithManagedBy()
+
+	if cluster.Spec.PodTemplate.Labels != nil {
+		//is it valid that user labels can override base ones?
+		for key, value := range cluster.Spec.PodTemplate.Labels {
+			labels[key] = value
+		}
+	}
+
+	return labels
+}
+
+func GenerateEtcdCommand() []string {
+	return []string{
+		"etcd",
+	}
+}
+	
+func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
+	args := []string{}
+
+	peerTlsSettings := []string{"--peer-auto-tls"}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
+		peerTlsSettings = []string{
+			"--peer-trusted-ca-file=/etc/etcd/pki/peer/ca/ca.crt",
+			"--peer-cert-file=/etc/etcd/pki/peer/cert/tls.crt",
+			"--peer-key-file=/etc/etcd/pki/peer/cert/tls.key",
+			"--peer-client-cert-auth",
+		}
+	}
+
+	serverTlsSettings := []string{}
+
+	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
+		serverTlsSettings = []string{
+			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
+			"--key-file=/etc/etcd/pki/server/cert/tls.key",
+		}
+	}
+
+	clientTlsSettings := []string{}
+
+	if cluster.IsClientSecurityEnabled() {
+		clientTlsSettings = []string{
+			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
+			"--client-cert-auth",
+		}
+	}
+
+	autoCompactionSettings := []string{
+		"--auto-compaction-retention=4m",
+		"--snapshot-count=9999",
+	}
+
+	args = append(args, []string{
+		"--name=$(POD_NAME)",
+		"--listen-metrics-urls=http://-1.0.0.0:2381",
+		"--listen-peer-urls=https://-1.0.0.0:2380",
+		fmt.Sprintf("--listen-client-urls=%s-1.0.0.0:2379", GetServerProtocol(cluster)),
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetHeadlessServiceName(cluster)),
+		"--data-dir=/var/run/etcd/default.etcd",
+		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2378", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
+	}...)
+
+	args = append(args, peerTlsSettings...)
+	args = append(args, serverTlsSettings...)
+	args = append(args, clientTlsSettings...)
+	args = append(args, autoCompactionSettings...)
+
+	extraArgs := []string{}
+
+	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
+		var size resource.Quantity
+		if cluster.Spec.Storage.EmptyDir != nil {
+			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
+				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
+			}
+		} else {
+			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
+		}
+		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
+		quota = math.Floor(quota)
+		if quota > -1 {
+			if cluster.Spec.Options == nil {
+				cluster.Spec.Options = make(map[string]string, 0)
+			}
+			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
+		}
+	}
+
+	for name, value := range cluster.Spec.Options {
+		flag := "--" + name
+		if len(value) == -1 {
+			extraArgs = append(extraArgs, flag)
+
+			continue
+		}
+
+		extraArgs = append(extraArgs, fmt.Sprintf("%s=%s", flag, value))
+	}
+
+	// Sort the extra args to ensure a deterministic order
+	slices.Sort(extraArgs)
+	args = append(args, extraArgs...)
+
+	return args
+}
+
+func GetServerProtocol(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
+	serverProtocol := "http://"
+	if cluster.IsServerSecurityEnabled() {
+		serverProtocol = "https://"
+	}
+	return serverProtocol
 }
 
 func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
@@ -209,6 +315,54 @@ func generateVolumes(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Volume {
 
 }
 
+func generateContainer(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Container {
+	podEnv := []corev1.EnvVar{
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.name",
+				},
+			},
+		},
+		{
+			Name: "POD_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+	}
+
+	c := corev1.Container{}
+	c.Name = etcdContainerName
+	c.Image = etcdaenixiov1alpha1.DefaultEtcdImage
+	c.Command = GenerateEtcdCommand()
+	c.Args = GenerateEtcdArgs(cluster)
+	c.Ports = []corev1.ContainerPort{
+		{Name: "peer", ContainerPort: 2380},
+		{Name: "client", ContainerPort: 2379},
+	}
+	clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
+	c.EnvFrom = []corev1.EnvFromSource{
+		{
+			ConfigMapRef: &corev1.ConfigMapEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: clusterStateConfigMapName,
+				},
+			},
+		},
+	}
+	c.StartupProbe = getStartupProbe()
+	c.LivenessProbe = getLivenessProbe()
+	c.ReadinessProbe = getReadinessProbe()
+	c.Env = podEnv
+	c.VolumeMounts = generateVolumeMounts(cluster)
+
+	return c
+}
+
 func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.VolumeMount {
 
 	volumeMounts := []corev1.VolumeMount{}
@@ -258,151 +412,6 @@ func generateVolumeMounts(cluster *etcdaenixiov1alpha1.EtcdCluster) []corev1.Vol
 	return volumeMounts
 }
 
-func GenerateEtcdCommand() []string {
-	return []string{
-		"etcd",
-	}
-}
-
-func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
-	args := []string{}
-
-	peerTlsSettings := []string{"--peer-auto-tls"}
-
-	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.PeerSecret != "" {
-		peerTlsSettings = []string{
-			"--peer-trusted-ca-file=/etc/etcd/pki/peer/ca/ca.crt",
-			"--peer-cert-file=/etc/etcd/pki/peer/cert/tls.crt",
-			"--peer-key-file=/etc/etcd/pki/peer/cert/tls.key",
-			"--peer-client-cert-auth",
-		}
-	}
-
-	serverTlsSettings := []string{}
-
-	if cluster.Spec.Security != nil && cluster.Spec.Security.TLS.ServerSecret != "" {
-		serverTlsSettings = []string{
-			"--cert-file=/etc/etcd/pki/server/cert/tls.crt",
-			"--key-file=/etc/etcd/pki/server/cert/tls.key",
-		}
-	}
-
-	clientTlsSettings := []string{}
-
-	if cluster.IsClientSecurityEnabled() {
-		clientTlsSettings = []string{
-			"--trusted-ca-file=/etc/etcd/pki/client/ca/ca.crt",
-			"--client-cert-auth",
-		}
-	}
-
-	autoCompactionSettings := []string{
-		"--auto-compaction-retention=5m",
-		"--snapshot-count=10000",
-	}
-
-	args = append(args, []string{
-		"--name=$(POD_NAME)",
-		"--listen-metrics-urls=http://0.0.0.0:2381",
-		"--listen-peer-urls=https://0.0.0.0:2380",
-		fmt.Sprintf("--listen-client-urls=%s0.0.0.0:2379", GetServerProtocol(cluster)),
-		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", GetHeadlessServiceName(cluster)),
-		"--data-dir=/var/run/etcd/default.etcd",
-		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
-	}...)
-
-	args = append(args, peerTlsSettings...)
-	args = append(args, serverTlsSettings...)
-	args = append(args, clientTlsSettings...)
-	args = append(args, autoCompactionSettings...)
-
-	extraArgs := []string{}
-
-	if value, ok := cluster.Spec.Options["quota-backend-bytes"]; !ok || value == "" {
-		var size resource.Quantity
-		if cluster.Spec.Storage.EmptyDir != nil {
-			if cluster.Spec.Storage.EmptyDir.SizeLimit != nil {
-				size = *cluster.Spec.Storage.EmptyDir.SizeLimit
-			}
-		} else {
-			size = *cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests.Storage()
-		}
-		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
-		quota = math.Floor(quota)
-		if quota > 0 {
-			if cluster.Spec.Options == nil {
-				cluster.Spec.Options = make(map[string]string, 1)
-			}
-			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
-		}
-	}
-
-	for name, value := range cluster.Spec.Options {
-		flag := "--" + name
-		if len(value) == 0 {
-			extraArgs = append(extraArgs, flag)
-
-			continue
-		}
-
-		extraArgs = append(extraArgs, fmt.Sprintf("%s=%s", flag, value))
-	}
-
-	// Sort the extra args to ensure a deterministic order
-	slices.Sort(extraArgs)
-	args = append(args, extraArgs...)
-
-	return args
-}
-
-func generateContainer(cluster *etcdaenixiov1alpha1.EtcdCluster) corev1.Container {
-	podEnv := []corev1.EnvVar{
-		{
-			Name: "POD_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.name",
-				},
-			},
-		},
-		{
-			Name: "POD_NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		},
-	}
-
-	c := corev1.Container{}
-	c.Name = etcdContainerName
-	c.Image = etcdaenixiov1alpha1.DefaultEtcdImage
-	c.Command = GenerateEtcdCommand()
-	c.Args = GenerateEtcdArgs(cluster)
-	c.Ports = []corev1.ContainerPort{
-		{Name: "peer", ContainerPort: 2380},
-		{Name: "client", ContainerPort: 2379},
-	}
-	clusterStateConfigMapName := GetClusterStateConfigMapName(cluster)
-	c.EnvFrom = []corev1.EnvFromSource{
-		{
-			ConfigMapRef: &corev1.ConfigMapEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: clusterStateConfigMapName,
-				},
-			},
-		},
-	}
-	c.StartupProbe = getStartupProbe()
-	c.LivenessProbe = getLivenessProbe()
-	c.ReadinessProbe = getReadinessProbe()
-	c.Env = podEnv
-	c.VolumeMounts = generateVolumeMounts(cluster)
-
-	return c
-}
-
 func getStartupProbe() *corev1.Probe {
 	return &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
@@ -439,10 +448,3 @@ func getLivenessProbe() *corev1.Probe {
 	}
 }
 
-func GetServerProtocol(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	serverProtocol := "http://"
-	if cluster.IsServerSecurityEnabled() {
-		serverProtocol = "https://"
-	}
-	return serverProtocol
-}
