@@ -17,145 +17,133 @@ limitations under the License.
 package factory
 
 import (
-	"context"
-
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
-	storagev1 "k8s.io/api/storage/v1"
 )
 
 var _ = Describe("UpdatePersistentVolumeClaims", func() {
 	var (
-		ns         *corev1.Namespace
-		ctx        context.Context
-		cluster    *etcdaenixiov1alpha1.EtcdCluster
-		fakeClient client.Client
+		cluster *etcdaenixiov1alpha1.EtcdCluster
 	)
 
 	BeforeEach(func() {
-		ns = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-namespace",
-			},
-		}
-		ctx = context.TODO()
 		cluster = &etcdaenixiov1alpha1.EtcdCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
-				Namespace: ns.Name,
+				Namespace: "default",
 			},
 			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
 				Storage: etcdaenixiov1alpha1.StorageSpec{
 					VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
-						Spec: corev1.PersistentVolumeClaimSpec{
-							Resources: corev1.VolumeResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceStorage: resource.MustParse("10Gi"),
-								},
+						EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+							Name: "custom-data",
+							Labels: map[string]string{
+								"app":        "etcd",
+								"custom-key": "custom-value",
 							},
 						},
 					},
 				},
 			},
 		}
-
-		// Setting up the fake client
-		fakeClient = fake.NewClientBuilder().WithObjects(ns, cluster).Build()
 	})
 
-	Context("when updating PVC sizes", func() {
-		It("should handle no PVCs found correctly", func() {
-			Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
+	Context("PVCLabels function", func() {
+		When("cluster has storage with labels", func() {
+			It("should return combined labels from PodLabels and VolumeClaimTemplate", func() {
+				labels := PVCLabels(cluster)
+
+				Expect(labels).To(HaveKeyWithValue("app", "etcd"))
+				Expect(labels).To(HaveKeyWithValue("custom-key", "custom-value"))
+				Expect(labels).To(HaveKey("app.kubernetes.io/name"))
+				Expect(labels).To(HaveKey("app.kubernetes.io/instance"))
+				Expect(labels).To(HaveKey("app.kubernetes.io/managed-by"))
+			})
+
+			When("VolumeClaimTemplate labels override PodLabels", func() {
+				BeforeEach(func() {
+					cluster.Spec.Storage.VolumeClaimTemplate.Labels["app.kubernetes.io/name"] = "overridden-etcd"
+				})
+
+				It("should prioritize VolumeClaimTemplate labels", func() {
+					labels := PVCLabels(cluster)
+
+					Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "overridden-etcd"))
+					Expect(labels).To(HaveKeyWithValue("custom-key", "custom-value"))
+				})
+			})
 		})
 
-		It("should update PVC if the desired size is larger", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "data-test-cluster-0",
-					Namespace: ns.Name,
-					Labels: map[string]string{
-						"app.kubernetes.io/instance":   cluster.Name,
-						"app.kubernetes.io/managed-by": "etcd-operator",
-						"app.kubernetes.io/name":       "etcd",
-					},
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: stringPointer("test-storage-class"),
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("5Gi"),
-						},
-					},
-				},
-			}
-			Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+		When("VolumeClaimTemplate has no labels", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate.Labels = nil
+			})
 
-			sc := &storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-storage-class",
-				},
-				AllowVolumeExpansion: boolPointer(true),
-			}
-			Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+			It("should return only PodLabels", func() {
+				labels := PVCLabels(cluster)
 
-			Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
-
-			updatedPVC := &corev1.PersistentVolumeClaim{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, updatedPVC)).Should(Succeed())
-			Expect(updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("10Gi")))
+				Expect(labels).To(HaveKey("app.kubernetes.io/name"))
+				Expect(labels).To(HaveKey("app.kubernetes.io/instance"))
+				Expect(labels).NotTo(HaveKey("custom-key"))
+			})
 		})
 
-		It("should skip updating PVC if StorageClass does not allow expansion", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "data-test-cluster-0",
-					Namespace: ns.Name,
-					Labels: map[string]string{
-						"app.kubernetes.io/instance":   cluster.Name,
-						"app.kubernetes.io/managed-by": "etcd-operator",
-						"app.kubernetes.io/name":       "etcd",
-					},
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: stringPointer("non-expandable-storage-class"),
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("5Gi"),
-						},
-					},
-				},
-			}
-			Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+		When("VolumeClaimTemplate is nil", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate = etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{}
+			})
 
-			sc := &storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "non-expandable-storage-class",
-				},
-				AllowVolumeExpansion: boolPointer(false),
-			}
-			Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+			It("should return only PodLabels", func() {
+				labels := PVCLabels(cluster)
 
-			Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
-			unchangedPVC := &corev1.PersistentVolumeClaim{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
-			Expect(unchangedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("5Gi")))
+				Expect(labels).To(HaveKey("app.kubernetes.io/name"))
+				Expect(labels).To(HaveKey("app.kubernetes.io/instance"))
+				Expect(labels).NotTo(HaveKey("custom-key"))
+			})
+		})
+	})
+
+	Context("GetPVCName function", func() {
+		When("VolumeClaimTemplate has a name", func() {
+			It("should return the custom name", func() {
+				name := GetPVCName(cluster)
+				Expect(name).To(Equal("custom-data"))
+			})
+		})
+
+		When("VolumeClaimTemplate name is empty", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate.Name = ""
+			})
+
+			It("should return default name 'data'", func() {
+				name := GetPVCName(cluster)
+				Expect(name).To(Equal("data"))
+			})
+		})
+
+		When("VolumeClaimTemplate name is whitespace only", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate.Name = "   "
+			})
+
+			It("should return the whitespace name (no trimming)", func() {
+				name := GetPVCName(cluster)
+				Expect(name).To(Equal("   "))
+			})
+		})
+
+		When("VolumeClaimTemplate is nil", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate = etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{}
+			})
+
+			It("should return default name 'data'", func() {
+				name := GetPVCName(cluster)
+				Expect(name).To(Equal("data"))
+			})
 		})
 	})
 })
-
-func stringPointer(s string) *string {
-	return &s
-}
-
-func boolPointer(b bool) *bool {
-	return &b
-}

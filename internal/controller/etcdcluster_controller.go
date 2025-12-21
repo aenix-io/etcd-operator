@@ -288,7 +288,7 @@ func (r *EtcdClusterReconciler) ensureConditionalClusterObjects(
 		return err
 	}
 
-	if err := factory.UpdatePersistentVolumeClaims(ctx, cluster, r.Client); err != nil {
+	if err := UpdatePersistentVolumeClaims(ctx, cluster, r.Client); err != nil {
 		log.Error(ctx, err, "reconcile persistentVolumeClaims failed")
 		return err
 	}

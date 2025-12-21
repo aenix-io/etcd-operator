@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
@@ -12,6 +13,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/api/policy/v1"
+	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func CreateOrUpdateClusterStateConfigMap(
@@ -85,6 +89,71 @@ func CreateOrUpdateClientService(
 	}
 	return reconcileOwnedResource(ctx, rclient, svc)
 }
+
+func PVCs(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) ([]corev1.PersistentVolumeClaim, error) {
+	labels := factory.PVCLabels(cluster)
+	pvcs := corev1.PersistentVolumeClaimList{}
+	err := cli.List(ctx, &pvcs, client.MatchingLabels(labels))
+	if err != nil {
+		return nil, err
+	}
+	return pvcs.Items, nil
+}
+
+// UpdatePersistentVolumeClaims checks and updates the sizes of PVCs in an EtcdCluster if the specified storage size is larger than the current.
+func UpdatePersistentVolumeClaims(ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, rclient client.Client) error {
+	labelSelector := labels.SelectorFromSet(labels.Set{
+		"app.kubernetes.io/instance": cluster.Name,
+	})
+	listOptions := &client.ListOptions{
+		Namespace:     cluster.Namespace,
+		LabelSelector: labelSelector,
+	}
+
+	// List all PVCs in the same namespace as the cluster using the label selector
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	err := rclient.List(ctx, pvcList, listOptions)
+	if err != nil {
+		return fmt.Errorf("failed to list PVCs: %w", err)
+	}
+
+	// Desired size from the cluster spec
+	expectedPrefix := fmt.Sprintf("data-%s-", cluster.Name)
+	desiredSize := cluster.Spec.Storage.VolumeClaimTemplate.Spec.Resources.Requests[corev1.ResourceStorage]
+
+	for _, pvc := range pvcList.Items {
+		// Skip if PVC name does not match expected prefix
+		if !strings.HasPrefix(pvc.Name, expectedPrefix) {
+			continue
+		}
+
+		// Skip if specified StorageClass does not support volume expansion
+		if pvc.Spec.StorageClassName != nil {
+			sc := &storagev1.StorageClass{}
+			scName := *pvc.Spec.StorageClassName
+			err := rclient.Get(ctx, types.NamespacedName{Name: scName}, sc)
+			if err != nil {
+				return fmt.Errorf("failed to get StorageClass '%s' for PVC '%s': %w", scName, pvc.Name, err)
+			}
+			if sc.AllowVolumeExpansion == nil || !*sc.AllowVolumeExpansion {
+				continue
+			}
+		}
+
+		currentSize := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		// Only patch if the desired size is greater than the current size
+		if desiredSize.Cmp(currentSize) == 1 {
+			newSizePatch := []byte(fmt.Sprintf(`{"spec": {"resources": {"requests": {"storage": "%s"}}}}`, desiredSize.String()))
+			err = rclient.Patch(ctx, &pvc, client.RawPatch(types.StrategicMergePatchType, newSizePatch))
+			if err != nil {
+				return fmt.Errorf("failed to patch PVC %s for updated size: %w", pvc.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func reconcileOwnedResource(ctx context.Context, c client.Client, resource client.Object) error {
 	if resource == nil {
 		return fmt.Errorf("resource cannot be nil")
