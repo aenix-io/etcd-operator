@@ -19,6 +19,7 @@ package factory
 import (
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
 
@@ -44,13 +45,69 @@ var _ = Describe("Create services handlers", func() {
 		DeferCleanup(k8sClient.Delete, ns)
 	})
 
-	Context("when creating cluster services", func() {
+	Context("Service name functions", func() {
+		var cluster *etcdaenixiov1alpha1.EtcdCluster
+
+		BeforeEach(func() {
+			cluster = &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: ns.GetName(),
+				},
+			}
+		})
+
+		It("should return cluster name when no service template", func() {
+			Expect(GetServiceName(cluster)).To(Equal("test-cluster"))
+		})
+
+		It("should return custom name from service template", func() {
+			cluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name: "custom-service",
+				},
+			}
+			Expect(GetServiceName(cluster)).To(Equal("custom-service"))
+		})
+
+		It("should return empty name when template has empty name", func() {
+			cluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name: "",
+				},
+			}
+			Expect(GetServiceName(cluster)).To(Equal(""))
+		})
+
+		It("should return cluster name with -headless suffix", func() {
+			Expect(GetHeadlessServiceName(cluster)).To(Equal("test-cluster-headless"))
+		})
+
+		It("should return custom name from headless service template", func() {
+			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name:"custom-headless",
+				},
+			}
+			Expect(GetHeadlessServiceName(cluster)).To(Equal("custom-headless"))
+		})
+
+		It("should return empty name when headless template has empty name", func() {
+			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name:"",
+				},
+			}
+			Expect(GetHeadlessServiceName(cluster)).To(Equal(""))
+		})
+	})
+
+	Context("Basic service creation", func() {
 		var (
 			etcdcluster     etcdaenixiov1alpha1.EtcdCluster
 			headlessService corev1.Service
 			clientService   corev1.Service
-
-			err error
+			err             error
 		)
 
 		BeforeEach(func() {
@@ -104,6 +161,7 @@ var _ = Describe("Create services handlers", func() {
 			Expect(headlessSvcObj).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
 				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
+				HaveField("Spec.PublishNotReadyAddresses", BeTrue()),
 			))
 		})
 
@@ -113,8 +171,179 @@ var _ = Describe("Create services handlers", func() {
 			Expect(clientSvcObj).ShouldNot(BeNil())
 			Expect(clientSvcObj).Should(SatisfyAll(
 				HaveField("Spec.Type", Equal(corev1.ServiceTypeClusterIP)),
-				HaveField("Spec.ClusterIP", Equal(corev1.ClusterIPNone)),
+				HaveField("Spec.ClusterIP", Not(Equal(corev1.ClusterIPNone))),
+				HaveField("Spec.PublishNotReadyAddresses", BeFalse()),
 			))
+		})
+
+		It("should have correct ports in headless service", func() {
+			headlessSvcObj, err := GetHeadlessService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(headlessSvcObj.Spec.Ports).Should(HaveLen(2))
+			Expect(headlessSvcObj.Spec.Ports).Should(ContainElements(
+				SatisfyAll(
+					HaveField("Name", Equal("peer")),
+					HaveField("Port", Equal(int32(2380))),
+					HaveField("TargetPort", Equal(intstr.FromInt32(2380))),
+					HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+				),
+				SatisfyAll(
+					HaveField("Name", Equal("client")),
+					HaveField("Port", Equal(int32(2379))),
+					HaveField("TargetPort", Equal(intstr.FromInt32(2379))),
+					HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+				),
+			))
+		})
+
+		It("should have correct ports in client service", func() {
+			clientSvcObj, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(clientSvcObj.Spec.Ports).Should(HaveLen(1))
+			Expect(clientSvcObj.Spec.Ports[0]).Should(SatisfyAll(
+				HaveField("Name", Equal("client")),
+				HaveField("Port", Equal(int32(2379))),
+				HaveField("TargetPort", Equal(intstr.FromInt32(2379))),
+				HaveField("Protocol", Equal(corev1.ProtocolTCP)),
+			))
+		})
+
+		It("should have correct owner references", func() {
+			headlessSvcObj, err := GetHeadlessService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			
+			clientSvcObj, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(headlessSvcObj.OwnerReferences).Should(HaveLen(1))
+			Expect(clientSvcObj.OwnerReferences).Should(HaveLen(1))
+
+			headlessOwner := headlessSvcObj.OwnerReferences[0]
+			clientOwner := clientSvcObj.OwnerReferences[0]
+
+			Expect(headlessOwner.Name).To(Equal(etcdcluster.Name))
+			Expect(clientOwner.Name).To(Equal(etcdcluster.Name))
+			Expect(headlessOwner.UID).To(Equal(etcdcluster.UID))
+			Expect(clientOwner.UID).To(Equal(etcdcluster.UID))
+			Expect(headlessOwner.Controller).NotTo(BeNil())
+			Expect(*headlessOwner.Controller).To(BeTrue())
+			Expect(clientOwner.Controller).NotTo(BeNil())
+			Expect(*clientOwner.Controller).To(BeTrue())
+		})
+
+		It("should have same selectors for headless and client services", func() {
+			headlessSvc, err := GetHeadlessService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			
+			clientSvc, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			Expect(headlessSvc.Spec.Selector).To(Equal(clientSvc.Spec.Selector))
+		})
+	})
+
+	Context("Service creation with templates", func() {
+		var (
+			etcdcluster etcdaenixiov1alpha1.EtcdCluster
+		)
+
+		BeforeEach(func() {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+		})
+
+		It("should merge client service template metadata and spec correctly", func() {
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name: "custom-client",
+					Labels: map[string]string{
+						"custom-label": "value",
+					},
+					Annotations: map[string]string{
+						"custom-annotation": "value",
+					},
+				},
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeLoadBalancer,
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "etcd-client",
+							Port:       2379,
+							TargetPort: intstr.FromInt32(2379),
+						},
+						{
+							Name:       "metrics",
+							Port:       8080,
+							TargetPort: intstr.FromInt32(8080),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Update(ctx, &etcdcluster)).Should(Succeed())
+
+			svc, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			
+			Expect(svc.Name).To(Equal("custom-client"))
+			Expect(svc.Labels).To(HaveKeyWithValue("custom-label", "value"))
+			Expect(svc.Annotations).To(HaveKeyWithValue("custom-annotation", "value"))
+			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+			Expect(svc.Spec.Ports).To(HaveLen(2))
+
+			var portNames []string
+   			for _, port := range svc.Spec.Ports {
+   			    portNames = append(portNames, port.Name)
+   			}
+   			Expect(portNames).To(ContainElements("etcd-client", "metrics"))
+   			Expect(portNames).NotTo(ContainElement("client"))
+		})
+
+		It("should merge partial client service template correctly", func() {
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				Spec: corev1.ServiceSpec{
+					SessionAffinity: corev1.ServiceAffinityClientIP,
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "client",
+							Port:       12379,
+							TargetPort: intstr.FromInt32(2379),
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Update(ctx, &etcdcluster)).Should(Succeed())
+
+			svc, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			
+			Expect(svc.Spec.SessionAffinity).To(Equal(corev1.ServiceAffinityClientIP))
+			Expect(svc.Spec.Ports).To(HaveLen(2))
+		})
+
+		It("should use cluster name when template has empty name", func() {
+			etcdcluster.Spec.ServiceTemplate = &etcdaenixiov1alpha1.EmbeddedService{
+				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
+					Name: "",
+				},
+			}
+			Expect(k8sClient.Update(ctx, &etcdcluster)).Should(Succeed())
+
+			svc, err := GetClientService(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(svc.Name).To(Equal(etcdcluster.Name))
 		})
 	})
 })
