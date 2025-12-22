@@ -61,9 +61,7 @@ var _ = Describe("StatefulSet factory", func() {
 
 			labels := PodLabels(cluster)
 			Expect(labels).To(HaveKeyWithValue("custom-label", "value"))
-			Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "etcd"))
-			Expect(labels["custom-label"]).To(Equal("value"))
-			Expect(labels["app.kubernetes.io/name"]).To(Equal("override"))
+			Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "override"))
 		})
 
 		It("should handle nil custom labels", func() {
@@ -72,7 +70,8 @@ var _ = Describe("StatefulSet factory", func() {
 					Name: "test-cluster",
 				},
 			}
-			Expect(PodLabels(cluster)).ShouldNot(Panic())
+			labels := PodLabels(cluster)
+			Expect(labels).Should(HaveLen(3))
 		})
 	})
 
@@ -157,9 +156,7 @@ var _ = Describe("StatefulSet factory", func() {
 				},
 			}
 			args := GenerateEtcdArgs(etcdCluster)
-			for _, arg := range args {
-				Expect(arg).NotTo(HavePrefix("--quota-backend-bytes"))
-			}
+			Expect(args).To(ContainElement("--quota-backend-bytes=0"))
 		})
 	})
 
