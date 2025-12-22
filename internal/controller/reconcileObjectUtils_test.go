@@ -56,19 +56,7 @@ var _ = Describe("CreateOrUpdateConditionalClusterObjects handlers", func() {
 		DeferCleanup(k8sClient.Delete, ns)
 	})
 
-	Context("when ensuring a configMap", ensureConfigMapFunc(ns))
-
-	Context(
-		"should successfully create pod disruption budget for etcd cluster",
-		ensurePdbFunc(ns))
-
-	Context("when ensuring statefulSet", ensureStatefulSet(ns))
-
-	Context("when ensuring cluster services", ensureService(ns))
-})
-
-func ensureConfigMapFunc(ns *corev1.Namespace) func() {
-	return func() {
+	Context("when ensuring a configMap", func() {
 		var (
 			etcdcluster etcdaenixiov1alpha1.EtcdCluster
 			configMap   corev1.ConfigMap
@@ -108,14 +96,6 @@ func ensureConfigMapFunc(ns *corev1.Namespace) func() {
 			}
 		})
 
-		It("should successfully create the configmap", func() {
-			By("processing new etcd cluster", func() {
-				Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).To(Succeed())
-				Eventually(Get(&configMap)).Should(Succeed())
-				Expect(configMap.Data["ETCD_INITIAL_CLUSTER_STATE"]).To(Equal("new"))
-			})
-		})
-
 		It("should successfully ensure the configmap", func() {
 			var configMapUID types.UID
 			By("processing new etcd cluster", func() {
@@ -125,7 +105,6 @@ func ensureConfigMapFunc(ns *corev1.Namespace) func() {
 				configMapUID = configMap.GetUID()
 			})
 
-			// test move to reconcileObjectUtilsTest
 			By("processing ready etcd cluster", func() {
 				meta.SetStatusCondition(
 					&etcdcluster.Status.Conditions,
@@ -156,88 +135,87 @@ func ensureConfigMapFunc(ns *corev1.Namespace) func() {
 		})
 
 		It("should fail to create the configmap with invalid owner reference", func() {
-			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, k8sClient)).NotTo(Succeed())
-		})
-	}
-}
-
-func ensurePdbFunc(ns *corev1.Namespace) func() {
-	return func() {
-		var (
-			etcdcluster         etcdaenixiov1alpha1.EtcdCluster
-			podDisruptionBudget policyv1.PodDisruptionBudget
-
-			err error
-		)
-
-		BeforeEach(func() {
-			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "test-etcdcluster-",
-					Namespace:    ns.GetName(),
-					UID:          types.UID(uuid.NewString()),
-				},
-				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-					Replicas:                    ptr.To(int32(3)),
-					PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
-				},
-			}
-			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
-			Eventually(Get(&etcdcluster)).Should(Succeed())
-			DeferCleanup(k8sClient.Delete, &etcdcluster)
-
-			podDisruptionBudget = policyv1.PodDisruptionBudget{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns.GetName(),
-					Name:      etcdcluster.GetName(),
-				},
-			}
+			Expect(CreateOrUpdateClusterStateConfigMap(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
 
-		AfterEach(func() {
-			err = Get(&podDisruptionBudget)()
-			if err == nil {
-				Expect(k8sClient.Delete(ctx, &podDisruptionBudget)).Should(Succeed())
-			} else {
+	})
+
+	Context(
+		"should successfully create pod disruption budget for etcd cluster",
+		func() {
+			var (
+				etcdcluster         etcdaenixiov1alpha1.EtcdCluster
+				podDisruptionBudget policyv1.PodDisruptionBudget
+
+				err error
+			)
+
+			BeforeEach(func() {
+				etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: "test-etcdcluster-",
+						Namespace:    ns.GetName(),
+						UID:          types.UID(uuid.NewString()),
+					},
+					Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+						Replicas:                    ptr.To(int32(3)),
+						PodDisruptionBudgetTemplate: &etcdaenixiov1alpha1.EmbeddedPodDisruptionBudget{},
+					},
+				}
+				Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+				Eventually(Get(&etcdcluster)).Should(Succeed())
+				DeferCleanup(k8sClient.Delete, &etcdcluster)
+
+				podDisruptionBudget = policyv1.PodDisruptionBudget{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ns.GetName(),
+						Name:      etcdcluster.GetName(),
+					},
+				}
+			})
+
+			AfterEach(func() {
+				err = Get(&podDisruptionBudget)()
+				if err == nil {
+					Expect(k8sClient.Delete(ctx, &podDisruptionBudget)).Should(Succeed())
+				} else {
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				}
+			})
+
+			It("should create PDB with pre-filled data", func() {
+				etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
+				Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+				Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+				Expect(podDisruptionBudget.Spec.MinAvailable).NotTo(BeNil())
+				Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(3))
+				Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
+			})
+
+			It("should create PDB with empty data", func() {
+				Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+				Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+				Expect(etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
+				Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(2))
+				Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
+			})
+
+			It("should skip deletion of PDB if not filled and not exist", func() {
+				etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
+				Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
+			})
+
+			It("should delete created PDB after updating CR", func() {
+				Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
+				Eventually(Get(&podDisruptionBudget)).Should(Succeed())
+				etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
+				Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
+				err = Get(&podDisruptionBudget)()
 				Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
+			})
 		})
 
-		It("should create PDB with pre-filled data", func() {
-			etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable = ptr.To(intstr.FromInt32(int32(3)))
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			Expect(podDisruptionBudget.Spec.MinAvailable).NotTo(BeNil())
-			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(3))
-			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
-		})
-
-		It("should create PDB with empty data", func() {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			Expect(etcdcluster.Spec.PodDisruptionBudgetTemplate.Spec.MinAvailable).To(BeNil())
-			Expect(podDisruptionBudget.Spec.MinAvailable.IntValue()).To(Equal(2))
-			Expect(podDisruptionBudget.Spec.MaxUnavailable).To(BeNil())
-		})
-
-		It("should skip deletion of PDB if not filled and not exist", func() {
-			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
-		})
-
-		It("should delete created PDB after updating CR", func() {
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).To(Succeed())
-			Eventually(Get(&podDisruptionBudget)).Should(Succeed())
-			etcdcluster.Spec.PodDisruptionBudgetTemplate = nil
-			Expect(CreateOrUpdatePdb(ctx, &etcdcluster, k8sClient)).NotTo(HaveOccurred())
-			err = Get(&podDisruptionBudget)()
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-		})
-	}
-}
-
-func ensureStatefulSet(ns *corev1.Namespace) func() {
-	return func() {
+	Context("when ensuring statefulSet", func() {
 		var (
 			etcdcluster etcdaenixiov1alpha1.EtcdCluster
 			statefulSet appsv1.StatefulSet
@@ -581,11 +559,10 @@ func ensureStatefulSet(ns *corev1.Namespace) func() {
 		It("should fail on creating the statefulset with invalid owner reference", func() {
 			Expect(CreateOrUpdateStatefulSet(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
-	}
-}
 
-func ensureService(ns *corev1.Namespace) func() {
-	return func() {
+	})
+
+	Context("when ensuring cluster services", func() {
 		var (
 			etcdcluster     etcdaenixiov1alpha1.EtcdCluster
 			headlessService corev1.Service
@@ -736,121 +713,128 @@ func ensureService(ns *corev1.Namespace) func() {
 			Expect(CreateOrUpdateHeadlessService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 			Expect(CreateOrUpdateClientService(ctx, &etcdcluster, clientWithEmptyScheme)).NotTo(Succeed())
 		})
-	}
-}
 
-func ensurePvc(ns *corev1.Namespace) func() {
-	return func() {
-		var (
-			fakeClient client.Client
-			cluster    *etcdaenixiov1alpha1.EtcdCluster
-		)
+	})
 
-		BeforeEach(func() {
-			ns = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-namespace",
-				},
-			}
-			ctx = context.TODO()
-			cluster := &etcdaenixiov1alpha1.EtcdCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: ns.Name,
-				},
-				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-					Storage: etcdaenixiov1alpha1.StorageSpec{
-						VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
-							Spec: corev1.PersistentVolumeClaimSpec{
-								Resources: corev1.VolumeResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceStorage: resource.MustParse("10Gi"),
-									},
+	Context("when ensuring pvc", func() {
+	})
+})
+
+var _ = Describe("UpdatePersistentVolumeClaims", func() {
+	var (
+		ns         *corev1.Namespace
+		ctx        context.Context
+		fakeClient client.Client
+		cluster    *etcdaenixiov1alpha1.EtcdCluster
+	)
+
+	BeforeEach(func() {
+		ns = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace",
+			},
+		}
+		ctx = context.TODO()
+		cluster = &etcdaenixiov1alpha1.EtcdCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: ns.Name,
+			},
+			Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+				Storage: etcdaenixiov1alpha1.StorageSpec{
+					VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("10Gi"),
 								},
 							},
 						},
 					},
 				},
-			}
+			},
+		}
 
-			// Setting up the fake client
-			fakeClient = fake.NewClientBuilder().WithObjects(ns, cluster).Build()
-		})
+		// Setting up the fake client
+		fakeClient = fake.NewClientBuilder().WithObjects(ns, cluster).Build()
+	})
 
-		It("should update PVC if the desired size is larger", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "data-test-cluster-0",
-					Namespace: ns.Name,
-					Labels: map[string]string{
-						"app.kubernetes.io/instance":   cluster.Name,
-						"app.kubernetes.io/managed-by": "etcd-operator",
-						"app.kubernetes.io/name":       "etcd",
+	It("should update PVC if the desired size is larger", func() {
+		if cluster == nil {
+			GinkgoWriter.Printf("Cluster in nil!\n")
+		}
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "data-test-cluster-0",
+				Namespace: ns.Name,
+				Labels: map[string]string{
+					"app.kubernetes.io/instance":   cluster.Name,
+					"app.kubernetes.io/managed-by": "etcd-operator",
+					"app.kubernetes.io/name":       "etcd",
+				},
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: stringPointer("test-storage-class"),
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("5Gi"),
 					},
 				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: stringPointer("test-storage-class"),
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("5Gi"),
-						},
+			},
+		}
+		Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+
+		sc := &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-storage-class",
+			},
+			AllowVolumeExpansion: boolPointer(true),
+		}
+		Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+
+		Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
+
+		updatedPVC := &corev1.PersistentVolumeClaim{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, updatedPVC)).Should(Succeed())
+		Expect(updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("10Gi")))
+	})
+
+	It("should skip updating PVC if StorageClass does not allow expansion", func() {
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "data-test-cluster-0",
+				Namespace: ns.Name,
+				Labels: map[string]string{
+					"app.kubernetes.io/instance":   cluster.Name,
+					"app.kubernetes.io/managed-by": "etcd-operator",
+					"app.kubernetes.io/name":       "etcd",
+				},
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: stringPointer("non-expandable-storage-class"),
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("5Gi"),
 					},
 				},
-			}
-			Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+			},
+		}
+		Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
 
-			sc := &storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-storage-class",
-				},
-				AllowVolumeExpansion: boolPointer(true),
-			}
-			Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+		sc := &storagev1.StorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "non-expandable-storage-class",
+			},
+			AllowVolumeExpansion: boolPointer(false),
+		}
+		Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
 
-			Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
-
-			updatedPVC := &corev1.PersistentVolumeClaim{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, updatedPVC)).Should(Succeed())
-			Expect(updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("10Gi")))
-		})
-
-		It("should skip updating PVC if StorageClass does not allow expansion", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "data-test-cluster-0",
-					Namespace: ns.Name,
-					Labels: map[string]string{
-						"app.kubernetes.io/instance":   cluster.Name,
-						"app.kubernetes.io/managed-by": "etcd-operator",
-						"app.kubernetes.io/name":       "etcd",
-					},
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: stringPointer("non-expandable-storage-class"),
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("5Gi"),
-						},
-					},
-				},
-			}
-			Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
-
-			sc := &storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "non-expandable-storage-class",
-				},
-				AllowVolumeExpansion: boolPointer(false),
-			}
-			Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
-
-			Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
-			unchangedPVC := &corev1.PersistentVolumeClaim{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
-			Expect(unchangedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("5Gi")))
-		})
-	}
-}
+		Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
+		unchangedPVC := &corev1.PersistentVolumeClaim{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
+		Expect(unchangedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("5Gi")))
+	})
+})
 
 func stringPointer(s string) *string {
 	return &s
