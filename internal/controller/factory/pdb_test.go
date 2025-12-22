@@ -116,12 +116,12 @@ var _ = Describe("Pdb factory", func() {
 				},
 			}
 		})
- 		AfterEach(func() {
+		AfterEach(func() {
 			err := Get(&etcdcluster)()
-       		if err != nil {
-       		    Expect(k8sClient.Delete(ctx, &etcdcluster)).Should(Succeed())
-       		}
-   		})
+			if err != nil {
+				Expect(k8sClient.Delete(ctx, &etcdcluster)).Should(Succeed())
+			}
+		})
 
 		It("should calculate MinAvailable=1 for 1 replica", func() {
 			etcdcluster.Spec.Replicas = ptr.To(int32(1))
@@ -133,12 +133,12 @@ var _ = Describe("Pdb factory", func() {
 		})
 
 		It("should calculate MinAvailable=2 for 3 replicas", func() {
-				etcdcluster.Spec.Replicas = ptr.To(int32(3))
-				Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 
-				pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
-				Expect(err).ShouldNot(HaveOccurred())
-				Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(2)))) // quorum of 3 is 2
+			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(2)))) // quorum of 3 is 2
 		})
 
 		It("should calculate MinAvailable=3 for 5 replicas", func() {
@@ -237,5 +237,5 @@ var _ = Describe("Pdb factory", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(0))))
 		})
-	})		
+	})
 })

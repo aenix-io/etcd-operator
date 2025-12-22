@@ -58,7 +58,7 @@ func GetStatefulSet(
 	if cluster.Spec.PodTemplate.Annotations != nil {
 		podMetadata.Annotations = cluster.Spec.PodTemplate.Annotations
 	}
-	
+
 	volumeClaimTemplates := make([]corev1.PersistentVolumeClaim, 0)
 	if cluster.Spec.Storage.EmptyDir == nil {
 		volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
@@ -137,7 +137,7 @@ func GenerateEtcdCommand() []string {
 		"etcd",
 	}
 }
-	
+
 func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	args := []string{}
 
@@ -447,4 +447,3 @@ func getLivenessProbe() *corev1.Probe {
 		PeriodSeconds: 5,
 	}
 }
-

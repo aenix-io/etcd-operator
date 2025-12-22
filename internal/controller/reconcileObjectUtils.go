@@ -8,14 +8,14 @@ import (
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 	"github.com/aenix-io/etcd-operator/internal/log"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/api/policy/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/policy/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func CreateOrUpdateClusterStateConfigMap(
@@ -24,7 +24,7 @@ func CreateOrUpdateClusterStateConfigMap(
 	rclient client.Client,
 ) error {
 	configMap, err := factory.GetClusterStateConfigMap(ctx, cluster, rclient)
-	if  err != nil{
+	if err != nil {
 		return err
 	}
 	return reconcileOwnedResource(ctx, rclient, configMap)
@@ -47,7 +47,7 @@ func CreateOrUpdatePdb(
 	}
 
 	pdb, err := factory.GetPdb(ctx, cluster, rclient)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -59,8 +59,8 @@ func CreateOrUpdateStatefulSet(
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
 ) error {
-	statefulSet, err := factory.GetStatefulSet(ctx, cluster, rclient);
-	if err != nil{
+	statefulSet, err := factory.GetStatefulSet(ctx, cluster, rclient)
+	if err != nil {
 		return err
 	}
 	return reconcileOwnedResource(ctx, rclient, statefulSet)
@@ -72,7 +72,7 @@ func CreateOrUpdateHeadlessService(
 	rclient client.Client,
 ) error {
 	svc, err := factory.GetHeadlessService(ctx, cluster, rclient)
-	if err != nil{
+	if err != nil {
 		return nil
 	}
 	return reconcileOwnedResource(ctx, rclient, svc)
@@ -84,7 +84,7 @@ func CreateOrUpdateClientService(
 	rclient client.Client,
 ) error {
 	svc, err := factory.GetClientService(ctx, cluster, rclient)
-	if err != nil{
+	if err != nil {
 		return nil
 	}
 	return reconcileOwnedResource(ctx, rclient, svc)

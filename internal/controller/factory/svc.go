@@ -98,7 +98,7 @@ func GetClientService(
 	ctx context.Context,
 	cluster *etcdaenixiov1alpha1.EtcdCluster,
 	rclient client.Client,
-) (*corev1.Service, error)  {
+) (*corev1.Service, error) {
 	var err error
 
 	svc := corev1.Service{
@@ -136,5 +136,5 @@ func GetClientService(
 		return nil, fmt.Errorf("cannot set controller reference: %w", err)
 	}
 
-	return &svc, nil 
+	return &svc, nil
 }

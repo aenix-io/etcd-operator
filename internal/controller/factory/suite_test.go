@@ -45,6 +45,7 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+
 // var clientWithEmptyScheme client.Client
 var testEnv *envtest.Environment
 

@@ -34,7 +34,7 @@ import (
 
 var _ = Describe("StatefulSet factory", func() {
 	var ns *corev1.Namespace
-	
+
 	BeforeEach(func() {
 		ns = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -44,36 +44,36 @@ var _ = Describe("StatefulSet factory", func() {
 		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 		DeferCleanup(k8sClient.Delete, ns)
 	})
-	
-	Context("PodLabesls", func () {
-		It("should return base labels with custom labels merged", func() {
-    		cluster := &etcdaenixiov1alpha1.EtcdCluster{
-    		    ObjectMeta: metav1.ObjectMeta{
-    		        Name: "test-cluster",
-    		    },
-    		    Spec: etcdaenixiov1alpha1.EtcdClusterSpec{},
-    		}
 
-			cluster.Spec.PodTemplate.Labels = map[string]string{
-    		    "custom-label": "value",
-    		    "app.kubernetes.io/name": "override",
+	Context("PodLabesls", func() {
+		It("should return base labels with custom labels merged", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{},
 			}
 
-    		labels := PodLabels(cluster)
-    		Expect(labels).To(HaveKeyWithValue("custom-label", "value"))
-    		Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "etcd"))
+			cluster.Spec.PodTemplate.Labels = map[string]string{
+				"custom-label":           "value",
+				"app.kubernetes.io/name": "override",
+			}
+
+			labels := PodLabels(cluster)
+			Expect(labels).To(HaveKeyWithValue("custom-label", "value"))
+			Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "etcd"))
 			Expect(labels["custom-label"]).To(Equal("value"))
-    		Expect(labels["app.kubernetes.io/name"]).To(Equal("override"))
-    	})
-    
-   		It("should handle nil custom labels", func() {
-   		    cluster := &etcdaenixiov1alpha1.EtcdCluster{
-   		        ObjectMeta: metav1.ObjectMeta{
-   		            Name: "test-cluster",
-   		        },
-   		    }
-   		    Expect(PodLabels(cluster)).ShouldNot(Panic()) 
-   		})
+			Expect(labels["app.kubernetes.io/name"]).To(Equal("override"))
+		})
+
+		It("should handle nil custom labels", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+			}
+			Expect(PodLabels(cluster)).ShouldNot(Panic())
+		})
 	})
 
 	Context("GenerateEtcdArgs", func() {
@@ -164,205 +164,205 @@ var _ = Describe("StatefulSet factory", func() {
 	})
 
 	Context("generateVolumes", func() {
-   		It("should create EmptyDir volume when specified", func() {
-   		    cluster := &etcdaenixiov1alpha1.EtcdCluster{
-   		        Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-   		            Storage: etcdaenixiov1alpha1.StorageSpec{
-   		                EmptyDir: &corev1.EmptyDirVolumeSource{},
-   		            },
-   		        },
-   		    }
-		   volumes := generateVolumes(cluster)
-		   Expect(volumes).To(HaveLen(1))
-   		   Expect(volumes[0].EmptyDir).NotTo(BeNil())
-   		})
+		It("should create EmptyDir volume when specified", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+			}
+			volumes := generateVolumes(cluster)
+			Expect(volumes).To(HaveLen(1))
+			Expect(volumes[0].EmptyDir).NotTo(BeNil())
+		})
 
 		It("should create PVC volume when no EmptyDir", func() {
-    	   cluster := &etcdaenixiov1alpha1.EtcdCluster{
-    	       ObjectMeta: metav1.ObjectMeta{
-    	           Name: "test-cluster",
-    	       },
-    	       Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-    	           Storage: etcdaenixiov1alpha1.StorageSpec{
-    	               VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
-    	                   Spec: corev1.PersistentVolumeClaimSpec{
-    	                       AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-    	                   },
-    	               },
-    	           },
-    	       },
-    	   }
-		   volumes := generateVolumes(cluster)
-		   Expect(volumes).To(HaveLen(1))
-    	   Expect(volumes[0].PersistentVolumeClaim).NotTo(BeNil())
-    	   Expect(volumes[0].PersistentVolumeClaim.ClaimName).To(Equal(GetPVCName(cluster)))
-    	})
-    
-	    It("should add TLS volumes when security enabled", func() {
-   		    cluster := &etcdaenixiov1alpha1.EtcdCluster{
-   		        Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-   		            Security: &etcdaenixiov1alpha1.SecuritySpec{
-   		                TLS: etcdaenixiov1alpha1.TLSSpec{
-   		                    PeerSecret:            "peer-secret",
-   		                    PeerTrustedCASecret:   "peer-ca-secret",
-   		                    ServerSecret:          "server-secret",
-   		                    ClientSecret:          "client-secret",
-   		                    ClientTrustedCASecret: "client-ca-secret",
-   		                },
-   		            },
-   		        },
-   		    }
-		    volumes := generateVolumes(cluster)
-		    Expect(volumes).To(HaveLen(5)) // data + 4 TLS volumes
-   		})
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Storage: etcdaenixiov1alpha1.StorageSpec{
+						VolumeClaimTemplate: etcdaenixiov1alpha1.EmbeddedPersistentVolumeClaim{
+							Spec: corev1.PersistentVolumeClaimSpec{
+								AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+							},
+						},
+					},
+				},
+			}
+			volumes := generateVolumes(cluster)
+			Expect(volumes).To(HaveLen(1))
+			Expect(volumes[0].PersistentVolumeClaim).NotTo(BeNil())
+			Expect(volumes[0].PersistentVolumeClaim.ClaimName).To(Equal(GetPVCName(cluster)))
+		})
+
+		It("should add TLS volumes when security enabled", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{
+							PeerSecret:            "peer-secret",
+							PeerTrustedCASecret:   "peer-ca-secret",
+							ServerSecret:          "server-secret",
+							ClientSecret:          "client-secret",
+							ClientTrustedCASecret: "client-ca-secret",
+						},
+					},
+				},
+			}
+			volumes := generateVolumes(cluster)
+			Expect(volumes).To(HaveLen(5)) // data + 4 TLS volumes
+		})
 	})
 
-	Context("generateContainer", func(){
+	Context("generateContainer", func() {
 		It("should create etcd container with correct configuration", func() {
-	        cluster := &etcdaenixiov1alpha1.EtcdCluster{
-	            ObjectMeta: metav1.ObjectMeta{
-	                Name: "test-cluster",
-	            },
-	            Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-	                Replicas: ptr.To(int32(3)),
-	            },
-	        }
-		
-	        container := generateContainer(cluster)
-		
-	        Expect(container.Name).To(Equal(etcdContainerName))
-	        Expect(container.Image).To(Equal(etcdaenixiov1alpha1.DefaultEtcdImage))
-	        Expect(container.Command).To(Equal(GenerateEtcdCommand()))
-	        Expect(container.Ports).To(HaveLen(2))
-		
-	        Expect(container.StartupProbe).NotTo(BeNil())
-	        Expect(container.LivenessProbe).NotTo(BeNil())
-	        Expect(container.ReadinessProbe).NotTo(BeNil())
-		
-	        Expect(container.Env).To(HaveLen(2))
-	        Expect(container.Env[0].Name).To(Equal("POD_NAME"))
-	        Expect(container.Env[1].Name).To(Equal("POD_NAMESPACE"))
-	    })
-	
-	    It("should include ConfigMap envFrom", func() {
-	        cluster := &etcdaenixiov1alpha1.EtcdCluster{
-	            ObjectMeta: metav1.ObjectMeta{
-	                Name: "test-cluster",
-	            },
-	        }
-		
-	        container := generateContainer(cluster)
-		
-	        Expect(container.EnvFrom).To(HaveLen(1))
-	        Expect(container.EnvFrom[0].ConfigMapRef).NotTo(BeNil())
-	        Expect(container.EnvFrom[0].ConfigMapRef.Name).To(Equal(GetClusterStateConfigMapName(cluster)))
-	    })	
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+				},
+			}
+
+			container := generateContainer(cluster)
+
+			Expect(container.Name).To(Equal(etcdContainerName))
+			Expect(container.Image).To(Equal(etcdaenixiov1alpha1.DefaultEtcdImage))
+			Expect(container.Command).To(Equal(GenerateEtcdCommand()))
+			Expect(container.Ports).To(HaveLen(2))
+
+			Expect(container.StartupProbe).NotTo(BeNil())
+			Expect(container.LivenessProbe).NotTo(BeNil())
+			Expect(container.ReadinessProbe).NotTo(BeNil())
+
+			Expect(container.Env).To(HaveLen(2))
+			Expect(container.Env[0].Name).To(Equal("POD_NAME"))
+			Expect(container.Env[1].Name).To(Equal("POD_NAMESPACE"))
+		})
+
+		It("should include ConfigMap envFrom", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+			}
+
+			container := generateContainer(cluster)
+
+			Expect(container.EnvFrom).To(HaveLen(1))
+			Expect(container.EnvFrom[0].ConfigMapRef).NotTo(BeNil())
+			Expect(container.EnvFrom[0].ConfigMapRef.Name).To(Equal(GetClusterStateConfigMapName(cluster)))
+		})
 	})
-	
-	Context("generateVolumeMounts", func(){
+
+	Context("generateVolumeMounts", func() {
 		It("should create data volume mount only when no TLS", func() {
-        cluster := &etcdaenixiov1alpha1.EtcdCluster{}
-        
-        mounts := generateVolumeMounts(cluster)
-        
-        Expect(mounts).To(HaveLen(1))
-        Expect(mounts[0].Name).To(Equal("data"))
-        Expect(mounts[0].MountPath).To(Equal("/var/run/etcd"))
-        Expect(mounts[0].ReadOnly).To(BeFalse())
-   		})
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{}
 
-	    It("should create all TLS volume mounts when security enabled", func() {
-   		    cluster := &etcdaenixiov1alpha1.EtcdCluster{
-   		        Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-   		            Security: &etcdaenixiov1alpha1.SecuritySpec{
-   		                TLS: etcdaenixiov1alpha1.TLSSpec{
-   		                    PeerSecret:            "peer-secret",
-   		                    PeerTrustedCASecret:   "peer-ca-secret",
-   		                    ServerSecret:          "server-secret",
-   		                    ClientSecret:          "client-secret",
-   		                    ClientTrustedCASecret: "client-ca-secret",
-   		                },
-   		            },
-   		        },
-   		    }
-		    mounts := generateVolumeMounts(cluster)
-		    Expect(mounts).To(HaveLen(5))
+			mounts := generateVolumeMounts(cluster)
 
-   		    mountInfo := map[string]struct{
-   		        path string
-   		        readOnly bool
-   		    }{}
-   		    for _, m := range mounts {
-   		        mountInfo[m.Name] = struct{
-   		            path string
-   		            readOnly bool
-   		        }{m.MountPath, m.ReadOnly}
-   		    }
+			Expect(mounts).To(HaveLen(1))
+			Expect(mounts[0].Name).To(Equal("data"))
+			Expect(mounts[0].MountPath).To(Equal("/var/run/etcd"))
+			Expect(mounts[0].ReadOnly).To(BeFalse())
+		})
 
-   		    Expect(mountInfo).To(HaveKey("data"))
-   		    Expect(mountInfo["data"].path).To(Equal("/var/run/etcd"))
-   		    Expect(mountInfo["data"].readOnly).To(BeFalse())
+		It("should create all TLS volume mounts when security enabled", func() {
+			cluster := &etcdaenixiov1alpha1.EtcdCluster{
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{
+							PeerSecret:            "peer-secret",
+							PeerTrustedCASecret:   "peer-ca-secret",
+							ServerSecret:          "server-secret",
+							ClientSecret:          "client-secret",
+							ClientTrustedCASecret: "client-ca-secret",
+						},
+					},
+				},
+			}
+			mounts := generateVolumeMounts(cluster)
+			Expect(mounts).To(HaveLen(5))
 
-   		    Expect(mountInfo).To(HaveKey("peer-trusted-ca-certificate"))
-   		    Expect(mountInfo["peer-trusted-ca-certificate"].path).To(Equal("/etc/etcd/pki/peer/ca"))
-   		    Expect(mountInfo["peer-trusted-ca-certificate"].readOnly).To(BeTrue())
+			mountInfo := map[string]struct {
+				path     string
+				readOnly bool
+			}{}
+			for _, m := range mounts {
+				mountInfo[m.Name] = struct {
+					path     string
+					readOnly bool
+				}{m.MountPath, m.ReadOnly}
+			}
 
-		    Expect(mountInfo).To(HaveKey("peer-certificate"))
-   		    Expect(mountInfo["peer-certificate"].path).To(Equal("/etc/etcd/pki/peer/cert"))
-   		    Expect(mountInfo["peer-certificate"].readOnly).To(BeTrue())
+			Expect(mountInfo).To(HaveKey("data"))
+			Expect(mountInfo["data"].path).To(Equal("/var/run/etcd"))
+			Expect(mountInfo["data"].readOnly).To(BeFalse())
 
-		    Expect(mountInfo).To(HaveKey("server-certificate"))
-   		    Expect(mountInfo["server-certificate"].path).To(Equal("/etc/etcd/pki/server/cert"))
-   		    Expect(mountInfo["server-certificate"].readOnly).To(BeTrue())
+			Expect(mountInfo).To(HaveKey("peer-trusted-ca-certificate"))
+			Expect(mountInfo["peer-trusted-ca-certificate"].path).To(Equal("/etc/etcd/pki/peer/ca"))
+			Expect(mountInfo["peer-trusted-ca-certificate"].readOnly).To(BeTrue())
 
-		   	Expect(mountInfo).To(HaveKey("client-trusted-ca-certificate"))
-   		    Expect(mountInfo["client-trusted-ca-certificate"].path).To(Equal("/etc/etcd/pki/client/ca"))
-   		    Expect(mountInfo["client-trusted-ca-certificate"].readOnly).To(BeTrue())
-   		})
+			Expect(mountInfo).To(HaveKey("peer-certificate"))
+			Expect(mountInfo["peer-certificate"].path).To(Equal("/etc/etcd/pki/peer/cert"))
+			Expect(mountInfo["peer-certificate"].readOnly).To(BeTrue())
+
+			Expect(mountInfo).To(HaveKey("server-certificate"))
+			Expect(mountInfo["server-certificate"].path).To(Equal("/etc/etcd/pki/server/cert"))
+			Expect(mountInfo["server-certificate"].readOnly).To(BeTrue())
+
+			Expect(mountInfo).To(HaveKey("client-trusted-ca-certificate"))
+			Expect(mountInfo["client-trusted-ca-certificate"].path).To(Equal("/etc/etcd/pki/client/ca"))
+			Expect(mountInfo["client-trusted-ca-certificate"].readOnly).To(BeTrue())
+		})
 	})
 
-	Context("GetStatefulSet", func(){
+	Context("GetStatefulSet", func() {
 		var etcdcluster etcdaenixiov1alpha1.EtcdCluster
 
-   		BeforeEach(func() {
-   		    etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
-   		        ObjectMeta: metav1.ObjectMeta{
-   		            GenerateName: "test-etcdcluster-",
-   		            Namespace:    ns.GetName(),
-   		            UID:          types.UID(uuid.NewString()),
-   		        },
-   		        Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
-   		            Replicas: ptr.To(int32(3)),
-   		            Options: map[string]string{
-   		                "foo": "bar",
-   		            },
-   		        },
-   		    }
-   		    Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
-   		    Eventually(Get(&etcdcluster)).Should(Succeed())
-   		    DeferCleanup(k8sClient.Delete, &etcdcluster)
-   		})
+		BeforeEach(func() {
+			etcdcluster = etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "test-etcdcluster-",
+					Namespace:    ns.GetName(),
+					UID:          types.UID(uuid.NewString()),
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Replicas: ptr.To(int32(3)),
+					Options: map[string]string{
+						"foo": "bar",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Eventually(Get(&etcdcluster)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
+		})
 
-   		It("should create StatefulSet with all required fields", func() {
-   		    statefulSetObj, err := GetStatefulSet(ctx, &etcdcluster, k8sClient)
-   		    Expect(err).ShouldNot(HaveOccurred())
-   		    Expect(statefulSetObj).ShouldNot(BeNil())
+		It("should create StatefulSet with all required fields", func() {
+			statefulSetObj, err := GetStatefulSet(ctx, &etcdcluster, k8sClient)
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(statefulSetObj).ShouldNot(BeNil())
 
-   		    Expect(statefulSetObj.Name).To(Equal(etcdcluster.Name))
-   		    Expect(statefulSetObj.Namespace).To(Equal(etcdcluster.Namespace))
-   		    Expect(statefulSetObj.Spec.Replicas).To(Equal(etcdcluster.Spec.Replicas))
-   		    Expect(statefulSetObj.Spec.ServiceName).To(Equal(GetHeadlessServiceName(&etcdcluster)))
-   		    Expect(statefulSetObj.Spec.PodManagementPolicy).To(Equal(appsv1.ParallelPodManagement))
+			Expect(statefulSetObj.Name).To(Equal(etcdcluster.Name))
+			Expect(statefulSetObj.Namespace).To(Equal(etcdcluster.Namespace))
+			Expect(statefulSetObj.Spec.Replicas).To(Equal(etcdcluster.Spec.Replicas))
+			Expect(statefulSetObj.Spec.ServiceName).To(Equal(GetHeadlessServiceName(&etcdcluster)))
+			Expect(statefulSetObj.Spec.PodManagementPolicy).To(Equal(appsv1.ParallelPodManagement))
 
-   		    var hasEtcdContainer bool
-   		    for _, c := range statefulSetObj.Spec.Template.Spec.Containers {
-   		        if c.Name == etcdContainerName {
-   		            hasEtcdContainer = true
-   		            break
-   		        }
-   		    }
-   		    Expect(hasEtcdContainer).To(BeTrue())
-   		})
+			var hasEtcdContainer bool
+			for _, c := range statefulSetObj.Spec.Template.Spec.Containers {
+				if c.Name == etcdContainerName {
+					hasEtcdContainer = true
+					break
+				}
+			}
+			Expect(hasEtcdContainer).To(BeTrue())
+		})
 	})
 
 	Context("when handling edge cases and errors", func() {
@@ -382,7 +382,7 @@ var _ = Describe("StatefulSet factory", func() {
 
 			statefulSet, err := GetStatefulSet(ctx, cluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			
+
 			Expect(statefulSet.Spec.VolumeClaimTemplates).To(HaveLen(1))
 		})
 	})

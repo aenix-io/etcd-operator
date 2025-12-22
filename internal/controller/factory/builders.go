@@ -47,4 +47,3 @@ func contextWithGVK(ctx context.Context, resource client.Object, scheme *runtime
 	ctx = log.WithValues(ctx, "group", gvk.GroupVersion().String(), "kind", gvk.Kind, "name", resource.GetName())
 	return ctx, nil
 }
-

@@ -86,7 +86,7 @@ var _ = Describe("Create services handlers", func() {
 		It("should return custom name from headless service template", func() {
 			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Name:"custom-headless",
+					Name: "custom-headless",
 				},
 			}
 			Expect(GetHeadlessServiceName(cluster)).To(Equal("custom-headless"))
@@ -95,7 +95,7 @@ var _ = Describe("Create services handlers", func() {
 		It("should return empty name when headless template has empty name", func() {
 			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Name:"",
+					Name: "",
 				},
 			}
 			Expect(GetHeadlessServiceName(cluster)).To(Equal(""))
@@ -213,7 +213,7 @@ var _ = Describe("Create services handlers", func() {
 		It("should have correct owner references", func() {
 			headlessSvcObj, err := GetHeadlessService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			
+
 			clientSvcObj, err := GetClientService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -236,7 +236,7 @@ var _ = Describe("Create services handlers", func() {
 		It("should have same selectors for headless and client services", func() {
 			headlessSvc, err := GetHeadlessService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			
+
 			clientSvc, err := GetClientService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -296,7 +296,7 @@ var _ = Describe("Create services handlers", func() {
 
 			svc, err := GetClientService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			
+
 			Expect(svc.Name).To(Equal("custom-client"))
 			Expect(svc.Labels).To(HaveKeyWithValue("custom-label", "value"))
 			Expect(svc.Annotations).To(HaveKeyWithValue("custom-annotation", "value"))
@@ -304,11 +304,11 @@ var _ = Describe("Create services handlers", func() {
 			Expect(svc.Spec.Ports).To(HaveLen(2))
 
 			var portNames []string
-   			for _, port := range svc.Spec.Ports {
-   			    portNames = append(portNames, port.Name)
-   			}
-   			Expect(portNames).To(ContainElements("etcd-client", "metrics"))
-   			Expect(portNames).NotTo(ContainElement("client"))
+			for _, port := range svc.Spec.Ports {
+				portNames = append(portNames, port.Name)
+			}
+			Expect(portNames).To(ContainElements("etcd-client", "metrics"))
+			Expect(portNames).NotTo(ContainElement("client"))
 		})
 
 		It("should merge partial client service template correctly", func() {
@@ -328,7 +328,7 @@ var _ = Describe("Create services handlers", func() {
 
 			svc, err := GetClientService(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			
+
 			Expect(svc.Spec.SessionAffinity).To(Equal(corev1.ServiceAffinityClientIP))
 			Expect(svc.Spec.Ports).To(HaveLen(2))
 		})
