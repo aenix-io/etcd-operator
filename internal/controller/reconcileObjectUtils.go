@@ -73,7 +73,7 @@ func CreateOrUpdateHeadlessService(
 ) error {
 	svc, err := factory.GetHeadlessService(ctx, cluster, rclient)
 	if err != nil {
-		return nil
+		return err
 	}
 	return reconcileOwnedResource(ctx, rclient, svc)
 }
@@ -85,7 +85,7 @@ func CreateOrUpdateClientService(
 ) error {
 	svc, err := factory.GetClientService(ctx, cluster, rclient)
 	if err != nil {
-		return nil
+		return err
 	}
 	return reconcileOwnedResource(ctx, rclient, svc)
 }
