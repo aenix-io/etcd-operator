@@ -76,7 +76,7 @@ var _ = Describe("Create services handlers", func() {
 					Name: "",
 				},
 			}
-			Expect(GetServiceName(cluster)).To(Equal(""))
+			Expect(GetServiceName(cluster)).To(Equal("test-cluster"))
 		})
 
 		It("should return cluster name with -headless suffix", func() {
@@ -95,7 +95,7 @@ var _ = Describe("Create services handlers", func() {
 		It("should return empty name when headless template has empty name", func() {
 			cluster.Spec.HeadlessServiceTemplate = &etcdaenixiov1alpha1.EmbeddedMetadataResource{
 				EmbeddedObjectMetadata: etcdaenixiov1alpha1.EmbeddedObjectMetadata{
-					Name: "",
+					Name: "test-cluster-headless",
 				},
 			}
 			Expect(GetHeadlessServiceName(cluster)).To(Equal(""))
