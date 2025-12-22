@@ -17,6 +17,8 @@ limitations under the License.
 package factory
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"k8s.io/utils/ptr"
 	. "sigs.k8s.io/controller-runtime/pkg/envtest/komega"
@@ -85,17 +87,22 @@ var _ = Describe("ClusterStateConfigMap factory", func() {
 				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
 					Replicas: ptr.To(int32(3)),
 				},
-				Status: etcdaenixiov1alpha1.EtcdClusterStatus{
-					Conditions: []metav1.Condition{
-						{
-							Type:   etcdaenixiov1alpha1.EtcdConditionReady,
-							Reason: string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
-							Status: metav1.ConditionTrue,
+			}
+			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+
+			etcdcluster.Status = etcdaenixiov1alpha1.EtcdClusterStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:   etcdaenixiov1alpha1.EtcdConditionReady,
+						Reason: string(etcdaenixiov1alpha1.EtcdCondTypeStatefulSetReady),
+						Status: metav1.ConditionTrue,
+						LastTransitionTime: metav1.Time{
+							Time: time.Now(),
 						},
 					},
 				},
 			}
-			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
+			Expect(k8sClient.Status().Update(ctx, &etcdcluster)).Should(Succeed())
 			Eventually(Get(&etcdcluster)).Should(Succeed())
 			DeferCleanup(k8sClient.Delete, &etcdcluster)
 		})
