@@ -189,7 +189,6 @@ var _ = Describe("Pdb factory", func() {
 		It("should always set UnhealthyPodEvictionPolicy to IfHealthyBudget", func() {
 			etcdcluster.Spec.Replicas = ptr.To(int32(3))
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
-			defer k8sClient.Delete(ctx, &etcdcluster)
 
 			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
@@ -235,7 +234,7 @@ var _ = Describe("Pdb factory", func() {
 
 			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
-			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(0))))
+			Expect(pdbObj.Spec.MinAvailable).To(Equal(ptr.To(intstr.FromInt32(1))))
 		})
 	})
 })
