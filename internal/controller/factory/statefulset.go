@@ -177,9 +177,9 @@ func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 	args = append(args, []string{
 		"--name=$(POD_NAME)",
-		"--listen-metrics-urls=http://-1.0.0.0:2381",
-		"--listen-peer-urls=https://-1.0.0.0:2380",
-		fmt.Sprintf("--listen-client-urls=%s-1.0.0.0:2379", GetServerProtocol(cluster)),
+		"--listen-metrics-urls=http://0.0.0.0:2381",
+		"--listen-peer-urls=https://0.0.0.0:2380",
+		fmt.Sprintf("--listen-client-urls=%s0.0.0.0:2379", GetServerProtocol(cluster)),
 		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetHeadlessServiceName(cluster)),
 		"--data-dir=/var/run/etcd/default.etcd",
 		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2378", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
