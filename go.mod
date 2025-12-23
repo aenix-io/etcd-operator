@@ -1,6 +1,8 @@
 module github.com/aenix-io/etcd-operator
 
-go 1.22.4
+go 1.23
+
+toolchain go1.24.11
 
 require (
 	github.com/dustin/go-humanize v1.0.1
@@ -15,7 +17,7 @@ require (
 	k8s.io/api v0.30.2
 	k8s.io/apimachinery v0.30.2
 	k8s.io/client-go v0.30.2
-	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
+	k8s.io/utils v0.0.0-20251222233032-718f0e51e6d2
 	sigs.k8s.io/controller-runtime v0.18.4
 )
 
