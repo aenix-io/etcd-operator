@@ -180,9 +180,9 @@ func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		"--listen-metrics-urls=http://0.0.0.0:2381",
 		"--listen-peer-urls=https://0.0.0.0:2380",
 		fmt.Sprintf("--listen-client-urls=%s0.0.0.0:2379", GetServerProtocol(cluster)),
-		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetHeadlessServiceName(cluster)),
+		fmt.Sprintf("--initial-advertise-peer-urls=https://$(POD_NAME).%s.$(POD_NAMESPACE).svc:2380", GetHeadlessServiceName(cluster)),
 		"--data-dir=/var/run/etcd/default.etcd",
-		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2378", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
+		fmt.Sprintf("--advertise-client-urls=%s$(POD_NAME).%s.$(POD_NAMESPACE).svc:2379", GetServerProtocol(cluster), GetHeadlessServiceName(cluster)),
 	}...)
 
 	args = append(args, peerTlsSettings...)
