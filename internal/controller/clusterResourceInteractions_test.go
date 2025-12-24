@@ -18,7 +18,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -833,6 +835,324 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 		unchangedPVC := &corev1.PersistentVolumeClaim{}
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
 		Expect(unchangedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("5Gi")))
+	})
+})
+
+var _ = Describe("GetClientConfigFromCluster", func() {
+	var (
+		ctx context.Context
+		ns  *corev1.Namespace
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		ns = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "test-",
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		DeferCleanup(k8sClient.Delete, ns)
+	})
+
+	Context("without TLS", func() {
+		var etcdCluster *etcdaenixiov1alpha1.EtcdCluster
+		var eps corev1.Endpoints
+
+		BeforeEach(func() {
+			etcdCluster = &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			eps = corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      factory.GetHeadlessServiceName(etcdCluster),
+					Namespace: ns.Name,
+				},
+				Subsets: []corev1.EndpointSubset{
+					{
+						Addresses: []corev1.EndpointAddress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "node1",
+							},
+							{
+								IP:       "10.0.0.2",
+								Hostname: "node2",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &eps)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, &eps)
+		})
+
+		It("should return clientv3.Config with endpoints", func() {
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg).ToNot(BeNil())
+			Expect(cfg.Endpoints).To(ContainElements(
+				fmt.Sprintf("node1.%s.%s.svc:2379", eps.Name, eps.Namespace),
+				fmt.Sprintf("node2.%s.%s.svc:2379", eps.Name, eps.Namespace),
+			))
+			Expect(cfg.DialTimeout).To(Equal(5 * time.Second))
+		})
+	})
+
+	Context("with TLS enabled but client secret is missing", func() {
+		It("returns an error", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			eps := corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      factory.GetHeadlessServiceName(etcdCluster),
+					Namespace: ns.Name,
+				},
+				Subsets: []corev1.EndpointSubset{
+					{
+						Addresses: []corev1.EndpointAddress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "node1",
+							},
+							{
+								IP:       "10.0.0.2",
+								Hostname: "node2",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &eps)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, &eps)
+
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+
+			GinkgoWriter.Printf("error - %+v", err)
+			Expect(cfg).To(BeNil())
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("with TLS enabled but client secret does not exist", func() {
+		It("returns an error", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{
+							ClientSecret: "missing-client-secret",
+							ServerSecret: "server-secret",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			eps := corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      factory.GetHeadlessServiceName(etcdCluster),
+					Namespace: ns.Name,
+				},
+				Subsets: []corev1.EndpointSubset{
+					{
+						Addresses: []corev1.EndpointAddress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "node1",
+							},
+							{
+								IP:       "10.0.0.2",
+								Hostname: "node2",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &eps)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, &eps)
+
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+
+			Expect(cfg).To(BeNil())
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("with client secret missing tls.crt", func() {
+		It("returns an error", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{
+							ClientSecret: "client-secret",
+							ServerSecret: "server-secret",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			clientSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "client-secret",
+					Namespace: ns.Name,
+				},
+				Data: map[string][]byte{
+					// tls.crt отсутствует
+					"tls.key": []byte("key"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, clientSecret)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, clientSecret)
+
+			eps := corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      factory.GetHeadlessServiceName(etcdCluster),
+					Namespace: ns.Name,
+				},
+				Subsets: []corev1.EndpointSubset{
+					{
+						Addresses: []corev1.EndpointAddress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "node1",
+							},
+							{
+								IP:       "10.0.0.2",
+								Hostname: "node2",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &eps)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, &eps)
+
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+
+			Expect(cfg).To(BeNil())
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("with server CA secret missing ca.crt", func() {
+		It("returns an error", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+				Spec: etcdaenixiov1alpha1.EtcdClusterSpec{
+					Security: &etcdaenixiov1alpha1.SecuritySpec{
+						TLS: etcdaenixiov1alpha1.TLSSpec{
+							ClientSecret: "client-secret",
+							ServerSecret: "server-secret",
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			clientSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "client-secret",
+					Namespace: ns.Name,
+				},
+				Data: map[string][]byte{
+					"tls.crt": []byte("not-a-cert"),
+					"tls.key": []byte("not-a-key"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, clientSecret)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, clientSecret)
+
+			serverSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "server-secret",
+					Namespace: ns.Name,
+				},
+				Data: map[string][]byte{
+					// ca.crt отсутствует
+				},
+			}
+			Expect(k8sClient.Create(ctx, serverSecret)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, serverSecret)
+
+			eps := corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      factory.GetHeadlessServiceName(etcdCluster),
+					Namespace: ns.Name,
+				},
+				Subsets: []corev1.EndpointSubset{
+					{
+						Addresses: []corev1.EndpointAddress{
+							{
+								IP:       "10.0.0.1",
+								Hostname: "node1",
+							},
+							{
+								IP:       "10.0.0.2",
+								Hostname: "node2",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, &eps)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, &eps)
+
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+
+			Expect(cfg).To(BeNil())
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("when endpoints are not found", func() {
+		It("returns empty endpoints slice", func() {
+			etcdCluster := &etcdaenixiov1alpha1.EtcdCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "etcd-",
+					Namespace:    ns.Name,
+				},
+			}
+			Expect(k8sClient.Create(ctx, etcdCluster)).To(Succeed())
+			DeferCleanup(k8sClient.Delete, etcdCluster)
+
+			cfg, err := GetClientConfigFromCluster(ctx, etcdCluster, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Endpoints).To(BeEmpty())
+		})
 	})
 })
 
