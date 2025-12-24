@@ -107,7 +107,11 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	state.stsExists = state.statefulSet.UID != ""
 
 	// fetch endpoints
-	clusterClient, singleClients, err := factory.NewEtcdClientSet(ctx, instance, r.Client)
+	config, err := GetClientConfigFromCluster(ctx, instance, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	clusterClient, singleClients, err := factory.NewEtcdClientSet(*config)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
