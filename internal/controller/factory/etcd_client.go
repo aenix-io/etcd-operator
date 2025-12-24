@@ -43,4 +43,3 @@ func NewEtcdClientSet(cfg clientv3.Config) (*clientv3.Client, []*clientv3.Client
 	}
 	return clusterClient, singleClients, nil
 }
-

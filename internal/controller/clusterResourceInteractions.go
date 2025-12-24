@@ -18,17 +18,19 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
+	"strings"
 	"time"
 
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 	"github.com/aenix-io/etcd-operator/internal/controller/factory"
 	"github.com/aenix-io/etcd-operator/internal/log"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -36,8 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	v1 "k8s.io/api/core/v1"
-	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 func CreateOrUpdateClusterStateConfigMap(
@@ -177,7 +177,7 @@ func UpdatePersistentVolumeClaims(ctx context.Context, cluster *etcdaenixiov1alp
 }
 
 func GetClientConfigFromCluster(
-	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) (*clientv3.Config, error){
+	ctx context.Context, cluster *etcdaenixiov1alpha1.EtcdCluster, cli client.Client) (*clientv3.Config, error) {
 	cfg, err := configFromCluster(ctx, cluster, cli)
 	if err != nil {
 		return nil, err
