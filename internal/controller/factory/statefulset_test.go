@@ -156,7 +156,7 @@ var _ = Describe("StatefulSet factory", func() {
 				},
 			}
 			args := GenerateEtcdArgs(etcdCluster)
-			Expect(args).To(ContainElement("--quota-backend-bytes=0"))
+			Expect(args).To(HaveLen(10))
 		})
 	})
 

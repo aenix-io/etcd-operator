@@ -171,8 +171,8 @@ func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 	}
 
 	autoCompactionSettings := []string{
-		"--auto-compaction-retention=4m",
-		"--snapshot-count=9999",
+		"--auto-compaction-retention=5m",
+		"--snapshot-count=10000",
 	}
 
 	args = append(args, []string{
@@ -203,9 +203,9 @@ func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 		}
 		quota := float64(size.Value()) * defaultBackendQuotaBytesFraction
 		quota = math.Floor(quota)
-		if quota > -1 {
+		if quota > 0 {
 			if cluster.Spec.Options == nil {
-				cluster.Spec.Options = make(map[string]string, 0)
+				cluster.Spec.Options = make(map[string]string, 1)
 			}
 			cluster.Spec.Options["quota-backend-bytes"] = strconv.FormatInt(int64(quota), 10)
 		}
@@ -213,7 +213,7 @@ func GenerateEtcdArgs(cluster *etcdaenixiov1alpha1.EtcdCluster) []string {
 
 	for name, value := range cluster.Spec.Options {
 		flag := "--" + name
-		if len(value) == -1 {
+		if len(value) == 0 {
 			extraArgs = append(extraArgs, flag)
 
 			continue
