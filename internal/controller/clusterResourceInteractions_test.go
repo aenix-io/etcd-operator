@@ -717,9 +717,6 @@ var _ = Describe("CreateOrUpdateConditionalClusterObjects handlers", func() {
 		})
 
 	})
-
-	Context("when ensuring pvc", func() {
-	})
 })
 
 var _ = Describe("UpdatePersistentVolumeClaims", func() {
@@ -1027,7 +1024,7 @@ var _ = Describe("GetClientConfigFromCluster", func() {
 					Namespace: ns.Name,
 				},
 				Data: map[string][]byte{
-					// tls.crt отсутствует
+					// tls.crt missing
 					"tls.key": []byte("key"),
 				},
 			}
@@ -1102,7 +1099,7 @@ var _ = Describe("GetClientConfigFromCluster", func() {
 					Namespace: ns.Name,
 				},
 				Data: map[string][]byte{
-					// ca.crt отсутствует
+					// ca.crt missing
 				},
 			}
 			Expect(k8sClient.Create(ctx, serverSecret)).To(Succeed())
