@@ -722,7 +722,7 @@ var _ = Describe("CreateOrUpdateConditionalClusterObjects handlers", func() {
 var _ = Describe("UpdatePersistentVolumeClaims", func() {
 	var (
 		ns         *corev1.Namespace
-		updPvcCtx        context.Context
+		updPvcCtx  context.Context
 		fakeClient client.Client
 		cluster    *etcdaenixiov1alpha1.EtcdCluster
 	)
