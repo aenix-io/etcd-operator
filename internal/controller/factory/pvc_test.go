@@ -135,7 +135,7 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 			})
 		})
 
-		When("VolumeClaimTemplate name is whitespace only", func() {
+		When("VolumeClaimTemplate name with whitespaces", func() {
 			BeforeEach(func() {
 				cluster.Spec.Storage.VolumeClaimTemplate.Name = " test  "
 			})
