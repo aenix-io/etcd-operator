@@ -129,7 +129,7 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 				cluster.Spec.Storage.VolumeClaimTemplate.Name = "   "
 			})
 
-			It("should return the whitespace name (no trimming)", func() {
+			It("should return default name 'data'", func() {
 				name := GetPVCName(cluster)
 				Expect(name).To(Equal("   "))
 			})

@@ -72,7 +72,7 @@ func TemplateClusterStateConfigMap(
 
 	initialClusterMembers := make([]string, replicas)
 	clusterService := fmt.Sprintf(
-		"%s.%s.svc:2380", 
+		"%s.%s.svc:2380",
 		GetHeadlessServiceName(cluster), cluster.Namespace)
 
 	for i := 0; i < replicas; i++ {

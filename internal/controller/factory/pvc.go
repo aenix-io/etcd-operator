@@ -17,6 +17,8 @@ limitations under the License.
 package factory
 
 import (
+	"strings"
+
 	etcdaenixiov1alpha1 "github.com/aenix-io/etcd-operator/api/v1alpha1"
 )
 
@@ -29,7 +31,7 @@ func PVCLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
 }
 
 func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	if len(cluster.Spec.Storage.VolumeClaimTemplate.Name) > 0 {
+	if len(strings.Trim(cluster.Spec.Storage.VolumeClaimTemplate.Name, " ")) > 0 {
 		return cluster.Spec.Storage.VolumeClaimTemplate.Name
 	}
 	//nolint:goconst
