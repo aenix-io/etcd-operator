@@ -45,7 +45,7 @@ var _ = Describe("StatefulSet factory", func() {
 		DeferCleanup(k8sClient.Delete, ns)
 	})
 
-	Context("PodLabesls", func() {
+	Context("PodLabels", func() {
 		It("should return base labels with custom labels merged", func() {
 			cluster := &etcdaenixiov1alpha1.EtcdCluster{
 				ObjectMeta: metav1.ObjectMeta{
