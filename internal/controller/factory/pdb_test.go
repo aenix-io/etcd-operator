@@ -212,9 +212,8 @@ var _ = Describe("Pdb factory", func() {
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 			defer k8sClient.Delete(ctx, &etcdcluster)
 
-			Expect(func() {
-				GetPdb(ctx, &etcdcluster, k8sClient)
-			}).To(Panic())
+			_, err := GetPdb(ctx, &etcdcluster, k8sClient)
+			Expect(err).Should(HaveOccurred())
 		})
 
 		It("should handle 0 replicas gracefully", func() {
