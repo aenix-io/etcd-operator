@@ -722,7 +722,7 @@ var _ = Describe("CreateOrUpdateConditionalClusterObjects handlers", func() {
 var _ = Describe("UpdatePersistentVolumeClaims", func() {
 	var (
 		ns         *corev1.Namespace
-		ctx        context.Context
+		updPvcCtx        context.Context
 		fakeClient client.Client
 		cluster    *etcdaenixiov1alpha1.EtcdCluster
 	)
@@ -733,7 +733,7 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 				Name: "test-namespace",
 			},
 		}
-		ctx = context.TODO()
+		updPvcCtx = context.TODO()
 		cluster = &etcdaenixiov1alpha1.EtcdCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
@@ -759,9 +759,6 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 	})
 
 	It("should update PVC if the desired size is larger", func() {
-		if cluster == nil {
-			GinkgoWriter.Printf("Cluster in nil!\n")
-		}
 		pvc := &corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "data-test-cluster-0",
@@ -781,7 +778,7 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 				},
 			},
 		}
-		Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+		Expect(fakeClient.Create(updPvcCtx, pvc)).Should(Succeed())
 
 		sc := &storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
@@ -789,12 +786,12 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 			},
 			AllowVolumeExpansion: boolPointer(true),
 		}
-		Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+		Expect(fakeClient.Create(updPvcCtx, sc)).Should(Succeed())
 
-		Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
+		Expect(UpdatePersistentVolumeClaims(updPvcCtx, cluster, fakeClient)).Should(Succeed())
 
 		updatedPVC := &corev1.PersistentVolumeClaim{}
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, updatedPVC)).Should(Succeed())
+		Expect(fakeClient.Get(updPvcCtx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, updatedPVC)).Should(Succeed())
 		Expect(updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("10Gi")))
 	})
 
@@ -818,7 +815,7 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 				},
 			},
 		}
-		Expect(fakeClient.Create(ctx, pvc)).Should(Succeed())
+		Expect(fakeClient.Create(updPvcCtx, pvc)).Should(Succeed())
 
 		sc := &storagev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
@@ -826,11 +823,11 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 			},
 			AllowVolumeExpansion: boolPointer(false),
 		}
-		Expect(fakeClient.Create(ctx, sc)).Should(Succeed())
+		Expect(fakeClient.Create(updPvcCtx, sc)).Should(Succeed())
 
-		Expect(UpdatePersistentVolumeClaims(ctx, cluster, fakeClient)).Should(Succeed())
+		Expect(UpdatePersistentVolumeClaims(updPvcCtx, cluster, fakeClient)).Should(Succeed())
 		unchangedPVC := &corev1.PersistentVolumeClaim{}
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
+		Expect(fakeClient.Get(updPvcCtx, types.NamespacedName{Name: pvc.Name, Namespace: ns.Name}, unchangedPVC)).Should(Succeed())
 		Expect(unchangedPVC.Spec.Resources.Requests[corev1.ResourceStorage]).To(Equal(resource.MustParse("5Gi")))
 	})
 })

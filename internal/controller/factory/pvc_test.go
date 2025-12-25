@@ -131,7 +131,18 @@ var _ = Describe("UpdatePersistentVolumeClaims", func() {
 
 			It("should return default name 'data'", func() {
 				name := GetPVCName(cluster)
-				Expect(name).To(Equal("   "))
+				Expect(name).To(Equal("data"))
+			})
+		})
+
+		When("VolumeClaimTemplate name is whitespace only", func() {
+			BeforeEach(func() {
+				cluster.Spec.Storage.VolumeClaimTemplate.Name = " test  "
+			})
+
+			It("should return trimmed name", func() {
+				name := GetPVCName(cluster)
+				Expect(name).To(Equal("test"))
 			})
 		})
 
