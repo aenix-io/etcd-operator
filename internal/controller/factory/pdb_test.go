@@ -174,6 +174,7 @@ var _ = Describe("Pdb factory", func() {
 
 		It("should have correct selector for etcd pods", func() {
 			etcdcluster.Spec.Replicas = ptr.To(int32(3))
+			etcdcluster.Name = "test-cluster"
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
 
 			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
@@ -209,7 +210,7 @@ var _ = Describe("Pdb factory", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
-			DeferCleanup(k8sClient.Delete, &etcdcluster) 
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
 
 			_, err := GetPdb(ctx, &etcdcluster, k8sClient)
 			Expect(err).Should(HaveOccurred())
@@ -228,7 +229,7 @@ var _ = Describe("Pdb factory", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, &etcdcluster)).Should(Succeed())
-			DeferCleanup(k8sClient.Delete, &etcdcluster) 
+			DeferCleanup(k8sClient.Delete, &etcdcluster)
 
 			pdbObj, err := GetPdb(ctx, &etcdcluster, k8sClient)
 			Expect(err).ShouldNot(HaveOccurred())
