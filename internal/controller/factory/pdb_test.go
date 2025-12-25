@@ -118,7 +118,7 @@ var _ = Describe("Pdb factory", func() {
 		})
 		AfterEach(func() {
 			err := Get(&etcdcluster)()
-			if err != nil {
+			if err == nil {
 				Expect(k8sClient.Delete(ctx, &etcdcluster)).Should(Succeed())
 			}
 		})
