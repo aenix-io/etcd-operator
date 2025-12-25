@@ -31,7 +31,7 @@ func PVCLabels(cluster *etcdaenixiov1alpha1.EtcdCluster) map[string]string {
 }
 
 func GetPVCName(cluster *etcdaenixiov1alpha1.EtcdCluster) string {
-	trimmedName := strings.Trim(cluster.Spec.Storage.VolumeClaimTemplate.Name, " ")
+	trimmedName := strings.TrimSpace(cluster.Spec.Storage.VolumeClaimTemplate.Name)
 	if len(trimmedName) > 0 {
 		return trimmedName
 	}
