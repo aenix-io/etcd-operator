@@ -692,6 +692,181 @@ func TestUpdateStatus_PopulatesMemberIDAndFlipsReady(t *testing.T) {
 	}
 }
 
+// findMemberCondition returns the condition of the given type, or nil.
+func findMemberCondition(member *lll.EtcdMember, condType string) *metav1.Condition {
+	for i := range member.Status.Conditions {
+		if member.Status.Conditions[i].Type == condType {
+			return &member.Status.Conditions[i]
+		}
+	}
+	return nil
+}
+
+// readyMemberWithFake builds a Ready member (Pod ready, etcd knows it by name)
+// plus a fakeEtcd wired to report statusVersion, and runs updateStatus. It
+// drives the Ready path so observeVersion runs.
+func readyMemberWithFake(t *testing.T, specVersion, statusVersion string, statusErr error) *lll.EtcdMember {
+	t.Helper()
+	ctx := context.Background()
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: specVersion, Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodRunning,
+			Conditions: []corev1.PodCondition{readyPodCondition()},
+		},
+	}
+	c, _ := newTestClient(t, member, pod)
+	fe := newFakeEtcd(0xdeadbeef,
+		&etcdserverpb.Member{ID: 0xae36f238164a08ad, Name: "test-0", PeerURLs: []string{peerURL("http", "test-0", "test", "ns")}},
+	)
+	fe.statusVersion = statusVersion
+	fe.statusErr = statusErr
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+	return mustGet(t, c, "test-0", "ns", member)
+}
+
+// TestUpdateStatus_ObservesRunningVersion: once the member is Ready, the
+// controller records the version etcd actually reports into status.version and,
+// when it equals spec.version, marks VersionDrifted=False.
+func TestUpdateStatus_ObservesRunningVersion(t *testing.T) {
+	member := readyMemberWithFake(t, "3.5.17", "3.5.17", nil)
+
+	if member.Status.Version != "3.5.17" {
+		t.Fatalf("status.Version = %q, want 3.5.17", member.Status.Version)
+	}
+	drift := findMemberCondition(member, lll.MemberVersionDrifted)
+	if drift == nil || drift.Status != metav1.ConditionFalse {
+		t.Fatalf("VersionDrifted = %+v, want False", drift)
+	}
+	if drift.Reason != "VersionMatched" {
+		t.Fatalf("VersionDrifted reason = %q, want VersionMatched", drift.Reason)
+	}
+}
+
+// TestUpdateStatus_VersionDriftDetected: when etcd reports a version different
+// from the intended spec.version, status.version reflects reality and
+// VersionDrifted flips True (the signal the operator surfaces but does not act
+// on).
+func TestUpdateStatus_VersionDriftDetected(t *testing.T) {
+	member := readyMemberWithFake(t, "3.5.17", "3.6.4", nil)
+
+	if member.Status.Version != "3.6.4" {
+		t.Fatalf("status.Version = %q, want observed 3.6.4", member.Status.Version)
+	}
+	drift := findMemberCondition(member, lll.MemberVersionDrifted)
+	if drift == nil || drift.Status != metav1.ConditionTrue {
+		t.Fatalf("VersionDrifted = %+v, want True", drift)
+	}
+	if drift.Reason != "VersionMismatch" {
+		t.Fatalf("VersionDrifted reason = %q, want VersionMismatch", drift.Reason)
+	}
+	// Readiness must be unaffected by drift.
+	if ready := findMemberCondition(member, lll.MemberReady); ready == nil || ready.Status != metav1.ConditionTrue {
+		t.Fatalf("Ready condition = %+v, want True", ready)
+	}
+}
+
+// TestUpdateStatus_NoDriftWhenIntentUnknown: when spec.version is empty (a
+// scale-up member stamped from a transiently-unlatched Observed.Version), the
+// observed running version is still recorded, but VersionDrifted must NOT be
+// set — unknown intent is treated as "no drift", not a spurious mismatch.
+func TestUpdateStatus_NoDriftWhenIntentUnknown(t *testing.T) {
+	member := readyMemberWithFake(t, "", "3.6.4", nil)
+
+	if member.Status.Version != "3.6.4" {
+		t.Fatalf("status.Version = %q, want observed 3.6.4", member.Status.Version)
+	}
+	if drift := findMemberCondition(member, lll.MemberVersionDrifted); drift != nil {
+		t.Fatalf("VersionDrifted = %+v, want unset when spec.version is empty", drift)
+	}
+}
+
+// TestUpdateStatus_VersionDriftResolves: a member that was drifted
+// (VersionDrifted=True) and then comes up on the intended version must flip the
+// condition back to False/VersionMatched and record the new observed version.
+func TestUpdateStatus_VersionDriftResolves(t *testing.T) {
+	ctx := context.Background()
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		// Steady-state Ready (MemberID set) with a prior drifted observation.
+		Spec: lll.EtcdMemberSpec{ClusterName: "test", Version: "3.6.4", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+		Status: lll.EtcdMemberStatus{
+			MemberID: "ae36f238164a08ad",
+			Version:  "3.5.17",
+			Conditions: []metav1.Condition{{
+				Type: lll.MemberVersionDrifted, Status: metav1.ConditionTrue, Reason: "VersionMismatch",
+				LastTransitionTime: metav1.Now(), Message: "was drifted",
+			}},
+		},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodRunning,
+			Conditions: []corev1.PodCondition{readyPodCondition()},
+		},
+	}
+	c, _ := newTestClient(t, member, pod)
+	fe := newFakeEtcd(0xdeadbeef)
+	fe.statusVersion = "3.6.4" // member has caught up to intent
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+	member = mustGet(t, c, "test-0", "ns", member)
+
+	if member.Status.Version != "3.6.4" {
+		t.Fatalf("status.Version = %q, want 3.6.4", member.Status.Version)
+	}
+	drift := findMemberCondition(member, lll.MemberVersionDrifted)
+	if drift == nil || drift.Status != metav1.ConditionFalse || drift.Reason != "VersionMatched" {
+		t.Fatalf("VersionDrifted = %+v, want False/VersionMatched after catch-up", drift)
+	}
+}
+
+// TestUpdateStatus_VersionObservationErrorIsNonFatal: a failing Status RPC must
+// leave the previously observed version intact and must not disturb readiness —
+// version observation is best-effort.
+func TestUpdateStatus_VersionObservationErrorIsNonFatal(t *testing.T) {
+	ctx := context.Background()
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		// MemberID pre-set → steady-state Ready path (default case), so
+		// observeVersion runs even though discovery is skipped.
+		Spec:   lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+		Status: lll.EtcdMemberStatus{MemberID: "ae36f238164a08ad", Version: "3.5.17"},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodRunning,
+			Conditions: []corev1.PodCondition{readyPodCondition()},
+		},
+	}
+	c, _ := newTestClient(t, member, pod)
+	fe := newFakeEtcd(0xdeadbeef)
+	fe.statusErr = errors.New("dial timeout")
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+	member = mustGet(t, c, "test-0", "ns", member)
+
+	if member.Status.Version != "3.5.17" {
+		t.Fatalf("status.Version = %q, want prior value 3.5.17 preserved on Status error", member.Status.Version)
+	}
+	if ready := findMemberCondition(member, lll.MemberReady); ready == nil || ready.Status != metav1.ConditionTrue {
+		t.Fatalf("Ready condition = %+v, want True despite Status error", ready)
+	}
+}
+
 // TestEtcdContainerStuck pins the self-heal detection: an etcd container is
 // "stuck" only when it is not ready, has restarted at least the threshold, and
 // was not OOMKilled — and never while the Pod is itself being deleted.

@@ -35,6 +35,13 @@ type EtcdClusterClient interface {
 	MemberPromote(ctx context.Context, id uint64) (*clientv3.MemberPromoteResponse, error)
 	MemberRemove(ctx context.Context, id uint64) (*clientv3.MemberRemoveResponse, error)
 
+	// Status returns a single endpoint's server status, including the etcd
+	// version it is actually running (StatusResponse.Version). Used by the
+	// member controller to observe the running version into
+	// EtcdMember.status.version. *clientv3.Client satisfies this via its
+	// embedded Maintenance interface.
+	Status(ctx context.Context, endpoint string) (*clientv3.StatusResponse, error)
+
 	// Auth surface — used by reconcileAuth to provision the single root
 	// user/role and turn on authentication. The "root" role is built into
 	// etcd, so a RoleAdd is not needed: UserAdd("root", …) +
