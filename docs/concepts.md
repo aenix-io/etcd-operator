@@ -434,6 +434,12 @@ The cluster surfaces three conditions: `Available`, `Progressing`, `Degraded`. T
 
 All conditions carry `observedGeneration` so consumers can tell whether a condition reflects the latest spec. Status writes are gated on "did anything actually change" — the operator does not bump `resourceVersion` every 30 s just because of the periodic reconcile.
 
+### Observed member version
+
+`spec.version` is *intent* — it pins the image tag (`v<version>`) and drives the restore version-compat gate. What etcd is **actually running** is a separate, observed fact. Once a member's Pod is Ready, the member controller reads the running version from that member's own etcd endpoint (the Maintenance `Status` RPC) and records it in `EtcdMember.status.version` (surfaced as the `Running` print column). The read is best-effort: a dial or RPC failure leaves the previous value in place and never affects `Ready` — readiness stays driven by Pod readiness and member-ID discovery alone.
+
+When the observed version diverges from the member's intended `spec.version`, the member surfaces `VersionDrifted=True/VersionMismatch`; when they agree it is `False/VersionMatched`; when intent is not yet known (`spec.version` empty) the condition is left unset. This condition is **informational only** — the operator does not act on it (it never keys reconciliation off the observed value). It exists so intent-vs-reality drift is *detectable rather than assumed*, which is the prerequisite for safely reconsidering a per-cluster image/version override.
+
 ## Snapshots & restore
 
 Two surfaces, one agent. The operator image doubles as a snapshot agent: `main.go` dispatches on `os.Args[1]` so `manager snapshot-agent` / `manager restore-agent` run the agent and exit, while a bare `manager` runs the controller. This keeps one binary and one image — no separate agent build — and means the agent always matches the operator it ships with.

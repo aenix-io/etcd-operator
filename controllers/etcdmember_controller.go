@@ -1040,6 +1040,10 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 		}
 	}
 
+	// ready tracks whether this reconcile settled on MemberReady=True; only
+	// then do we bother observing the running etcd version (below).
+	ready := false
+
 	switch {
 	case !podReady:
 		// Self-heal an unrecoverable member. A non-bootstrap PVC member whose
@@ -1073,6 +1077,7 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 		if id, err := r.discoverMemberID(ctx, member); err == nil {
 			member.Status.MemberID = fmt.Sprintf("%016x", id)
 			changed = true
+			ready = true
 			if setMemberCondition(member, lll.MemberReady, metav1.ConditionTrue, "PodReady",
 				"etcd member is ready") {
 				changed = true
@@ -1084,9 +1089,43 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 			}
 		}
 	default:
+		ready = true
 		if setMemberCondition(member, lll.MemberReady, metav1.ConditionTrue, "PodReady",
 			"etcd member is ready") {
 			changed = true
+		}
+	}
+
+	// Observe the running etcd version once the member is Ready and record it
+	// in status, plus surface a VersionDrifted condition when what etcd
+	// actually runs diverges from the intended spec.version. Observation is
+	// best-effort (observeVersion never errors); the drift condition is
+	// informational — the operator does not act on it.
+	if ready {
+		if v := r.observeVersion(ctx, member); v != member.Status.Version {
+			member.Status.Version = v
+			changed = true
+		}
+		// Only evaluate drift once we know BOTH sides: the observed running
+		// version and a non-empty intended spec.version. spec.version is
+		// propagated from cluster.Status.Observed.Version for scale-up members,
+		// which is transiently "" before the first latch — treat unknown intent
+		// as "no drift" rather than flagging a spurious mismatch.
+		if member.Status.Version != "" && member.Spec.Version != "" {
+			condStatus := metav1.ConditionFalse
+			reason := "VersionMatched"
+			msg := fmt.Sprintf("running etcd version %q matches intended spec.version", member.Status.Version)
+			if member.Status.Version != member.Spec.Version {
+				condStatus = metav1.ConditionTrue
+				reason = "VersionMismatch"
+				msg = fmt.Sprintf("running etcd version %q does not match intended spec.version %q",
+					member.Status.Version, member.Spec.Version)
+				log.Info("etcd member version drift detected",
+					"running", member.Status.Version, "intended", member.Spec.Version)
+			}
+			if setMemberCondition(member, lll.MemberVersionDrifted, condStatus, reason, msg) {
+				changed = true
+			}
 		}
 	}
 
@@ -1162,28 +1201,9 @@ func (r *EtcdMemberReconciler) discoverMemberID(ctx context.Context, member *lll
 		endpoints = append(endpoints, clientURL(scheme, member.Name, memberServiceName(member), member.Namespace))
 	}
 
-	// Build the operator-side dial config. Only TLS clusters need the parent
-	// EtcdCluster fetched: auth requires client TLS (CEL-enforced), which is
-	// propagated to member.Spec.TLS.ClientServerSecretRef, so a member with
-	// no client TLS can never have auth enabled — its dial is plaintext and
-	// anonymous, exactly as before. When TLS is set we fetch the cluster once
-	// and derive both the TLS config and the credentials from it (after auth
-	// is enabled the voter peers we dial here reject anonymous access).
-	var tlsCfg *tls.Config
-	var user, pass string
-	if member.Spec.TLS != nil && member.Spec.TLS.ClientServerSecretRef != nil {
-		cluster, err := r.clusterFor(ctx, member)
-		if err != nil {
-			return 0, err
-		}
-		tlsCfg, err = buildOperatorTLSConfig(ctx, r.Client, cluster)
-		if err != nil {
-			return 0, err
-		}
-		user, pass, _, err = resolveEtcdCredentials(ctx, r.Client, cluster)
-		if err != nil {
-			return 0, err
-		}
+	tlsCfg, user, pass, err := r.etcdDialConfig(ctx, member)
+	if err != nil {
+		return 0, err
 	}
 	c, err := r.EtcdClientFactory(ctx, endpoints, tlsCfg, user, pass)
 	if err != nil {
@@ -1212,6 +1232,71 @@ func (r *EtcdMemberReconciler) discoverMemberID(ctx context.Context, member *lll
 		}
 	}
 	return 0, fmt.Errorf("member %q not found in etcd member list", member.Name)
+}
+
+// etcdDialConfig builds the operator-side dial config for reaching this
+// member's etcd cluster: the TLS config and the auth credentials. Only TLS
+// clusters need the parent EtcdCluster fetched: auth requires client TLS
+// (CEL-enforced), which is propagated to member.Spec.TLS.ClientServerSecretRef,
+// so a member with no client TLS can never have auth enabled — its dial is
+// plaintext and anonymous. When TLS is set we fetch the cluster once and
+// derive both the TLS config and the credentials from it (after auth is
+// enabled the peers we dial reject anonymous access). Returns (nil, "", "")
+// for plaintext, anonymous clusters.
+func (r *EtcdMemberReconciler) etcdDialConfig(ctx context.Context, member *lll.EtcdMember) (*tls.Config, string, string, error) {
+	if member.Spec.TLS == nil || member.Spec.TLS.ClientServerSecretRef == nil {
+		return nil, "", "", nil
+	}
+	cluster, err := r.clusterFor(ctx, member)
+	if err != nil {
+		return nil, "", "", err
+	}
+	tlsCfg, err := buildOperatorTLSConfig(ctx, r.Client, cluster)
+	if err != nil {
+		return nil, "", "", err
+	}
+	user, pass, _, err := resolveEtcdCredentials(ctx, r.Client, cluster)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return tlsCfg, user, pass, nil
+}
+
+// observeVersion reads the etcd version this member is actually running from
+// its own etcd endpoint (the Maintenance Status API, StatusResponse.Version)
+// and returns it. Best-effort: on any dial/RPC failure it logs and returns the
+// member's previous status.Version unchanged, so version observation never
+// fails the reconcile or affects readiness — Ready stays driven purely by Pod
+// readiness and MemberID discovery. The dial targets this member's own client
+// URL (Status is per-endpoint, so it reports this member's version, not a
+// peer's).
+func (r *EtcdMemberReconciler) observeVersion(ctx context.Context, member *lll.EtcdMember) string {
+	log := log.FromContext(ctx)
+	prev := member.Status.Version
+
+	self := clientURL(memberClientScheme(member), member.Name, memberServiceName(member), member.Namespace)
+
+	tlsCfg, user, pass, err := r.etcdDialConfig(ctx, member)
+	if err != nil {
+		log.V(1).Info("skipping version observation: cannot build dial config", "error", err)
+		return prev
+	}
+	c, err := r.EtcdClientFactory(ctx, []string{self}, tlsCfg, user, pass)
+	if err != nil {
+		log.V(1).Info("skipping version observation: cannot dial etcd", "error", err)
+		return prev
+	}
+	defer c.Close()
+
+	statusCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := c.Status(statusCtx, self)
+	if err != nil {
+		log.V(1).Info("skipping version observation: Status RPC failed", "error", err)
+		return prev
+	}
+	return resp.Version
 }
 
 // ── Manager wiring ───────────────────────────────────────────────────────

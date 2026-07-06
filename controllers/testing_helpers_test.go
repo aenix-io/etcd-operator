@@ -43,6 +43,11 @@ type fakeEtcd struct {
 	removeErr  error
 	promoteErr error
 
+	// statusVersion is the etcd server version Status reports (observed
+	// running version); statusErr, when set, fails the Status RPC.
+	statusVersion string
+	statusErr     error
+
 	addCalls        []string
 	addLearnerCalls []string
 	promoteCalls    []uint64
@@ -174,6 +179,16 @@ func (f *fakeEtcd) UserGrantRole(_ context.Context, user, role string) (*clientv
 	}
 	f.grantCalls = append(f.grantCalls, [2]string{user, role})
 	return &clientv3.AuthUserGrantRoleResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
+}
+
+func (f *fakeEtcd) Status(_ context.Context, _ string) (*clientv3.StatusResponse, error) {
+	if f.statusErr != nil {
+		return nil, f.statusErr
+	}
+	return &clientv3.StatusResponse{
+		Header:  &etcdserverpb.ResponseHeader{ClusterId: f.clusterID},
+		Version: f.statusVersion,
+	}, nil
 }
 
 func (f *fakeEtcd) Close() error { f.closed = true; return nil }

@@ -63,6 +63,12 @@ const (
 	MemberJoined = "Joined"
 	// MemberReady indicates the member is healthy and serving requests.
 	MemberReady = "Ready"
+	// MemberVersionDrifted is True when the version etcd actually reports
+	// running (status.version, observed from the endpoint) does not match the
+	// version the operator asked this member to run (spec.version). It makes
+	// intent-vs-reality version drift detectable rather than assumed; the
+	// operator does not act on it (spec.version still drives the image tag).
+	MemberVersionDrifted = "VersionDrifted"
 )
 
 // EtcdMemberSpec defines the desired state of a single etcd member.
@@ -223,6 +229,18 @@ type EtcdMemberStatus struct {
 	// +optional
 	PVCName string `json:"pvcName,omitempty"`
 
+	// Version is the etcd server version this member is actually running,
+	// observed at runtime from the member's own etcd endpoint via the
+	// Maintenance Status API (StatusResponse.Version) — i.e. what etcd
+	// reports, as opposed to spec.version, which is the intended/target
+	// version the operator asks for (and pins the image tag to). Empty until
+	// the member's Pod is Ready and the operator has successfully queried it.
+	// This observed value is the source of truth for detecting version drift
+	// between intent and reality (see the VersionDrifted condition); the
+	// observation is best-effort and never gates readiness.
+	// +optional
+	Version string `json:"version,omitempty"`
+
 	// Conditions represent the latest available observations of the member's state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -233,6 +251,7 @@ type EtcdMemberStatus struct {
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterName`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
+// +kubebuilder:printcolumn:name="Running",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
