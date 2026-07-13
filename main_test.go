@@ -13,7 +13,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
 func TestDiscoverClusterDomain(t *testing.T) {
@@ -103,6 +106,61 @@ nameserver 10.96.0.10
 func TestDiscoverClusterDomain_MissingFile(t *testing.T) {
 	if got := discoverClusterDomain("/no/such/file/anywhere"); got != "" {
 		t.Fatalf("missing file: got %q; want empty", got)
+	}
+}
+
+func TestWatchNamespaceCacheOptions(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want map[string]cache.Config
+	}{
+		{
+			name: "empty means all namespaces",
+			raw:  "",
+			want: nil,
+		},
+		{
+			name: "whitespace only means all namespaces",
+			raw:  "   ",
+			want: nil,
+		},
+		{
+			name: "separators only means all namespaces",
+			raw:  " , ,, ",
+			want: nil,
+		},
+		{
+			name: "single namespace",
+			raw:  "tenant-a",
+			want: map[string]cache.Config{"tenant-a": {}},
+		},
+		{
+			name: "multiple namespaces",
+			raw:  "tenant-a,tenant-b",
+			want: map[string]cache.Config{"tenant-a": {}, "tenant-b": {}},
+		},
+		{
+			name: "whitespace and empty entries are dropped",
+			raw:  " tenant-a , ,tenant-b, ",
+			want: map[string]cache.Config{"tenant-a": {}, "tenant-b": {}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := watchNamespaceCacheOptions(tc.raw)
+			if tc.want == nil {
+				// Zero value keeps the unset path identical to the old config.
+				if !reflect.DeepEqual(got, cache.Options{}) {
+					t.Fatalf("watchNamespaceCacheOptions(%q) = %+v; want zero cache.Options", tc.raw, got)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got.DefaultNamespaces, tc.want) {
+				t.Fatalf("watchNamespaceCacheOptions(%q).DefaultNamespaces = %+v; want %+v", tc.raw, got.DefaultNamespaces, tc.want)
+			}
+		})
 	}
 }
 

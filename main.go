@@ -35,6 +35,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -115,6 +116,7 @@ func main() {
 	var clusterDomain string
 	var operatorImage string
 	var etcdImageRepository string
+	var watchNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -139,6 +141,8 @@ func main() {
 			"air-gapped deployments at a mirror once; the tag is always v<spec.version>. "+
 			"Defaults to $ETCD_IMAGE_REPOSITORY; when empty the built-in "+
 			"quay.io/coreos/etcd is used.")
+	flag.StringVar(&watchNamespace, "watch-namespace", os.Getenv("WATCH_NAMESPACE"),
+		"Comma-separated namespaces to watch. Defaults to $WATCH_NAMESPACE; empty means all.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -156,8 +160,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	cacheOptions := watchNamespaceCacheOptions(watchNamespace)
+	if len(cacheOptions.DefaultNamespaces) > 0 {
+		setupLog.Info("scoping cache and watches to namespaces", "watchNamespace", watchNamespace)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
+		Cache:                  cacheOptions,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		WebhookServer:          webhook.NewServer(webhook.Options{Port: 9443}),
 		HealthProbeBindAddress: probeAddr,
@@ -287,6 +297,21 @@ func discoverClusterDomain(path string) string {
 		}
 	}
 	return ""
+}
+
+// watchNamespaceCacheOptions scopes the manager cache to a comma-separated
+// namespace list. Empty input means all namespaces (zero cache.Options).
+func watchNamespaceCacheOptions(watchNamespace string) cache.Options {
+	namespaces := map[string]cache.Config{}
+	for _, ns := range strings.Split(watchNamespace, ",") {
+		if ns = strings.TrimSpace(ns); ns != "" {
+			namespaces[ns] = cache.Config{}
+		}
+	}
+	if len(namespaces) == 0 {
+		return cache.Options{}
+	}
+	return cache.Options{DefaultNamespaces: namespaces}
 }
 
 // detectCertManager probes the apiserver's discovery API for the

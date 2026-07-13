@@ -59,6 +59,10 @@ spec:
         # the tag is always v<spec.version>.
         - name: ETCD_IMAGE_REPOSITORY
           value: {{ .Values.etcdImage.repository | quote }}
+        {{- with .Values.manager.watchNamespaces }}
+        - name: WATCH_NAMESPACE
+          value: {{ if kindIs "slice" . }}{{ join "," . | quote }}{{ else }}{{ . | quote }}{{ end }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /healthz

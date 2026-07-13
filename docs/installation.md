@@ -97,6 +97,7 @@ Common values (`--set key=value`, or a `-f my-values.yaml`):
 | `metrics.serviceMonitor.enabled` | `false` | Create a prometheus-operator `ServiceMonitor` for the metrics endpoint (needs the `monitoring.coreos.com` CRDs and `kubeRbacProxy.enabled`). |
 | `crds.enabled` / `crds.keep` | `true` / `true` | Render the CRDs with the release / annotate them so uninstall keeps them. |
 | `manager.resources` | 10m/64Mi → 500m/128Mi | Manager container requests/limits. |
+| `manager.watchNamespaces` | `[]` | Namespaces the manager watches. Empty = all (see [RBAC](#rbac)). |
 | `imagePullSecrets` | `[]` | Pull secrets for the **operator's own** image (private registry mirror). |
 | `etcdImage.repository` | `quay.io/coreos/etcd` | Operator-wide default **etcd** image repo for member Pods (always wired into `ETCD_IMAGE_REPOSITORY`). Repoint at an air-gapped mirror once; the tag is always `v<spec.version>`. |
 
@@ -280,7 +281,7 @@ All pinned in `go.mod`, `Dockerfile`, and `Makefile`.
 
 The operator runs as a ClusterRole — it needs to watch `EtcdCluster` and `EtcdMember` across all namespaces, plus create/delete the per-member Pods, PVCs, and Services in each user namespace. The rules are generated from the `+kubebuilder:rbac` markers (by `make manifests`) into `charts/etcd-operator/files/manager-role-rules.yaml` and pulled into the chart's templated ClusterRole — don't hand-edit; edit the markers and regenerate.
 
-Single-namespace scoping is not currently exposed: `main.go` does not wire a namespace flag into the manager's `Cache.DefaultNamespaces`, so the manager always watches all namespaces. Limiting RBAC alone (ClusterRole → Role) is not sufficient — the manager will still attempt list/watch across the cluster and the API server will deny it. Scoped deployment is a follow-up.
+By default the manager watches all namespaces. To scope it, set `--watch-namespace` / `WATCH_NAMESPACE` (comma-separated), or `--set 'manager.watchNamespaces={tenant-a,tenant-b}'` via the chart. Scoping bounds cache memory on large clusters. RBAC must still permit the watches; the chart's ClusterRole does. Switching to namespaced `Role`s also requires `kubeRbacProxy.enabled=false` — the proxy's TokenReview/SubjectAccessReview permissions are cluster-scoped.
 
 ## Networking
 
