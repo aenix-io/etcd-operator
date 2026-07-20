@@ -10,7 +10,12 @@ You may obtain a copy of the License at
 
 package agent
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+)
 
 func TestObjectKey(t *testing.T) {
 	cases := []struct {
@@ -28,6 +33,32 @@ func TestObjectKey(t *testing.T) {
 		if got := d.objectKey(tc.name); got != tc.want {
 			t.Errorf("objectKey(prefix=%q, name=%q) = %q, want %q", tc.prefix, tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestS3ClientChecksumWhenRequired(t *testing.T) {
+	d := destination{
+		kind:        "s3",
+		s3Endpoint:  "https://s3.example.internal",
+		s3PathStyle: true,
+	}
+	c, err := d.s3Client(context.Background())
+	if err != nil {
+		t.Fatalf("s3Client: %v", err)
+	}
+	o := c.Options()
+	// Non-AWS S3-compatible backends (Ceph RGW, some MinIO/R2) reject the
+	// aws-sdk-go-v2 default (WhenSupported) flexible checksum on PutObject, so
+	// the agent must only add a checksum when the operation requires one.
+	if o.RequestChecksumCalculation != aws.RequestChecksumCalculationWhenRequired {
+		t.Errorf("RequestChecksumCalculation = %v, want WhenRequired (%v)",
+			o.RequestChecksumCalculation, aws.RequestChecksumCalculationWhenRequired)
+	}
+	if !o.UsePathStyle {
+		t.Error("UsePathStyle = false, want true")
+	}
+	if o.BaseEndpoint == nil || *o.BaseEndpoint != d.s3Endpoint {
+		t.Errorf("BaseEndpoint = %v, want %q", o.BaseEndpoint, d.s3Endpoint)
 	}
 }
 

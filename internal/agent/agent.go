@@ -166,6 +166,18 @@ func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 			o.BaseEndpoint = aws.String(d.s3Endpoint)
 		}
 		o.UsePathStyle = d.s3PathStyle
+		// Only add a request checksum when the operation actually requires one.
+		//
+		// Since early 2025, aws-sdk-go-v2 defaults RequestChecksumCalculation to
+		// WhenSupported, which attaches a CRC32 to every PutObject. Many
+		// S3-compatible backends that are not AWS S3 (Ceph RGW, some MinIO and
+		// Cloudflare R2 versions, etc.) reject the accompanying header with
+		// "InvalidArgument: x-amz-content-sha256 must be UNSIGNED-PAYLOAD,
+		// STREAMING-AWS4-HMAC-SHA256-PAYLOAD or a valid sha256 value", so the
+		// snapshot upload fails against them. WhenRequired keeps uploads working
+		// on those backends and is equally accepted by real AWS S3, which does
+		// not require a checksum on a plain PutObject.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	}), nil
 }
 
