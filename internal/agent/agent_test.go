@@ -12,6 +12,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -43,8 +44,8 @@ func TestObjectKey(t *testing.T) {
 // region so signing never reaches the EC2/ECS metadata endpoint.
 func hermeticAWSEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("AWS_CONFIG_FILE", "/dev/null")
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
+	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
 	t.Setenv("AWS_PROFILE", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
@@ -77,12 +78,10 @@ func TestS3ClientChecksumWhenRequired(t *testing.T) {
 		t.Errorf("RequestChecksumCalculation = %v, want WhenRequired (%v)",
 			o.RequestChecksumCalculation, aws.RequestChecksumCalculationWhenRequired)
 	}
-	// The response side is deliberately left at the SDK default (WhenSupported):
-	// it validates only a checksum the backend actually returns and skips composite
-	// (multipart) checksums, so it neither breaks S3-compatible backends nor needs
-	// pinning — and it is the only server-side integrity signal the restore path
-	// has (downloadS3 runs with SkipHashCheck). This asserts we do NOT pin it to
-	// WhenRequired; doing so would silently discard that signal.
+	// The response side stays at the SDK default (WhenSupported): it validates only
+	// a checksum the backend actually returns and skips composite (multipart) ones,
+	// so it cannot break an S3-compatible backend and needs no pinning. This asserts
+	// we do NOT pin it, so a future "symmetry" change has to justify itself.
 	if o.ResponseChecksumValidation != aws.ResponseChecksumValidationWhenSupported {
 		t.Errorf("ResponseChecksumValidation = %v, want the SDK default WhenSupported (%v)",
 			o.ResponseChecksumValidation, aws.ResponseChecksumValidationWhenSupported)

@@ -220,8 +220,8 @@ func TestUploadS3StreamMultipartNoChecksumTrailer(t *testing.T) {
 // than multipart. There the s3.Client option (not the uploader's) is the only
 // thing keeping the CRC32 trailer off — so this pins the client-side setting
 // end-to-end. A struct-field check on s3.Options (agent_test.go) stays green even
-// when the real request carries the trailer, which is exactly how commit 61144d4
-// looked correct while every real snapshot was broken.
+// when the real request carries the trailer — that gap is how a client-only pin
+// can look correct while every upload is still broken on the wire.
 func TestUploadS3StreamSinglePartNoChecksumTrailer(t *testing.T) {
 	hermeticAWSEnv(t)
 	endpoint, captured := startS3CaptureServer(t)

@@ -163,11 +163,9 @@ func (d destination) localPath(name string) string {
 //     WhenSupported and never reads the client option, so setting only the client
 //     option leaves the multipart path broken.
 //
-// Both sites are load-bearing — the client option for the single-part path and
-// HeadObject, the uploader option for multipart parts — and the two MUST agree.
-// Deriving both from this single constant is what keeps them from silently
-// drifting (delete either site and the RGW failure returns — for the multipart
-// case, invisibly).
+// Both sites are load-bearing and MUST agree; deriving them from this one
+// constant is what keeps them from drifting. Delete either and the RGW failure
+// returns — for the multipart case, invisibly.
 //
 // Why WhenRequired: since early 2025 aws-sdk-go-v2 defaults to WhenSupported,
 // which stamps a CRC32 on every PutObject/UploadPart — over HTTPS that rides as a
@@ -196,23 +194,21 @@ func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 			o.BaseEndpoint = aws.String(d.s3Endpoint)
 		}
 		o.UsePathStyle = d.s3PathStyle
-		// Request-checksum policy for this client. This is only ONE of the two
-		// sites that need it — the transfer manager carries its own copy for the
-		// multipart path (see s3RequestChecksumCalculation and newSnapshotUploader).
-		// LoadDefaultConfig would otherwise populate this from
-		// AWS_REQUEST_CHECKSUM_CALCULATION, but the agent's environment is a closed
-		// list built by the controller (no operator can set that var on the Pod),
-		// so we pin it here unconditionally rather than leave an escape hatch that
-		// nothing can reach.
-		//
-		// The response side (ResponseChecksumValidation) is deliberately left at
-		// the SDK default (WhenSupported): it validates a checksum only when the
-		// backend returns one and skips composite (multipart) checksums, so it does
-		// not break S3-compatible backends — and it is the only server-side
-		// integrity signal the restore path has, since downloadS3 runs with
-		// SkipHashCheck. Pinning it to WhenRequired would silently discard that
-		// signal, so we don't.
+		// One of the two sites that must pin this; see
+		// s3RequestChecksumCalculation for the full rationale and
+		// newSnapshotUploader for the other. Pinned unconditionally because
+		// LoadDefaultConfig would otherwise take it from
+		// AWS_REQUEST_CHECKSUM_CALCULATION, and the agent's environment is a closed
+		// list built by the controller — nothing can set that var on the Pod.
 		o.RequestChecksumCalculation = s3RequestChecksumCalculation
+		// ResponseChecksumValidation is deliberately left at the SDK default
+		// (WhenSupported): it validates only a checksum the backend actually
+		// returns and skips composite (multipart) ones, so it cannot break an
+		// S3-compatible backend. It is not an integrity guarantee for restore
+		// either — WhenRequired above means the agent stores no checksum, so for
+		// objects it wrote there is nothing to validate and the setting is inert.
+		// Left alone because there is no reason to change it, not because it
+		// protects anything.
 	}), nil
 }
 
