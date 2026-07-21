@@ -148,10 +148,37 @@ func (d destination) localPath(name string) string {
 	return base + "/" + name + ".db"
 }
 
+// snapshotChecksumCalculation is the S3 request-checksum policy the agent applies
+// on the upload path. It has to be set in TWO independent places, because the
+// snapshot upload touches two SDK layers that each carry their own copy of this
+// knob and do NOT share it:
+//
+//   - the s3.Client option (s3Client, below) — covers the single-part PutObject
+//     the transfer manager issues for a sub-5-MiB body, plus HeadObject;
+//   - the transfer manager's own Uploader.RequestChecksumCalculation
+//     (newSnapshotUploader in snapshot.go) — covers the multipart parts the
+//     manager issues for a body over its 5-MiB part size, which is every real
+//     etcd snapshot. manager.NewUploader hardcodes this field to WhenSupported
+//     and never reads the client option, so setting only the client option
+//     leaves the multipart path — the one that matters — broken.
+//
+// The two are separate knobs that MUST agree; deriving both from this single
+// constant is what keeps them from silently drifting (delete either site and the
+// failure returns — for the multipart case, invisibly).
+//
+// Why WhenRequired: since early 2025 aws-sdk-go-v2 defaults to WhenSupported,
+// which stamps a CRC32 on every PutObject/UploadPart — over HTTPS that rides as a
+// STREAMING-UNSIGNED-PAYLOAD-TRAILER. Ceph RGW (the confirmed case) rejects the
+// accompanying header with "InvalidArgument: x-amz-content-sha256 must be
+// UNSIGNED-PAYLOAD, STREAMING-AWS4-HMAC-SHA256-PAYLOAD or a valid sha256 value".
+// WhenRequired attaches a checksum only when the operation mandates one (none for
+// a plain PutObject or UploadPart) and is equally accepted by real AWS S3.
+const snapshotChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+
 // s3Client builds an S3 client honoring a custom endpoint, region and
 // path-style addressing. Credentials come from AWS_ACCESS_KEY_ID /
 // AWS_SECRET_ACCESS_KEY in the environment (loaded by the default config
-// chain).
+// chain). Used by BOTH the upload (snapshot) and download (restore) paths.
 func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 	region := d.s3Region
 	if region == "" {
@@ -166,18 +193,20 @@ func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 			o.BaseEndpoint = aws.String(d.s3Endpoint)
 		}
 		o.UsePathStyle = d.s3PathStyle
-		// Only add a request checksum when the operation actually requires one.
-		//
-		// Since early 2025, aws-sdk-go-v2 defaults RequestChecksumCalculation to
-		// WhenSupported, which attaches a CRC32 to every PutObject. Many
-		// S3-compatible backends that are not AWS S3 (Ceph RGW, some MinIO and
-		// Cloudflare R2 versions, etc.) reject the accompanying header with
-		// "InvalidArgument: x-amz-content-sha256 must be UNSIGNED-PAYLOAD,
-		// STREAMING-AWS4-HMAC-SHA256-PAYLOAD or a valid sha256 value", so the
-		// snapshot upload fails against them. WhenRequired keeps uploads working
-		// on those backends and is equally accepted by real AWS S3, which does
-		// not require a checksum on a plain PutObject.
-		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		// Request-checksum policy for this client. This is only ONE of the two
+		// sites that need it — the transfer manager carries its own copy for the
+		// multipart path (see snapshotChecksumCalculation and newSnapshotUploader).
+		// LoadDefaultConfig would otherwise populate this from
+		// AWS_REQUEST_CHECKSUM_CALCULATION, but the agent's environment is a closed
+		// list built by the controller (no operator can set that var on the Pod),
+		// so we pin it here unconditionally rather than leave an escape hatch that
+		// nothing can reach.
+		o.RequestChecksumCalculation = snapshotChecksumCalculation
+		// Symmetric response-side setting for the restore/download path (this
+		// client is shared with downloadS3): don't demand a response checksum the
+		// backend may not emit — the same AWS-default-vs-S3-compatible mismatch
+		// class. Harmless on the upload path, which issues no checksum-bearing GET.
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	}), nil
 }
 

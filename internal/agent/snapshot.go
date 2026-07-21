@@ -237,11 +237,25 @@ func uploadS3Stream(ctx context.Context, dest destination, key string, body io.R
 	if uid != "" {
 		metadata = map[string]string{snapshotUIDMetaKey: uid} // stamp ownership so a retry recognizes its own object
 	}
-	return uploadStreamHashed(ctx, manager.NewUploader(client), &s3.PutObjectInput{
+	return uploadStreamHashed(ctx, newSnapshotUploader(client), &s3.PutObjectInput{
 		Bucket:   aws.String(dest.s3Bucket),
 		Key:      aws.String(key),
 		Metadata: metadata,
 	}, body)
+}
+
+// newSnapshotUploader builds the S3 transfer manager for snapshot uploads.
+//
+// manager.Uploader carries its OWN RequestChecksumCalculation (NewUploader
+// hardcodes it to WhenSupported) and never consults the s3.Client option, so the
+// multipart path — taken for every body over the 5-MiB part size, i.e. every real
+// etcd snapshot — would re-stamp the CRC32 trailer that the client option was set
+// to avoid. Pin it here too, from the same constant s3Client uses, so the two
+// knobs cannot drift. See snapshotChecksumCalculation.
+func newSnapshotUploader(client *s3.Client) *manager.Uploader {
+	return manager.NewUploader(client, func(u *manager.Uploader) {
+		u.RequestChecksumCalculation = snapshotChecksumCalculation
+	})
 }
 
 // s3Uploader abstracts manager.Uploader.Upload so uploadStreamHashed is testable

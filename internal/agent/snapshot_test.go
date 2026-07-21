@@ -11,15 +11,20 @@ You may obtain a copy of the License at
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -78,6 +83,106 @@ func TestUploadStreamHashed_UploadError(t *testing.T) {
 		strings.NewReader("x"))
 	if err == nil {
 		t.Fatal("uploadStreamHashed with a failing uploader = nil, want error")
+	}
+}
+
+// TestUploadS3StreamMultipartNoChecksumTrailer is the guard for the actual
+// failure mode. A real etcd snapshot exceeds the transfer manager's 5 MiB part
+// size, so the upload takes the MULTIPART branch, where manager.Uploader's own
+// RequestChecksumCalculation (NOT the s3.Client option) decides whether a CRC32
+// trailer is stamped on each UploadPart. Without newSnapshotUploader pinning it
+// to WhenRequired, every part rides `x-amz-content-sha256:
+// STREAMING-UNSIGNED-PAYLOAD-TRAILER` + `x-amz-trailer: x-amz-checksum-crc32` —
+// exactly the header Ceph RGW rejects.
+//
+// This drives the production uploadS3Stream against a TLS test server (trusted via
+// AWS_CA_BUNDLE, which LoadDefaultConfig wires into the real client, so s3Client
+// and newSnapshotUploader run exactly as in production) with a >5 MiB body, and
+// asserts no request carries a checksum trailer or algorithm. It fails if the
+// uploader option is dropped; a check on s3.Options alone (see agent_test.go)
+// would stay green while this real path stayed broken.
+func TestUploadS3StreamMultipartNoChecksumTrailer(t *testing.T) {
+	hermeticAWSEnv(t)
+
+	type capturedReq struct{ method, sha, trailer, algo string }
+	var mu sync.Mutex
+	var reqs []capturedReq
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		reqs = append(reqs, capturedReq{
+			method:  r.Method,
+			sha:     r.Header.Get("X-Amz-Content-Sha256"),
+			trailer: r.Header.Get("X-Amz-Trailer"),
+			algo:    r.Header.Get("X-Amz-Sdk-Checksum-Algorithm"),
+		})
+		mu.Unlock()
+
+		q := r.URL.Query()
+		switch {
+		case r.Method == http.MethodHead:
+			// ensureObjectAbsent's HeadObject: report absent so the upload proceeds.
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && q.Has("uploads"):
+			io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>`+
+				`<InitiateMultipartUploadResult><Bucket>b</Bucket><Key>k</Key>`+
+				`<UploadId>test-upload-id</UploadId></InitiateMultipartUploadResult>`)
+		case r.Method == http.MethodPut && q.Has("partNumber"):
+			w.Header().Set("ETag", `"etag-`+q.Get("partNumber")+`"`)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && q.Get("uploadId") != "":
+			io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>`+
+				`<CompleteMultipartUploadResult><Bucket>b</Bucket><Key>k</Key>`+
+				`<ETag>"final-etag"</ETag></CompleteMultipartUploadResult>`)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	// Trust the test server's self-signed cert through the SDK's default config
+	// chain, so uploadS3Stream's own s3Client reaches it — no hand-built client.
+	caFile := filepath.Join(t.TempDir(), "ca.pem")
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(caFile, certPEM, 0o600); err != nil {
+		t.Fatalf("write CA bundle: %v", err)
+	}
+	t.Setenv("AWS_CA_BUNDLE", caFile)
+
+	const bodySize = 12 << 20 // 12 MiB > 5 MiB part size ⇒ three parts ⇒ multipart branch
+	dest := destination{kind: "s3", s3Endpoint: srv.URL, s3Bucket: "b", s3PathStyle: true}
+
+	size, sum, err := uploadS3Stream(context.Background(), dest, "k", bytes.NewReader(make([]byte, bodySize)), "test-uid")
+	if err != nil {
+		t.Fatalf("uploadS3Stream: %v", err)
+	}
+	if size != bodySize {
+		t.Errorf("streamed size = %d, want %d", size, bodySize)
+	}
+	if sum == "" {
+		t.Error("empty sha256 digest")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var sawUploadPart bool
+	for _, rq := range reqs {
+		if rq.method == http.MethodPut {
+			sawUploadPart = true
+		}
+		if rq.sha == "STREAMING-UNSIGNED-PAYLOAD-TRAILER" {
+			t.Errorf("%s carried x-amz-content-sha256=STREAMING-UNSIGNED-PAYLOAD-TRAILER — the checksum trailer Ceph RGW rejects", rq.method)
+		}
+		if rq.trailer != "" {
+			t.Errorf("%s carried x-amz-trailer=%q, want none", rq.method, rq.trailer)
+		}
+		if rq.algo != "" {
+			t.Errorf("%s carried x-amz-sdk-checksum-algorithm=%q, want none", rq.method, rq.algo)
+		}
+	}
+	if !sawUploadPart {
+		t.Fatal("no UploadPart (PUT) request seen — the upload did not take the multipart branch, so this test is not exercising the path it guards")
 	}
 }
 
