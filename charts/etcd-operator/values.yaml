@@ -83,6 +83,8 @@ tolerations: []
 affinity: {}
 
 manager:
+  # -- Namespaces the manager watches (WATCH_NAMESPACE env var). Empty = all.
+  watchNamespaces: []
   # -- Resource requests/limits for the manager container.
   resources:
     limits:
