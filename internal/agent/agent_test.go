@@ -77,10 +77,15 @@ func TestS3ClientChecksumWhenRequired(t *testing.T) {
 		t.Errorf("RequestChecksumCalculation = %v, want WhenRequired (%v)",
 			o.RequestChecksumCalculation, aws.RequestChecksumCalculationWhenRequired)
 	}
-	// Symmetric response-side setting covering the restore/download path.
-	if o.ResponseChecksumValidation != aws.ResponseChecksumValidationWhenRequired {
-		t.Errorf("ResponseChecksumValidation = %v, want WhenRequired (%v)",
-			o.ResponseChecksumValidation, aws.ResponseChecksumValidationWhenRequired)
+	// The response side is deliberately left at the SDK default (WhenSupported):
+	// it validates only a checksum the backend actually returns and skips composite
+	// (multipart) checksums, so it neither breaks S3-compatible backends nor needs
+	// pinning — and it is the only server-side integrity signal the restore path
+	// has (downloadS3 runs with SkipHashCheck). This asserts we do NOT pin it to
+	// WhenRequired; doing so would silently discard that signal.
+	if o.ResponseChecksumValidation != aws.ResponseChecksumValidationWhenSupported {
+		t.Errorf("ResponseChecksumValidation = %v, want the SDK default WhenSupported (%v)",
+			o.ResponseChecksumValidation, aws.ResponseChecksumValidationWhenSupported)
 	}
 	if !o.UsePathStyle {
 		t.Error("UsePathStyle = false, want true")

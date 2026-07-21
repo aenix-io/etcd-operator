@@ -270,11 +270,6 @@ func downloadS3(ctx context.Context, src destination, stageDir string) (string, 
 		return "", err
 	}
 	defer f.Close()
-	// client is built by s3Client, which pins ResponseChecksumValidation to
-	// WhenRequired — so the downloader doesn't demand a response checksum an
-	// S3-compatible backend may not return (symmetric to the upload-side request
-	// checksum). manager.Downloader has no response-validation knob of its own, so
-	// the client option is the only site for this.
 	downloader := manager.NewDownloader(client)
 	if _, err := downloader.Download(ctx, f, &s3.GetObjectInput{
 		Bucket: aws.String(src.s3Bucket),

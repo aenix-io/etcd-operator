@@ -248,13 +248,13 @@ func uploadS3Stream(ctx context.Context, dest destination, key string, body io.R
 //
 // manager.Uploader carries its OWN RequestChecksumCalculation (NewUploader
 // hardcodes it to WhenSupported) and never consults the s3.Client option, so the
-// multipart path — taken for every body over the 5-MiB part size, i.e. every real
-// etcd snapshot — would re-stamp the CRC32 trailer that the client option was set
-// to avoid. Pin it here too, from the same constant s3Client uses, so the two
-// knobs cannot drift. See snapshotChecksumCalculation.
+// multipart path — taken for any body over the 5-MiB part size, i.e. every
+// snapshot of a non-trivial cluster — would re-stamp the CRC32 trailer that the
+// client option was set to avoid. Pin it here too, from the same constant
+// s3Client uses, so the two knobs cannot drift. See s3RequestChecksumCalculation.
 func newSnapshotUploader(client *s3.Client) *manager.Uploader {
 	return manager.NewUploader(client, func(u *manager.Uploader) {
-		u.RequestChecksumCalculation = snapshotChecksumCalculation
+		u.RequestChecksumCalculation = s3RequestChecksumCalculation
 	})
 }
 
