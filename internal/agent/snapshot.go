@@ -237,11 +237,22 @@ func uploadS3Stream(ctx context.Context, dest destination, key string, body io.R
 	if uid != "" {
 		metadata = map[string]string{snapshotUIDMetaKey: uid} // stamp ownership so a retry recognizes its own object
 	}
-	return uploadStreamHashed(ctx, manager.NewUploader(client), &s3.PutObjectInput{
+	return uploadStreamHashed(ctx, newSnapshotUploader(client), &s3.PutObjectInput{
 		Bucket:   aws.String(dest.s3Bucket),
 		Key:      aws.String(key),
 		Metadata: metadata,
 	}, body)
+}
+
+// newSnapshotUploader builds the S3 transfer manager for snapshot uploads.
+//
+// manager.Uploader carries its OWN RequestChecksumCalculation and never consults
+// the s3.Client option, so the multipart path needs the same pin the client got.
+// See s3RequestChecksumCalculation for why, and why both sites are load-bearing.
+func newSnapshotUploader(client *s3.Client) *manager.Uploader {
+	return manager.NewUploader(client, func(u *manager.Uploader) {
+		u.RequestChecksumCalculation = s3RequestChecksumCalculation
+	})
 }
 
 // s3Uploader abstracts manager.Uploader.Upload so uploadStreamHashed is testable

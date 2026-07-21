@@ -148,10 +148,38 @@ func (d destination) localPath(name string) string {
 	return base + "/" + name + ".db"
 }
 
+// s3RequestChecksumCalculation is the S3 request-checksum policy applied to every
+// S3 client the agent builds (s3Client). It has to be set in TWO independent
+// places, because the snapshot upload touches two SDK layers that each carry their
+// own copy of this knob and do NOT share it:
+//
+//   - the s3.Client option (s3Client, below) — covers the single-part PutObject
+//     the transfer manager issues for a sub-5-MiB body (a small or freshly
+//     bootstrapped cluster), plus HeadObject;
+//   - the transfer manager's own Uploader.RequestChecksumCalculation
+//     (newSnapshotUploader in snapshot.go) — covers the multipart parts the
+//     manager issues for any body over its 5-MiB part size, i.e. every snapshot
+//     of a non-trivial cluster. manager.NewUploader hardcodes this field to
+//     WhenSupported and never reads the client option, so setting only the client
+//     option leaves the multipart path broken.
+//
+// Both sites are load-bearing and MUST agree; deriving them from this one
+// constant is what keeps them from drifting. Delete either and the RGW failure
+// returns — for the multipart case, invisibly.
+//
+// Why WhenRequired: since early 2025 aws-sdk-go-v2 defaults to WhenSupported,
+// which stamps a CRC32 on every PutObject/UploadPart — over HTTPS that rides as a
+// STREAMING-UNSIGNED-PAYLOAD-TRAILER. Ceph RGW (the confirmed case) rejects the
+// accompanying header with "InvalidArgument: x-amz-content-sha256 must be
+// UNSIGNED-PAYLOAD, STREAMING-AWS4-HMAC-SHA256-PAYLOAD or a valid sha256 value".
+// WhenRequired attaches a checksum only when the operation mandates one (none for
+// a plain PutObject or UploadPart) and is equally accepted by real AWS S3.
+const s3RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+
 // s3Client builds an S3 client honoring a custom endpoint, region and
 // path-style addressing. Credentials come from AWS_ACCESS_KEY_ID /
 // AWS_SECRET_ACCESS_KEY in the environment (loaded by the default config
-// chain).
+// chain). Used by BOTH the upload (snapshot) and download (restore) paths.
 func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 	region := d.s3Region
 	if region == "" {
@@ -166,6 +194,21 @@ func (d destination) s3Client(ctx context.Context) (*s3.Client, error) {
 			o.BaseEndpoint = aws.String(d.s3Endpoint)
 		}
 		o.UsePathStyle = d.s3PathStyle
+		// One of the two sites that must pin this; see
+		// s3RequestChecksumCalculation for the full rationale and
+		// newSnapshotUploader for the other. Pinned unconditionally because
+		// LoadDefaultConfig would otherwise take it from
+		// AWS_REQUEST_CHECKSUM_CALCULATION, and the agent's environment is a closed
+		// list built by the controller — nothing can set that var on the Pod.
+		o.RequestChecksumCalculation = s3RequestChecksumCalculation
+		// ResponseChecksumValidation is deliberately left at the SDK default
+		// (WhenSupported): it validates only a checksum the backend actually
+		// returns and skips composite (multipart) ones, so it cannot break an
+		// S3-compatible backend. It is not an integrity guarantee for restore
+		// either — WhenRequired above means the agent stores no checksum, so for
+		// objects it wrote there is nothing to validate and the setting is inert.
+		// Left alone because there is no reason to change it, not because it
+		// protects anything.
 	}), nil
 }
 
