@@ -237,7 +237,16 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// generic DeadlineExceeded reason. Both are terminal and visible; only
 	// the specificity of the reason differs, and reusing the existing arm
 	// keeps this change from altering deadline behaviour.
-	if cluster.Status.ClusterID != "" && desired > 0 && len(active) == 0 {
+	//
+	// Both member sets must be empty. `active` alone is not enough: a member
+	// being deleted (finalizer still running MemberRemove) is filtered out of
+	// `active` while its CR is very much still there, so a scale-down of the
+	// last member — or a self-heal replacement — would otherwise be declared
+	// a total loss mid-flight. Requiring the raw list to be empty too leaves
+	// those cases to the in-flight-deletion wait below, which is where they
+	// belong.
+	if cluster.Status.ClusterID != "" && desired > 0 &&
+		len(active) == 0 && len(memberList.Items) == 0 {
 		return r.handleAllMembersLost(ctx, cluster)
 	}
 

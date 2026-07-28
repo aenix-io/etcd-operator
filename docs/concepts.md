@@ -431,7 +431,7 @@ The cluster surfaces three conditions: `Available`, `Progressing`, `Degraded`. T
 | `False` | `Paused` | Same as Available; emitted when `desired==0`. |
 | `False` | `BootstrapFailed` / `DeadlineExceeded` / `AllMembersLost` | Terminal states; see Available. |
 
-`Degraded` is `True` whenever `Available=True/QuorumAvailable` (partial outage) or `Available=False/QuorumLost`. `False` in healthy or paused states. In other words, `Degraded` means "the cluster is not delivering its full intended capacity right now"; reading `Degraded` alone tells an alerting layer whether to page someone.
+`Degraded` is `True` whenever `Available=True/QuorumAvailable` (partial outage), `Available=False/QuorumLost`, or `Available=False/AllMembersLost` (every member gone — terminal, see above). `False` in healthy or paused states. In other words, `Degraded` means "the cluster is not delivering its full intended capacity right now"; reading `Degraded` alone tells an alerting layer whether to page someone.
 
 All conditions carry `observedGeneration` so consumers can tell whether a condition reflects the latest spec. Status writes are gated on "did anything actually change" — the operator does not bump `resourceVersion` every 30 s just because of the periodic reconcile.
 

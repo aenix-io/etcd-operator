@@ -1160,6 +1160,47 @@ func TestAllMembersLost_NotTriggeredByDormantMember(t *testing.T) {
 	}
 }
 
+// TestAllMembersLost_NotTriggeredWhileAMemberIsTerminating: the last member is
+// being deleted and its finalizer is still running MemberRemove. It is
+// filtered out of the active set, but its CR is still there and the deletion
+// is expected to complete — scaling down to zero, or replacing a member, must
+// not be mistaken for a total loss. The in-flight-deletion wait owns this
+// state; parking here would strand a cluster mid-operation.
+func TestAllMembersLost_NotTriggeredWhileAMemberIsTerminating(t *testing.T) {
+	ctx := context.Background()
+	now := metav1.Now()
+	cluster := allMembersLostCluster(t, nil)
+	terminating := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-going", Namespace: "ns", Labels: memberLabels("test", "test-going"),
+			DeletionTimestamp: &now, Finalizers: []string{MemberFinalizer},
+		},
+		Spec: lll.EtcdMemberSpec{ClusterName: "test", InitialCluster: "x"},
+	}
+	if err := controllerutil.SetControllerReference(cluster, terminating, testScheme(t)); err != nil {
+		t.Fatalf("SetControllerReference: %v", err)
+	}
+	c, _ := newTestClient(t, cluster, terminating)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryFailingOnEmptyEndpoints(fe)}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Fatalf("expected the in-flight-deletion wait to requeue; got %+v", res)
+	}
+
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if avail := findCond(got.Status.Conditions, lll.ClusterAvailable); avail != nil && avail.Reason == "AllMembersLost" {
+		t.Fatalf("a member still terminating is not a total loss; must not park")
+	}
+}
+
 // TestAllMembersLost_NotTriggeredWhileAMemberSurvives: one member left, not
 // Ready (e.g. crash-looping). The data plane is degraded, not gone — the
 // existing wait-for-Ready path owns this, and a terminal condition here would
