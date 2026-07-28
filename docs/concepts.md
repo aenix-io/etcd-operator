@@ -417,6 +417,7 @@ The cluster surfaces three conditions: `Available`, `Progressing`, `Degraded`. T
 | `False` | `ClusterUnreachable` | Discovery couldn't dial etcd (DNS failure, network partition, etcd not yet listening). |
 | `False` | `BootstrapFailed` | Deadline expired before `clusterID` was latched. Terminal — recovery is delete and recreate. |
 | `False` | `DeadlineExceeded` | Deadline expired after bootstrap. Terminal — recovery is to edit spec. |
+| `False` | `AllMembersLost` | Every `EtcdMember` is gone while `clusterID` is still latched. Terminal — the operator performs no automatic recovery; restore from a snapshot, or delete and recreate. |
 
 `Progressing` distinguishes "actively reconciling" from "we hit a wall":
 
@@ -428,7 +429,7 @@ The cluster surfaces three conditions: `Available`, `Progressing`, `Degraded`. T
 | `True` | `RetryAfterDeadline` | Deadline-exceeded recovery: user edited spec after a steady-state deadline. |
 | `False` | `Reconciled` | At steady state with the current `observed`. |
 | `False` | `Paused` | Same as Available; emitted when `desired==0`. |
-| `False` | `BootstrapFailed` / `DeadlineExceeded` | Terminal states; see Available. |
+| `False` | `BootstrapFailed` / `DeadlineExceeded` / `AllMembersLost` | Terminal states; see Available. |
 
 `Degraded` is `True` whenever `Available=True/QuorumAvailable` (partial outage) or `Available=False/QuorumLost`. `False` in healthy or paused states. In other words, `Degraded` means "the cluster is not delivering its full intended capacity right now"; reading `Degraded` alone tells an alerting layer whether to page someone.
 

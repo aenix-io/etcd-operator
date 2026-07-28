@@ -179,6 +179,27 @@ kubectl edit etcdcluster.etcd-operator.cozystack.io <name> -n <ns>
 
 The next reconcile notices `spec != observed`, treats your edit as the intervention signal, snapshots the new spec into `observed`, sets a fresh deadline, and resumes.
 
+### `Available=False/AllMembersLost`
+
+Terminal. Every `EtcdMember` of the cluster is gone while `status.clusterID` is still latched — the data plane no longer exists. Each member's PVC is controller-owned by its `EtcdMember`, so unless owner-ref GC was skipped (`--cascade=orphan`, a CRD replacement, restored-from-backup CRs) the data went with them.
+
+The operator deliberately performs **no** automatic recovery here, and nothing on this path mutates `clusterID`, `clusterToken`, `authEnabled`, Pods or PVCs. Rebuilding would mean bringing the cluster back under a new identity on an empty data dir — or, for a cluster created via `spec.bootstrap.restore`, silently re-running that one-time restore and rolling the data back to the snapshot it was created from. Both are decisions for a human, and doing either automatically would also destroy the evidence of what removed the members.
+
+First find out what happened — several clusters entering this state at once points at a systemic cause (a GC misfire, a GitOps prune, a CRD replacement, a cleanup script) that will repeat:
+
+```sh
+kubectl get etcdmember.etcd-operator.cozystack.io -n <ns>          # expected: none
+kubectl get pvc -n <ns> -l etcd-operator.cozystack.io/cluster=<name>
+kubectl get pods -n <ns> -l etcd-operator.cozystack.io/cluster=<name>
+kubectl get events -n <ns> --sort-by=.lastTimestamp | tail -50
+```
+
+Then pick a recovery:
+
+- **PVCs (or Pods) survived** — the data is still there. Do not delete the cluster: work from the surviving volumes, and stop the old Pods before recreating anything so two etcd clusters never serve the same Service.
+- **A snapshot exists** — restore it into a freshly created cluster (see [Restoring a cluster from a snapshot](#restoring-a-cluster-from-a-snapshot)). `spec.bootstrap` is immutable post-create, so this means creating a new `EtcdCluster`, not editing this one.
+- **Neither** — the data is gone. Delete the `EtcdCluster` and recreate it to get an empty cluster back.
+
 ### `Progressing=True/WaitingForSeed`
 
 The seed `EtcdMember` CR exists but the member controller hasn't yet created its Pod — this is the gap between the cluster controller creating the CR and the member controller's next reconcile pass. `kubectl describe pod` is **not** useful here: there is no Pod yet, so it returns "not found" and obscures the actual state. Inspect the CR and the namespace's events instead:

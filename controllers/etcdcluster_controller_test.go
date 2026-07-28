@@ -12,6 +12,7 @@ package controllers
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"reflect"
@@ -36,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	lll "github.com/cozystack/etcd-operator/api/v1alpha2"
 )
@@ -958,6 +960,237 @@ func TestScaleUp_WaitsForInFlightDeletion(t *testing.T) {
 	}
 	if len(fe.addCalls) > 0 {
 		t.Fatalf("MemberAdd should not be called while a deletion is in flight; got %v", fe.addCalls)
+	}
+}
+
+// findCond returns the named condition, or nil when it is absent.
+func findCond(conds []metav1.Condition, condType string) *metav1.Condition {
+	for i := range conds {
+		if conds[i].Type == condType {
+			return &conds[i]
+		}
+	}
+	return nil
+}
+
+// factoryFailingOnEmptyEndpoints mirrors production: the real factory cannot
+// build a client without at least one endpoint to dial. Tests that must not
+// reach etcd use this so the assertion means "never dialed", not "dialed a
+// fake that happens to answer".
+func factoryFailingOnEmptyEndpoints(c EtcdClusterClient) EtcdClientFactory {
+	return func(_ context.Context, endpoints []string, _ *tls.Config, _, _ string) (EtcdClusterClient, error) {
+		if len(endpoints) == 0 {
+			return nil, errors.New("etcdclient: no available endpoints")
+		}
+		return c, nil
+	}
+}
+
+// allMembersLostCluster builds a cluster that has latched a ClusterID and then
+// lost every EtcdMember — the state this suite exercises.
+func allMembersLostCluster(t *testing.T, deadline *metav1.Time) *lll.EtcdCluster {
+	t.Helper()
+	return &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec: lll.EtcdClusterSpec{
+			Replicas: ptrInt32(3),
+			Version:  "3.5.17",
+			Storage:  lll.StorageSpec{Size: quickQty(t, "1Gi")},
+		},
+		Status: lll.EtcdClusterStatus{
+			ClusterToken: "ns-test-x",
+			ClusterID:    "deadbeef",
+			AuthEnabled:  true,
+			ReadyMembers: 3,
+			Observed: &lll.ObservedClusterSpec{
+				Replicas: 3, Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
+			},
+			ProgressDeadline: deadline,
+			Conditions: []metav1.Condition{
+				{Type: lll.ClusterAvailable, Status: metav1.ConditionTrue, Reason: "QuorumHealthy",
+					LastTransitionTime: metav1.Now()},
+			},
+		},
+	}
+}
+
+// TestAllMembersLost_ParksTerminalWithoutDialing covers a cluster whose
+// EtcdMember CRs have all been removed while status.clusterID is still
+// latched.
+//
+// Before this branch existed the reconcile fell through to scaleUp, whose
+// endpoints derive from the (empty) member set, so the client factory failed
+// with "no available endpoints" and the reconcile requeued every 10s forever
+// — while Available stayed at its last pre-loss value, advertising a healthy
+// quorum for a cluster with nothing running.
+//
+// The controller cannot repair this state (rebuilding means a new identity on
+// an empty data dir), so it parks in a terminal condition and leaves the
+// destructive call to a human. Asserted here: Available goes false with a
+// reason naming the event, ReadyMembers is zeroed, etcd is never dialed, and
+// — critically — nothing is mutated or created.
+func TestAllMembersLost_ParksTerminalWithoutDialing(t *testing.T) {
+	ctx := context.Background()
+	// ProgressDeadline nil: a converged cluster clears it, which is the
+	// state this branch is normally reached in.
+	cluster := allMembersLostCluster(t, nil)
+	c, _ := newTestClient(t, cluster)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryFailingOnEmptyEndpoints(fe)}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter != 0 || res.Requeue {
+		t.Fatalf("terminal state must park, not requeue; got %+v", res)
+	}
+
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	avail := findCond(got.Status.Conditions, lll.ClusterAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "AllMembersLost" {
+		t.Fatalf("Available must go False/AllMembersLost; got %+v", avail)
+	}
+	if got.Status.ReadyMembers != 0 {
+		t.Fatalf("ReadyMembers must be zeroed; got %d", got.Status.ReadyMembers)
+	}
+	// Nothing destructive, and nothing that changes the cluster's identity:
+	// a surviving PVC must stay recoverable by hand, and the evidence of
+	// what happened must stay intact.
+	if got.Status.ClusterID != "deadbeef" {
+		t.Fatalf("ClusterID must not be discarded; got %q", got.Status.ClusterID)
+	}
+	if got.Status.ClusterToken != "ns-test-x" {
+		t.Fatalf("ClusterToken must not be rotated; got %q", got.Status.ClusterToken)
+	}
+	if !got.Status.AuthEnabled {
+		t.Fatalf("AuthEnabled must not be cleared")
+	}
+	members := &lll.EtcdMemberList{}
+	if err := c.List(ctx, members, client.InNamespace("ns")); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(members.Items) != 0 {
+		t.Fatalf("no member may be created on this path; got %d", len(members.Items))
+	}
+	if len(fe.addCalls) > 0 {
+		t.Fatalf("etcd must never be dialed with zero members; got %v", fe.addCalls)
+	}
+}
+
+// TestAllMembersLost_ArmedDeadlineStillParks pins the scope boundary. A
+// cluster that loses every member *before* converging still has its
+// ProgressDeadline armed and is claimed by handleDeadlineExceeded, which parks
+// it under the generic DeadlineExceeded reason rather than AllMembersLost.
+//
+// That is deliberate — routing it here instead would change deadline
+// behaviour, which this fix has no reason to touch. What matters, and what
+// this asserts, is the property the bug was about: whichever arm claims the
+// cluster, the reconcile parks instead of spinning on scaleUp forever, and
+// Available does not survive as True.
+func TestAllMembersLost_ArmedDeadlineStillParks(t *testing.T) {
+	ctx := context.Background()
+	expired := metav1.NewTime(metav1.Now().Add(-time.Hour))
+	cluster := allMembersLostCluster(t, &expired)
+	c, _ := newTestClient(t, cluster)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryFailingOnEmptyEndpoints(fe)}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter != 0 || res.Requeue {
+		t.Fatalf("must park rather than spin; got %+v", res)
+	}
+
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	avail := findCond(got.Status.Conditions, lll.ClusterAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse {
+		t.Fatalf("Available must not survive as True through total member loss; got %+v", avail)
+	}
+	if len(fe.addCalls) > 0 {
+		t.Fatalf("etcd must never be dialed with zero members; got %v", fe.addCalls)
+	}
+}
+
+// TestAllMembersLost_NotTriggeredByDormantMember: a paused-then-resumed
+// cluster has current==0 with a dormant CR parked alongside. That member still
+// owns its PVC and its data — waking it is the correct recovery, and reporting
+// the cluster as unrecoverable would be wrong.
+func TestAllMembersLost_NotTriggeredByDormantMember(t *testing.T) {
+	ctx := context.Background()
+	cluster := allMembersLostCluster(t, nil)
+	dormant := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-dormant", Namespace: "ns", Labels: memberLabels("test", "test-dormant"),
+		},
+		Spec: lll.EtcdMemberSpec{ClusterName: "test", InitialCluster: "x", Bootstrap: true, Dormant: true},
+	}
+	if err := controllerutil.SetControllerReference(cluster, dormant, testScheme(t)); err != nil {
+		t.Fatalf("SetControllerReference: %v", err)
+	}
+	c, _ := newTestClient(t, cluster, dormant)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryFailingOnEmptyEndpoints(fe)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if avail := findCond(got.Status.Conditions, lll.ClusterAvailable); avail != nil && avail.Reason == "AllMembersLost" {
+		t.Fatalf("a dormant member is recoverable; must not report AllMembersLost")
+	}
+	gotMember := &lll.EtcdMember{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test-dormant", Namespace: "ns"}, gotMember); err != nil {
+		t.Fatalf("Get member: %v", err)
+	}
+	if gotMember.Spec.Dormant {
+		t.Fatalf("dormant member should have been woken instead")
+	}
+}
+
+// TestAllMembersLost_NotTriggeredWhileAMemberSurvives: one member left, not
+// Ready (e.g. crash-looping). The data plane is degraded, not gone — the
+// existing wait-for-Ready path owns this, and a terminal condition here would
+// park a cluster that can still recover on its own.
+func TestAllMembersLost_NotTriggeredWhileAMemberSurvives(t *testing.T) {
+	ctx := context.Background()
+	cluster := allMembersLostCluster(t, nil)
+	survivor := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-alive", Namespace: "ns", Labels: memberLabels("test", "test-alive"),
+		},
+		Spec:   lll.EtcdMemberSpec{ClusterName: "test", InitialCluster: "x"},
+		Status: lll.EtcdMemberStatus{PodName: "test-alive", MemberID: "abc"},
+	}
+	if err := controllerutil.SetControllerReference(cluster, survivor, testScheme(t)); err != nil {
+		t.Fatalf("SetControllerReference: %v", err)
+	}
+	c, _ := newTestClient(t, cluster, survivor)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryFailingOnEmptyEndpoints(fe)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if avail := findCond(got.Status.Conditions, lll.ClusterAvailable); avail != nil && avail.Reason == "AllMembersLost" {
+		t.Fatalf("a surviving member means the cluster is degraded, not lost")
 	}
 }
 

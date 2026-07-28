@@ -214,6 +214,33 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	desired := cluster.Status.Observed.Replicas
 
+	// ── Total member loss ─────────────────────────────────────────────
+	// A latched ClusterID with no EtcdMember CRs left at all means the data
+	// plane is gone — something removed every member, and each member's PVC
+	// is controller-owned by it, so the data went with them. There is no
+	// recovery this controller can perform: rebuilding would mean adopting a
+	// new identity on an empty data dir, and scaleUp cannot help either,
+	// because MemberAdd needs a live member to dial and there is none.
+	//
+	// Without this branch the reconcile falls through to scaleUp and spins on
+	// "etcdclient: no available endpoints" every 10s forever, while the
+	// status keeps advertising its last pre-loss values — an empty cluster
+	// reporting Available=True/QuorumHealthy. Park in a terminal condition
+	// instead: name what happened, drive Available false, and leave the
+	// destructive call (restore a snapshot, or delete and recreate) to a
+	// human, as every other unrecoverable state in this controller does.
+	//
+	// Scope: this fires for a converged cluster, whose ProgressDeadline has
+	// been cleared — the state the endless spin was observed in. A cluster
+	// that loses every member mid-reconcile still has its deadline armed and
+	// is handled above by handleDeadlineExceeded, which parks it under the
+	// generic DeadlineExceeded reason. Both are terminal and visible; only
+	// the specificity of the reason differs, and reusing the existing arm
+	// keeps this change from altering deadline behaviour.
+	if cluster.Status.ClusterID != "" && desired > 0 && len(active) == 0 {
+		return r.handleAllMembersLost(ctx, cluster)
+	}
+
 	// ── Bootstrap ──────────────────────────────────────────────────────
 	// Bootstrap creates a single-member etcd cluster (member -0 only) with
 	// --initial-cluster-state=new. Once ClusterID is latched, scale-up adds
@@ -1951,6 +1978,58 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //     that happens we sit in DeadlineExceeded.
 //
 // We never auto-pivot during bootstrap, and never silently in steady state.
+// handleAllMembersLost parks a cluster whose EtcdMember CRs have all been
+// removed while its ClusterID is still latched.
+//
+// This is a diagnosis, not a repair. The controller deliberately performs no
+// recovery: every option — re-bootstrapping onto a fresh data dir, or
+// re-running the one-time spec.bootstrap.restore — either discards data or
+// silently rolls it back to a snapshot, and both would run unattended against
+// a cluster whose members may have been removed by mistake. Nothing here
+// mutates ClusterID, ClusterToken, AuthEnabled, Pods or PVCs, so a surviving
+// PVC (owner-ref GC skipped, e.g. --cascade=orphan) can still be recovered by
+// hand, and the evidence of what happened stays intact.
+//
+// ReadyMembers is zeroed alongside the conditions: it is the scale
+// subresource's status path, and leaving the pre-loss count there would keep
+// anything reading it — HPA-style tooling, dashboards, GitOps health — seeing
+// a healthy cluster.
+//
+// Idempotent and parking, matching handleDeadlineExceeded: write only when
+// something actually changed, then return without a requeue and let the watch
+// wake the controller when a human intervenes.
+func (r *EtcdClusterReconciler) handleAllMembersLost(
+	ctx context.Context,
+	cluster *lll.EtcdCluster,
+) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	changed := setClusterCondition(cluster, lll.ClusterAvailable, metav1.ConditionFalse, "AllMembersLost",
+		fmt.Sprintf("all %d members are gone; no EtcdMember remains to serve or to add a member against. "+
+			"Recover by restoring from a snapshot, or delete the cluster and recreate it",
+			cluster.Status.Observed.Replicas))
+	changed = setClusterCondition(cluster, lll.ClusterProgressing, metav1.ConditionFalse, "AllMembersLost",
+		"every member was lost; manual recovery required") || changed
+	changed = setClusterCondition(cluster, lll.ClusterDegraded, metav1.ConditionTrue, "AllMembersLost",
+		"no members remain") || changed
+	if cluster.Status.ReadyMembers != 0 {
+		cluster.Status.ReadyMembers = 0
+		changed = true
+	}
+
+	if changed {
+		log.Error(nil, "cluster lost every member; manual recovery required",
+			"clusterID", cluster.Status.ClusterID, "desired", cluster.Status.Observed.Replicas)
+		if err := r.Status().Update(ctx, cluster); err != nil {
+			if errors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, err
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
 func (r *EtcdClusterReconciler) handleDeadlineExceeded(
 	ctx context.Context,
 	cluster *lll.EtcdCluster,
