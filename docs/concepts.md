@@ -123,18 +123,19 @@ The single exception is the steady-state call to `updateStatus`, which receives 
 
 ## Data volume lifecycle
 
-A member's data PVC carries **no owner reference**. Nothing in Kubernetes garbage-collects it: not deleting the `EtcdMember`, not deleting the `EtcdCluster`, not removing the CRDs.
+A member's data PVC carries **no owner reference**. Nothing in Kubernetes garbage-collects it: not deleting the `EtcdMember`, not deleting the `EtcdCluster`, not removing the CRDs. Reclaiming is the operator's own decision, taken in three specific places — and nowhere else.
 
 This is a deliberate departure from the usual "child object owned by its CR" pattern, because an owner reference does two jobs at once — it marks the owner, and it makes the object cascade-delete with that owner. The first is wanted, the second is a liability for a volume holding the only copy of a database. Every route that removes an `EtcdMember` would take the data with it: a stray `kubectl delete`, a GitOps prune, a CRD replacement during an upgrade, a chart rollback that drops the CRs. None of those say anything about whether the data still matters, and all of them are irreversible against a `Delete`-reclaim StorageClass.
 
 So identity and lifetime are separated:
 
 - **Identity** is the `etcd-operator.cozystack.io/member-uid` annotation. The member controller mounts a volume only when the annotation matches its own UID; anything else is refused rather than adopted (inheriting a foreign data dir crash-loops the pod once etcd finds a removed member ID in the WAL). Volumes from older operator versions, and those stamped by the migration tool, carry a controller owner reference instead — the first reconcile after upgrading migrates them: annotation stamped, owner reference stripped.
-- **Lifetime** is the operator's explicit decision. Exactly two paths delete a volume, both places where the operator itself retired the member and the data is either replicated or unusable:
+- **Lifetime** is the operator's explicit decision. Three paths delete a volume, each one a place where the operator itself decided the data is finished:
   - **scale-down** — the departing member's contents live on the remaining peers (its finalizer ran `MemberRemove` first). The shrink was asked for, so the storage goes back to the pool.
   - **crash-loop replacement** — the member cannot boot on its own data dir, and the quorum gate proved the rest of the cluster is healthy. The replacement starts clean and syncs from peers.
+  - **cluster deletion** — deleting the `EtcdCluster` is the user declaring the cluster finished, so its storage goes with it. This runs from the cluster's own finalizer (`etcd-operator.cozystack.io/cluster-cleanup`), which is held until the volumes are actually gone, not merely asked to go: a volume stays `Terminating` while a Pod still mounts it, and releasing early would let the `EtcdCluster` disappear with storage still allocated behind it — or let a namespace delete look complete while PVCs were still draining.
 
-Everything else leaves the volume in place. A paused (`spec.replicas: 0`) cluster keeps its member CR and its volume; a member deleted by anything other than the two paths above leaves a volume behind that no future member will mount, because replacements get fresh apiserver-assigned names.
+Everything else leaves the volume in place. A paused (`spec.replicas: 0`) cluster keeps its member CR and its volume; a member deleted by anything other than the paths above — a stray `kubectl delete`, a GitOps prune, a CRD replacement, a chart rollback — leaves a volume behind that no future member will mount, because replacements get fresh apiserver-assigned names.
 
 Leftover volumes are visible rather than silent. Each carries `etcd-operator.cozystack.io/pvc-status`, mirroring the marker CloudNativePG puts on its instance volumes:
 

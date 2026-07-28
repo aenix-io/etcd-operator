@@ -75,9 +75,10 @@ type EtcdClusterReconciler struct {
 	ClusterDomain string
 }
 
-//+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdclusters,verbs=get;list;watch
+//+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdclusters,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdclusters/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdclusters/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;delete
 //+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdmembers,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=etcd-operator.cozystack.io,resources=etcdmembers/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch
@@ -102,11 +103,23 @@ func (r *EtcdClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// If the cluster is being deleted, don't keep reconciling it. Owned
-	// resources are cascaded out via owner refs; recreating a Service for a
-	// Terminating cluster races against the GC and pollutes logs.
+	// If the cluster is being deleted, stop reconciling it and run cleanup.
+	// Owner-referenced resources cascade out on their own; data volumes do
+	// not (they carry no owner reference — see deleteMemberPVC) and are
+	// reclaimed here, before the finalizer is released.
 	if !cluster.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return r.handleClusterDeletion(ctx, cluster)
+	}
+
+	// Claim the cleanup finalizer before anything else creates state worth
+	// cleaning up.
+	if controllerutil.AddFinalizer(cluster, ClusterFinalizer) {
+		if err := r.Update(ctx, cluster); err != nil {
+			if errors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Terminal-config gate. spec.tls.{client,peer}.certManager requires
@@ -1964,6 +1977,74 @@ func (r *EtcdClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //     that happens we sit in DeadlineExceeded.
 //
 // We never auto-pivot during bootstrap, and never silently in steady state.
+// handleClusterDeletion reclaims what k8s garbage collection will not, then
+// releases the finalizer.
+//
+// Members, Pods and Services are owner-referenced to the cluster and cascade
+// out on their own. Data volumes deliberately are not (see deleteMemberPVC):
+// they must survive a member disappearing for reasons that say nothing about
+// the data's value. Deleting the EtcdCluster is not one of those reasons — it
+// is the user declaring the cluster finished — so this is where the volumes
+// are reclaimed, explicitly.
+//
+// The finalizer is held until they are actually gone rather than merely asked
+// to go. A volume stays Terminating while a Pod still mounts it, so releasing
+// early would let the EtcdCluster vanish with storage still allocated behind
+// it, and a namespace delete would look complete while PVCs were still
+// draining. Holding the finalizer makes "the EtcdCluster is gone" mean "its
+// storage is gone too".
+func (r *EtcdClusterReconciler) handleClusterDeletion(
+	ctx context.Context,
+	cluster *lll.EtcdCluster,
+) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	if !controllerutil.ContainsFinalizer(cluster, ClusterFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	pvcs := &corev1.PersistentVolumeClaimList{}
+	if err := r.List(ctx, pvcs,
+		client.InNamespace(cluster.Namespace),
+		client.MatchingLabels{LabelCluster: cluster.Name},
+	); err != nil {
+		return ctrl.Result{}, fmt.Errorf("list data volumes of deleted cluster: %w", err)
+	}
+
+	remaining := 0
+	for i := range pvcs.Items {
+		pvc := &pvcs.Items[i]
+		if !pvc.DeletionTimestamp.IsZero() {
+			// Already draining — most likely still mounted by a Pod that is
+			// itself being GC'd. Wait it out rather than declaring the
+			// cluster gone while its storage is not.
+			remaining++
+			continue
+		}
+		if err := r.Delete(ctx, pvc); err != nil {
+			if errors.IsNotFound(err) {
+				continue
+			}
+			return ctrl.Result{}, fmt.Errorf("delete data volume %q: %w", pvc.Name, err)
+		}
+		log.Info("reclaiming data volume of deleted cluster", "pvc", pvc.Name)
+		remaining++
+	}
+
+	if remaining > 0 {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	controllerutil.RemoveFinalizer(cluster, ClusterFinalizer)
+	if err := r.Update(ctx, cluster); err != nil {
+		if errors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
 func (r *EtcdClusterReconciler) handleDeadlineExceeded(
 	ctx context.Context,
 	cluster *lll.EtcdCluster,

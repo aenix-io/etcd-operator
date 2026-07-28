@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	lll "github.com/cozystack/etcd-operator/api/v1alpha2"
 )
@@ -1008,6 +1009,136 @@ func scaleDownFixture(t *testing.T, replicas int32, members int) (*lll.EtcdClust
 	return cluster, objs
 }
 
+// TestClusterDeletion_ReclaimsVolumesBeforeReleasingFinalizer: deleting the
+// EtcdCluster is the user declaring the cluster finished, so its storage goes
+// with it. Volumes carry no owner reference (that is what keeps a member
+// disappearing from destroying data), so nothing reclaims them implicitly —
+// the finalizer does, explicitly, and is held until they are actually gone.
+func TestClusterDeletion_ReclaimsVolumesBeforeReleasingFinalizer(t *testing.T) {
+	ctx := context.Background()
+	now := metav1.Now()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test", Namespace: "ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{ClusterFinalizer},
+		},
+		Spec: lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	objs := []client.Object{cluster}
+	for _, name := range []string{"test-a", "test-b"} {
+		objs = append(objs, &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: memberPVCName(name), Namespace: "ns", Labels: memberLabels("test", name),
+			},
+		})
+	}
+	c, _ := newTestClient(t, objs...)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t)}
+
+	// First pass: volumes are asked to go, finalizer still held.
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Fatalf("expected a requeue while volumes drain; got %+v", res)
+	}
+	for _, name := range []string{"test-a", "test-b"} {
+		if err := c.Get(ctx, types.NamespacedName{Name: memberPVCName(name), Namespace: "ns"},
+			&corev1.PersistentVolumeClaim{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("volume of %s should have been reclaimed; got %v", name, err)
+		}
+	}
+
+	// Second pass: nothing left, so the cluster is allowed to go.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile (second pass): %v", err)
+	}
+	got := &lll.EtcdCluster{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test", Namespace: "ns"}, got); err == nil {
+		if controllerutil.ContainsFinalizer(got, ClusterFinalizer) {
+			t.Fatalf("finalizer must be released once the volumes are gone")
+		}
+	} else if !apierrors.IsNotFound(err) {
+		t.Fatalf("Get cluster: %v", err)
+	}
+}
+
+// TestClusterDeletion_HoldsFinalizerWhileAVolumeDrains: a volume stays
+// Terminating while a Pod still mounts it. Releasing the finalizer then would
+// let the EtcdCluster vanish with storage still allocated behind it — and a
+// namespace delete would look complete while PVCs were still draining.
+func TestClusterDeletion_HoldsFinalizerWhileAVolumeDrains(t *testing.T) {
+	ctx := context.Background()
+	now := metav1.Now()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test", Namespace: "ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{ClusterFinalizer},
+		},
+		Spec: lll.EtcdClusterSpec{Replicas: ptrInt32(1)},
+	}
+	draining := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: memberPVCName("test-a"), Namespace: "ns", Labels: memberLabels("test", "test-a"),
+			DeletionTimestamp: &now,
+			Finalizers:        []string{"kubernetes.io/pvc-protection"},
+		},
+	}
+	c, _ := newTestClient(t, cluster, draining)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t)}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Fatalf("expected a requeue while the volume drains; got %+v", res)
+	}
+	got := mustGet(t, c, "test", "ns", &lll.EtcdCluster{})
+	if !controllerutil.ContainsFinalizer(got, ClusterFinalizer) {
+		t.Fatalf("finalizer must be held until the volume is actually gone")
+	}
+}
+
+// TestClusterDeletion_LeavesAnotherClustersVolumes: the reclaim is scoped by
+// the cluster label. Two clusters in one namespace is ordinary, and deleting
+// one must not touch the other's data.
+func TestClusterDeletion_LeavesAnotherClustersVolumes(t *testing.T) {
+	ctx := context.Background()
+	now := metav1.Now()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test", Namespace: "ns",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{ClusterFinalizer},
+		},
+		Spec: lll.EtcdClusterSpec{Replicas: ptrInt32(1)},
+	}
+	mine := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: memberPVCName("test-a"), Namespace: "ns", Labels: memberLabels("test", "test-a"),
+		},
+	}
+	theirs := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: memberPVCName("other-a"), Namespace: "ns", Labels: memberLabels("other", "other-a"),
+		},
+	}
+	c, _ := newTestClient(t, cluster, mine, theirs)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if err := c.Get(ctx, types.NamespacedName{Name: memberPVCName("other-a"), Namespace: "ns"},
+		&corev1.PersistentVolumeClaim{}); err != nil {
+		t.Fatalf("another cluster's volume must be untouched; got %v", err)
+	}
+}
+
 // TestScaleDown_ReclaimsTheVictimsVolume: shrinking a cluster is a deliberate
 // instruction, and the departing member's contents are already replicated on
 // the peers that remain (its finalizer runs MemberRemove first). Leaving the
@@ -1831,7 +1962,9 @@ func TestDeadlineExceeded_NoChurnWhenSteady(t *testing.T) {
 	now := metav1.Now()
 	past := metav1.NewTime(now.Add(-time.Hour))
 	cluster := &lll.EtcdCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		// A settled cluster already carries the cleanup finalizer; it is
+		// claimed once on the first reconcile, not on every pass.
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns", Finalizers: []string{ClusterFinalizer}},
 		Spec: lll.EtcdClusterSpec{
 			Replicas: ptrInt32(3),
 			Version:  "3.5.17",
@@ -2478,7 +2611,9 @@ func TestClusterUpdateStatus_NoChurnInSteadyState(t *testing.T) {
 	ctx := context.Background()
 	now := metav1.Now()
 	cluster := &lll.EtcdCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		// A settled cluster already carries the cleanup finalizer; it is
+		// claimed once on the first reconcile, not on every pass.
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns", Finalizers: []string{ClusterFinalizer}},
 		Spec: lll.EtcdClusterSpec{
 			Replicas: ptrInt32(3), Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 		},

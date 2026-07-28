@@ -37,6 +37,16 @@ const (
 	// graceful removal from the etcd cluster before deletion.
 	MemberFinalizer = "etcd-operator.cozystack.io/member-cleanup"
 
+	// ClusterFinalizer is placed on EtcdCluster resources so deleting one
+	// also reclaims its data volumes. Those volumes carry no owner
+	// reference (see AnnPVCMemberUID), which is what keeps a member
+	// disappearing from destroying data — but a deleted EtcdCluster is the
+	// user declaring the cluster finished, so its storage must go too. The
+	// finalizer is held until the volumes are actually gone, not merely
+	// asked to go, so "the EtcdCluster is gone" implies "its storage is
+	// gone".
+	ClusterFinalizer = "etcd-operator.cozystack.io/cluster-cleanup"
+
 	// ReservedAnnotationPrefix namespaces the operator-interpreted
 	// annotations below. additionalMetadata must never be able to set a
 	// key under this prefix (applyAdditionalMetadata strips it): the

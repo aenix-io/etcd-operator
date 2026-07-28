@@ -161,10 +161,10 @@ kubectl get etcdmember,pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <n
 kubectl apply -f <your-cluster-manifest>.yaml
 ```
 
-Volumes from the deleted cluster are **not** garbage-collected (see [data volume lifecycle](concepts.md#data-volume-lifecycle)) — they remain as `detached` PVCs. A recreated cluster never adopts them: its members get fresh names and fresh UIDs, and the member-UID check refuses anything that is not theirs. Delete the leftovers yourself once you have confirmed the data is not needed:
+Deleting the cluster reclaims its data volumes too — the cluster finalizer removes them and is only released once they are gone (see [data volume lifecycle](concepts.md#data-volume-lifecycle)). So a recreated cluster starts clean; wait for the `EtcdCluster` to actually disappear before re-applying:
 
 ```sh
-kubectl get pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <ns>
+kubectl get etcdcluster.etcd-operator.cozystack.io,pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <ns>
 ```
 
 ### `Available=False/DeadlineExceeded`

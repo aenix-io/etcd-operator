@@ -74,6 +74,8 @@
   verbs:
     - get
     - list
+    - patch
+    - update
     - watch
 - apiGroups:
     - etcd-operator.cozystack.io
