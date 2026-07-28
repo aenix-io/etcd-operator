@@ -1309,6 +1309,19 @@ func (r *EtcdClusterReconciler) scaleDown(
 	if err := r.Delete(ctx, &victim); err != nil && !errors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
+	// One of the two places the operator reclaims a data volume. Deleting
+	// the member above runs MemberRemove through its finalizer, so by the
+	// time this volume is dropped its contents are already replicated on
+	// the remaining peers — this is the deliberate shrink the user asked
+	// for, not an accident, so the storage goes back to the pool.
+	//
+	// Note this is skipped for the 1→0 pause handled above: that member is
+	// parked dormant, CR and volume intact, and resume mounts it again.
+	if victim.Spec.Storage.Medium != lll.StorageMediumMemory {
+		if err := deleteMemberPVC(ctx, r.Client, victim.Namespace, victim.Name); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }

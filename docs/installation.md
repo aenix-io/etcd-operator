@@ -318,7 +318,7 @@ kubectl delete crd etcdclusters.etcd-operator.cozystack.io \
   etcdsnapshots.etcd-operator.cozystack.io
 ```
 
-Deleting an `EtcdCluster` while it's running cascades through every owned resource: the operator's finalizer on each `EtcdMember` calls `MemberRemove` (when the cluster itself is also being deleted, the operator detects this and skips `MemberRemove` to avoid a deadlock — see `handleDeletion` in `controllers/etcdmember_controller.go`). Pods and PVCs are then GC'd via owner-refs.
+Deleting an `EtcdCluster` while it's running cascades through every owned resource: the operator's finalizer on each `EtcdMember` calls `MemberRemove` (when the cluster itself is also being deleted, the operator detects this and skips `MemberRemove` to avoid a deadlock — see `handleDeletion` in `controllers/etcdmember_controller.go`). Pods are then GC'd via owner-refs. **Data volumes are not** — they carry no owner reference by design ([data volume lifecycle](concepts.md#data-volume-lifecycle)), so deleting a cluster leaves its `data-<member>` PVCs behind, marked `pvc-status: detached`. Reclaim them yourself once you are sure the data is no longer needed.
 
 If the operator is uninstalled while `EtcdCluster` resources still exist, they're stranded — the finalizers won't run because no controller is reading the queue. Recovery is to either re-install the operator, or `kubectl patch ... --type=merge -p '{"metadata":{"finalizers":null}}'` on each `EtcdMember` (manual, leaves PVCs and Pods in place — clean them up by label).
 

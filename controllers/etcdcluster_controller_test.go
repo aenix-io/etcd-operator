@@ -961,6 +961,110 @@ func TestScaleUp_WaitsForInFlightDeletion(t *testing.T) {
 	}
 }
 
+// scaleDownFixture builds an n-member cluster ready to shrink by one, with a
+// data volume per member.
+func scaleDownFixture(t *testing.T, replicas int32, members int) (*lll.EtcdCluster, []client.Object) {
+	t.Helper()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec: lll.EtcdClusterSpec{
+			Replicas: ptrInt32(replicas), Version: "3.5.17",
+			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
+		},
+		Status: lll.EtcdClusterStatus{
+			ClusterToken: "ns-test-x", ClusterID: "deadbeef",
+			Observed: &lll.ObservedClusterSpec{
+				Replicas: replicas, Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
+			},
+			ProgressDeadline: &metav1.Time{Time: metav1.Now().Add(time.Hour)},
+		},
+	}
+	objs := []client.Object{cluster}
+	now := metav1.Now()
+	for i := 0; i < members; i++ {
+		name := fmt.Sprintf("test-%d", i)
+		objs = append(objs, &lll.EtcdMember{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: "ns", Labels: memberLabels("test", name),
+				CreationTimestamp: metav1.NewTime(now.Add(time.Duration(i) * time.Minute)),
+			},
+			Spec: lll.EtcdMemberSpec{
+				ClusterName: "test", InitialCluster: "x",
+				Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
+			},
+			Status: lll.EtcdMemberStatus{
+				PodName: name, MemberID: fmt.Sprintf("id-%d", i), PVCName: memberPVCName(name),
+				Conditions: []metav1.Condition{{
+					Type: lll.MemberReady, Status: metav1.ConditionTrue, Reason: "PodReady", LastTransitionTime: now,
+				}},
+			},
+		})
+		objs = append(objs, &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: memberPVCName(name), Namespace: "ns", Labels: memberLabels("test", name),
+			},
+		})
+	}
+	return cluster, objs
+}
+
+// TestScaleDown_ReclaimsTheVictimsVolume: shrinking a cluster is a deliberate
+// instruction, and the departing member's contents are already replicated on
+// the peers that remain (its finalizer runs MemberRemove first). Leaving the
+// volume behind would quietly accumulate storage nobody asked to keep, so this
+// is one of the two paths that reclaims it — explicitly, not by cascade.
+func TestScaleDown_ReclaimsTheVictimsVolume(t *testing.T) {
+	ctx := context.Background()
+	_, objs := scaleDownFixture(t, 2, 3)
+	c, _ := newTestClient(t, objs...)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	// Victim selection is newest-first, so test-2 goes.
+	if err := c.Get(ctx, types.NamespacedName{Name: memberPVCName("test-2"), Namespace: "ns"},
+		&corev1.PersistentVolumeClaim{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("victim's volume should have been reclaimed; got %v", err)
+	}
+	// The survivors keep theirs.
+	for _, name := range []string{"test-0", "test-1"} {
+		if err := c.Get(ctx, types.NamespacedName{Name: memberPVCName(name), Namespace: "ns"},
+			&corev1.PersistentVolumeClaim{}); err != nil {
+			t.Fatalf("surviving member %s lost its volume: %v", name, err)
+		}
+	}
+}
+
+// TestScaleDown_PauseKeepsTheVolume: scaling to zero parks the last member
+// dormant rather than deleting it — the whole point being that the data
+// survives until the cluster is resumed. The reclaim path must not fire here.
+func TestScaleDown_PauseKeepsTheVolume(t *testing.T) {
+	ctx := context.Background()
+	_, objs := scaleDownFixture(t, 0, 1)
+	c, _ := newTestClient(t, objs...)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	if err := c.Get(ctx, types.NamespacedName{Name: memberPVCName("test-0"), Namespace: "ns"},
+		&corev1.PersistentVolumeClaim{}); err != nil {
+		t.Fatalf("paused cluster must keep its data volume; got %v", err)
+	}
+	member := &lll.EtcdMember{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "test-0", Namespace: "ns"}, member); err != nil {
+		t.Fatalf("Get member: %v", err)
+	}
+	if !member.Spec.Dormant {
+		t.Fatalf("last member should have been parked dormant, not deleted")
+	}
+}
+
 // TestScaleDown_PicksMostRecentlyCreatedVictim: with apiserver-assigned
 // names there is no ordinal to scale down by; victim selection sorts by
 // CreationTimestamp (newest first). This naturally retires the most

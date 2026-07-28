@@ -1,13 +1,16 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"regexp"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	lll "github.com/cozystack/etcd-operator/api/v1alpha2"
 )
@@ -42,6 +45,39 @@ const (
 	// member inherit a migration knob — breaking the self-wipe — and (b)
 	// turn data-dir-subpath into a user-controllable path into --data-dir.
 	ReservedAnnotationPrefix = "etcd-operator.cozystack.io/"
+
+	// AnnPVCMemberUID records the UID of the EtcdMember a data PVC was
+	// created for. It is how the member controller recognises its own
+	// volume, replacing the controller owner reference that used to serve
+	// that purpose.
+	//
+	// The distinction matters because an owner reference does two jobs at
+	// once: it identifies the owner AND it makes the object cascade-delete
+	// with it. For a data volume the second job is a liability — every
+	// route that removes an EtcdMember (an operator's kubectl delete, a
+	// GitOps prune, a CRD replacement, a Helm rollback that drops the CRs)
+	// silently takes the data with it, whether or not anyone intended to
+	// discard it. Identity via annotation keeps the recognition and drops
+	// the coupling: volumes are deleted only where the operator explicitly
+	// decides to (see deleteMemberPVC).
+	AnnPVCMemberUID = ReservedAnnotationPrefix + "member-uid"
+
+	// AnnPVCStatus mirrors the lifecycle marker CloudNativePG puts on its
+	// instance volumes (cnpg.io/pvcStatus). It is observability, not
+	// control flow: nothing branches on it, but it answers "is this volume
+	// in use, still filling, or left behind?" with a kubectl get -o custom-columns
+	// instead of a cross-reference against the member list.
+	AnnPVCStatus = ReservedAnnotationPrefix + "pvc-status"
+
+	// PVCStatusInitializing — the volume exists, its member has not reported
+	// Ready yet (fresh member joining, or a restore still populating it).
+	PVCStatusInitializing = "initializing"
+	// PVCStatusReady — the volume is mounted by a member that is Ready.
+	PVCStatusReady = "ready"
+	// PVCStatusDetached — the volume is intact but no Pod is using it: a
+	// paused (dormant) member, or a volume whose member is gone. Detached
+	// volumes are never reclaimed automatically.
+	PVCStatusDetached = "detached"
 
 	// AnnHeadlessServiceName overrides the headless Service name a member's
 	// DNS identity keys off: its Pod subdomain and every peer/client URL
@@ -570,6 +606,61 @@ func setMemberCondition(member *lll.EtcdMember, condType string, status metav1.C
 	}
 	setCondition(&member.Status.Conditions, want)
 	return true
+}
+
+// memberPVCName is the data volume name for a member. Kept in one place
+// because both controllers derive it: the member controller to create and
+// recognise the volume, the cluster controller to reclaim it.
+func memberPVCName(memberName string) string {
+	return "data-" + memberName
+}
+
+// pvcBelongsTo reports whether a data PVC was created for this member.
+//
+// Primary check is the member-UID annotation. The owner-reference fallback
+// covers volumes created before the ownership model changed, and volumes
+// stamped by the in-place migration tool — both carry a controller owner ref
+// and no annotation until ensurePVC migrates them.
+//
+// A volume with neither marker is refused rather than adopted: silently
+// inheriting another member's data dir crash-loops the pod when etcd finds a
+// removed member ID in the WAL.
+func pvcBelongsTo(pvc *corev1.PersistentVolumeClaim, member *lll.EtcdMember) bool {
+	if uid, ok := pvc.Annotations[AnnPVCMemberUID]; ok {
+		return uid == string(member.UID)
+	}
+	for _, o := range pvc.OwnerReferences {
+		if o.Kind == "EtcdMember" && o.UID == member.UID {
+			return true
+		}
+	}
+	return false
+}
+
+// deleteMemberPVC reclaims a member's data volume.
+//
+// This is the ONLY path that destroys etcd data, and it is called exclusively
+// from places where the operator itself decided to retire a member and the
+// data is either replicated elsewhere or already unusable:
+//
+//   - scale-down, where the removed member's contents live on the remaining
+//     peers (MemberRemove has already run via the finalizer), and
+//   - self-heal replacement of a member whose data dir is broken enough to
+//     crash-loop it, gated on the rest of the cluster holding quorum.
+//
+// Deliberately NOT wired to EtcdMember deletion in general. A member CR can
+// disappear for reasons that say nothing about the data's value — a stray
+// kubectl delete, a GitOps prune, a CRD replacement, a chart rollback — and
+// none of those should reach the volume. What is left behind is visible as a
+// detached PVC (AnnPVCStatus) and reclaimed by a human.
+func deleteMemberPVC(ctx context.Context, c client.Client, namespace, memberName string) error {
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: memberPVCName(memberName), Namespace: namespace},
+	}
+	if err := c.Delete(ctx, pvc); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("delete PVC %q: %w", pvc.Name, err)
+	}
+	return nil
 }
 
 // setCondition inserts or updates a condition, preserving LastTransitionTime

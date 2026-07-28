@@ -10,7 +10,7 @@ Two custom resources, one of them user-facing.
 
 **`EtcdCluster`** — the user-facing object. It captures cluster-wide intent: replica count, etcd version, per-member storage size, a progress deadline. This is the only resource users normally touch.
 
-**`EtcdMember`** — one per etcd member. Created and deleted by the cluster controller. Each `EtcdMember` owns its Pod and PVC. Users should not create or edit these directly.
+**`EtcdMember`** — one per etcd member. Created and deleted by the cluster controller. Each `EtcdMember` owns its Pod; its data PVC is deliberately **not** owned by it (see [data volume lifecycle](#data-volume-lifecycle)). Users should not create or edit these directly.
 
 There is **no StatefulSet**. Each member's Pod and PVC are reconciled independently by the member controller. The motivation is protocol awareness: scale-up adds a member as a learner first and only promotes once it's caught up; scale-down runs `MemberRemove` via a finalizer before reclaiming the Pod; pod restarts reuse the existing data dir and rejoin with the same etcd-side member ID. None of these flows fit StatefulSet's "all replicas are one fungible workload" model.
 
@@ -98,7 +98,7 @@ If the seed's pod hasn't been created yet (between Create and Pod-up), the contr
 
 ### Pause (1→0)
 
-When the cluster controller's `scaleDown` observes `desired==0 && len(running)==1`, it Patches `spec.dormant=true` on the surviving member. The CR is **not** deleted. On the next reconcile of that member, the member controller observes `spec.dormant=true` and runs `ensurePodAbsent` — deletes the Pod, clears `status.podName`, surfaces `Ready=False/Paused`. The PVC is not touched. It keeps its existing owner-ref to the `EtcdMember`, which still exists. So nothing reparents, nothing cascade-deletes.
+When the cluster controller's `scaleDown` observes `desired==0 && len(running)==1`, it Patches `spec.dormant=true` on the surviving member. The CR is **not** deleted. On the next reconcile of that member, the member controller observes `spec.dormant=true` and runs `ensurePodAbsent` — deletes the Pod, clears `status.podName`, surfaces `Ready=False/Paused`. The volume is not touched — it keeps its member-UID marker and is flagged `pvc-status: detached` while nothing mounts it. So nothing reparents, and nothing is reclaimed.
 
 Intermediate steps of a multi-member descent (3→2, 2→1) are normal scale-downs: pick newest, Delete CR, finalizer runs `MemberRemove`. Only the final 1→0 step flips dormant.
 
@@ -120,6 +120,36 @@ An earlier iteration of this feature deleted the CR, reparented the PVC to the `
 - Scaling a paused cluster back up to >=1 would never decide to wake the dormant member because `current==desired` would already be satisfied.
 
 The single exception is the steady-state call to `updateStatus`, which receives the full active set (including dormant). `updateStatus`'s Paused branch uses `findDormantMember(members)` to name the parked PVC in the `Available=False/Paused` message. Stripping the dormant member at that call site would silently fall back to the fresh-zero "no data has been written" message even on real dormant clusters. The asymmetry is deliberate and the call site is commented.
+
+## Data volume lifecycle
+
+A member's data PVC carries **no owner reference**. Nothing in Kubernetes garbage-collects it: not deleting the `EtcdMember`, not deleting the `EtcdCluster`, not removing the CRDs.
+
+This is a deliberate departure from the usual "child object owned by its CR" pattern, because an owner reference does two jobs at once — it marks the owner, and it makes the object cascade-delete with that owner. The first is wanted, the second is a liability for a volume holding the only copy of a database. Every route that removes an `EtcdMember` would take the data with it: a stray `kubectl delete`, a GitOps prune, a CRD replacement during an upgrade, a chart rollback that drops the CRs. None of those say anything about whether the data still matters, and all of them are irreversible against a `Delete`-reclaim StorageClass.
+
+So identity and lifetime are separated:
+
+- **Identity** is the `etcd-operator.cozystack.io/member-uid` annotation. The member controller mounts a volume only when the annotation matches its own UID; anything else is refused rather than adopted (inheriting a foreign data dir crash-loops the pod once etcd finds a removed member ID in the WAL). Volumes from older operator versions, and those stamped by the migration tool, carry a controller owner reference instead — the first reconcile after upgrading migrates them: annotation stamped, owner reference stripped.
+- **Lifetime** is the operator's explicit decision. Exactly two paths delete a volume, both places where the operator itself retired the member and the data is either replicated or unusable:
+  - **scale-down** — the departing member's contents live on the remaining peers (its finalizer ran `MemberRemove` first). The shrink was asked for, so the storage goes back to the pool.
+  - **crash-loop replacement** — the member cannot boot on its own data dir, and the quorum gate proved the rest of the cluster is healthy. The replacement starts clean and syncs from peers.
+
+Everything else leaves the volume in place. A paused (`spec.replicas: 0`) cluster keeps its member CR and its volume; a member deleted by anything other than the two paths above leaves a volume behind that no future member will mount, because replacements get fresh apiserver-assigned names.
+
+Leftover volumes are visible rather than silent. Each carries `etcd-operator.cozystack.io/pvc-status`, mirroring the marker CloudNativePG puts on its instance volumes:
+
+| Value | Meaning |
+|---|---|
+| `initializing` | The volume exists; its member has not reported `Ready` yet (joining, or a restore still populating it). |
+| `ready` | Mounted by a member that is serving. |
+| `detached` | Intact, nothing mounting it: a paused member, or a volume whose member is gone. |
+
+```sh
+kubectl get pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <ns> \
+  -o custom-columns='NAME:.metadata.name,STATUS:.metadata.annotations.etcd-operator\.cozystack\.io/pvc-status'
+```
+
+Nothing branches on this annotation — it is observability. Reclaiming a detached volume is a human's call.
 
 ## Storage
 
@@ -149,7 +179,7 @@ On every reconcile of a memory-backed member the controller stamps `Status.PodUI
 - Pod present, UID matches → steady state.
 - Pod absent (or UID differs) with a previously recorded UID → loss confirmed.
 
-The member controller self-deletes the `EtcdMember`. The existing finalizer runs `MemberRemove` against quorum-reachable peers and the Pod / PVC owner-refs handle the rest of GC. The cluster controller's normal `current < desired` arm then scales up: a fresh `EtcdMember` is created with a new `GenerateName` and a new etcd-side member ID. There is no in-place "rejoin with empty data dir" — that path would require lying to raft.
+The member controller self-deletes the `EtcdMember`. The existing finalizer runs `MemberRemove` against quorum-reachable peers and the Pod's owner reference handles its GC; the memory-backed member has no volume to reclaim. The cluster controller's normal `current < desired` arm then scales up: a fresh `EtcdMember` is created with a new `GenerateName` and a new etcd-side member ID. There is no in-place "rejoin with empty data dir" — that path would require lying to raft.
 
 If quorum is already lost across multiple simultaneous failures, `MemberRemove` will fail and the dying members stay in `Terminating` until quorum returns. That is the correct outcome: the cluster is dead and the user has to recreate it. The operator does not try to be clever about restoring a quorum from inconsistent half-states.
 
@@ -163,7 +193,7 @@ The member controller detects this and replaces the member:
 
 - **Trigger.** The etcd container is not ready and has restarted at least `dataLossRestartThreshold` (5) times. `OOMKilled` is excluded (whether it's the current or the last termination) — that's a resource problem re-creating the member would not fix — and a Pod that is itself being deleted (drain/eviction/manual restart) is never treated as stuck.
 - **Quorum gate.** The operator deletes the member only when the *rest* of the cluster still has quorum, so a cluster-wide outage (many members crashing at once) never cascades into mass deletion. The count is read from `Status.ReadyMembers`, which the cluster controller maintains and which can lag; if the stuck member is still counted ready, the gate subtracts it. As a second line of defence the finalizer's `MemberRemove` is itself quorum-gated, so even a stale-high count cannot delete data below quorum.
-- **Replacement.** Deleting the `EtcdMember` runs the finalizer's clean `MemberRemove`, the member-owned PVC is GC'd (discarding the corrupt data dir), and the cluster controller gap-fills a fresh `GenerateName` member with a current `--initial-cluster` and a **new** etcd member ID — not a same-ID rejoin.
+- **Replacement.** Deleting the `EtcdMember` runs the finalizer's clean `MemberRemove`, the operator explicitly reclaims that member's volume (discarding the corrupt data dir — one of the two paths allowed to do so, see [data volume lifecycle](#data-volume-lifecycle)), and the cluster controller gap-fills a fresh `GenerateName` member with a current `--initial-cluster` and a **new** etcd member ID — not a same-ID rejoin.
 - **Latency.** `CrashLoopBackOff` caps its backoff at 5 minutes, so reaching 5 restarts takes on the order of **tens of minutes**, not the ~5s of the memory Pod-loss path. A deliberately-deleted-and-replaced member during this window is expected operator behavior, not a fault. A slow restore or slow learner join on the *replacement* can itself trip the threshold and be replaced again; this is quorum-gated and self-limiting, but expect it on a struggling cluster.
 
 ### What is missing from memory clusters today

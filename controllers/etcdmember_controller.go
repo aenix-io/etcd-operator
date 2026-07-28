@@ -116,6 +116,12 @@ func (r *EtcdMemberReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			log.Error(err, "failed to delete pod for dormant member")
 			return ctrl.Result{}, err
 		}
+		// The volume is intact but nothing mounts it while paused. Marking
+		// it detached is what makes "paused cluster" distinguishable from
+		// "leftover volume" in a plain `kubectl get pvc -o custom-columns`.
+		if err := r.setPVCStatus(ctx, member, PVCStatusDetached); err != nil {
+			log.Error(err, "failed to mark PVC detached")
+		}
 		// Persist the cleared PodName + a Paused condition. updateStatus()
 		// is for the running flow (reads pod, derives Ready); for dormant
 		// we know the answer directly. Idempotent — setMemberCondition
@@ -357,19 +363,24 @@ func (r *EtcdMemberReconciler) ensurePVC(ctx context.Context, member *lll.EtcdMe
 		return nil
 	}
 
-	pvcName := "data-" + member.Name
+	pvcName := memberPVCName(member.Name)
 	pvc := &corev1.PersistentVolumeClaim{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: member.Namespace, Name: pvcName}, pvc)
 	if err == nil {
-		// The PVC stays owned by this EtcdMember across pause/resume
-		// (the cluster controller flips Spec.Dormant rather than
-		// deleting the member CR), so ownership never moves. If the
-		// PVC's controller-owner doesn't match this member's UID, it
-		// belongs to something else and we must refuse — silently
-		// inheriting another member's data dir would crashloop the
-		// pod when etcd notices a removed memberID in the WAL.
-		if !pvcOwnedBy(pvc, member) {
-			return fmt.Errorf("PVC %q is owned by a different EtcdMember; awaiting GC before reuse", pvcName)
+		// The volume stays with this EtcdMember across pause/resume (the
+		// cluster controller flips Spec.Dormant rather than deleting the
+		// member CR), so the marker never moves. A volume carrying a
+		// different member's marker belongs to something else and must be
+		// refused — silently inheriting another member's data dir would
+		// crash-loop the pod when etcd notices a removed memberID in the WAL.
+		if !pvcBelongsTo(pvc, member) {
+			return fmt.Errorf("PVC %q belongs to a different EtcdMember; awaiting cleanup before reuse", pvcName)
+		}
+		// Migrate volumes that predate the annotation: stamp the marker and
+		// drop the controller owner reference, which is what made a deleted
+		// member take its data with it.
+		if err := r.adoptLegacyPVC(ctx, pvc, member); err != nil {
+			return err
 		}
 		member.Status.PVCName = pvcName
 		return nil
@@ -378,11 +389,16 @@ func (r *EtcdMemberReconciler) ensurePVC(ctx context.Context, member *lll.EtcdMe
 		return err
 	}
 
-	// The PVC is operator-created and operator-owned, so it carries the
-	// cluster's additionalMetadata like every other child object (backup
-	// tooling and cost-allocation selectors target PVCs specifically).
+	// The PVC is operator-created, so it carries the cluster's
+	// additionalMetadata like every other child object (backup tooling and
+	// cost-allocation selectors target PVCs specifically).
 	pvcLabels, pvcAnnotations := applyAdditionalMetadata(
 		memberLabels(member.Spec.ClusterName, member.Name), nil, member.Spec.AdditionalMetadata)
+	if pvcAnnotations == nil {
+		pvcAnnotations = map[string]string{}
+	}
+	pvcAnnotations[AnnPVCMemberUID] = string(member.UID)
+	pvcAnnotations[AnnPVCStatus] = PVCStatusInitializing
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        pvcName,
@@ -400,9 +416,9 @@ func (r *EtcdMemberReconciler) ensurePVC(ctx context.Context, member *lll.EtcdMe
 			},
 		},
 	}
-	if err := controllerutil.SetControllerReference(member, pvc, r.Scheme); err != nil {
-		return err
-	}
+	// No controller owner reference on purpose: the volume must outlive
+	// anything that removes its EtcdMember without meaning to discard the
+	// data. See AnnPVCMemberUID and deleteMemberPVC.
 	if err := r.Create(ctx, pvc); err != nil {
 		return err
 	}
@@ -410,19 +426,69 @@ func (r *EtcdMemberReconciler) ensurePVC(ctx context.Context, member *lll.EtcdMe
 	return nil
 }
 
-// pvcOwnedBy returns true only if the PVC carries an EtcdMember owner
-// reference whose UID matches this member — i.e. we created it. PVCs with
-// no owner refs, or with owner refs pointing at anything else, are refused.
-func pvcOwnedBy(pvc *corev1.PersistentVolumeClaim, member *lll.EtcdMember) bool {
+// adoptLegacyPVC brings a pre-existing volume onto the annotation-based
+// ownership model: stamp the member-UID marker, and strip the controller
+// owner reference so the volume no longer cascade-deletes with its member.
+//
+// Runs against volumes created by an older operator build and against those
+// stamped by the in-place migration tool. Idempotent, and a no-op once a
+// volume has been migrated.
+func (r *EtcdMemberReconciler) adoptLegacyPVC(
+	ctx context.Context,
+	pvc *corev1.PersistentVolumeClaim,
+	member *lll.EtcdMember,
+) error {
+	kept := make([]metav1.OwnerReference, 0, len(pvc.OwnerReferences))
 	for _, o := range pvc.OwnerReferences {
 		if o.Kind == "EtcdMember" && o.UID == member.UID {
-			return true
+			continue
 		}
+		kept = append(kept, o)
 	}
-	return false
+	_, marked := pvc.Annotations[AnnPVCMemberUID]
+	if marked && len(kept) == len(pvc.OwnerReferences) {
+		return nil
+	}
+
+	original := pvc.DeepCopy()
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations[AnnPVCMemberUID] = string(member.UID)
+	pvc.OwnerReferences = kept
+	if err := r.Patch(ctx, pvc, client.MergeFrom(original)); err != nil {
+		return fmt.Errorf("migrate PVC %q to annotation ownership: %w", pvc.Name, err)
+	}
+	return nil
 }
 
-// podOwnedBy mirrors pvcOwnedBy: true only when the Pod's owner refs
+// setPVCStatus records the volume's lifecycle marker (AnnPVCStatus). Purely
+// observational — see the constant's doc comment. Best-effort: a failure here
+// must never block the member's reconcile, so callers log and continue.
+func (r *EtcdMemberReconciler) setPVCStatus(ctx context.Context, member *lll.EtcdMember, status string) error {
+	if member.Spec.Storage.Medium == lll.StorageMediumMemory {
+		return nil
+	}
+	pvc := &corev1.PersistentVolumeClaim{}
+	name := types.NamespacedName{Namespace: member.Namespace, Name: memberPVCName(member.Name)}
+	if err := r.Get(ctx, name, pvc); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if pvc.Annotations[AnnPVCStatus] == status {
+		return nil
+	}
+	original := pvc.DeepCopy()
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations[AnnPVCStatus] = status
+	return r.Patch(ctx, pvc, client.MergeFrom(original))
+}
+
+// podOwnedBy: true only when the Pod's owner refs
 // point at this EtcdMember by UID. Less load-bearing than the PVC
 // check (Pod corruption is recoverable; replacing one is cheap), but
 // adopting a leftover Pod from a prior cluster generation would leave
@@ -1064,6 +1130,14 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 			if err := r.Delete(ctx, member); err != nil {
 				return ctrl.Result{}, err
 			}
+			// One of the two places the operator reclaims a data volume:
+			// this member's data dir is broken enough to crash-loop it, and
+			// the quorum gate above proved the rest of the cluster is
+			// healthy, so its contents are both unusable and redundant. The
+			// replacement joins with an empty volume and syncs from peers.
+			if err := deleteMemberPVC(ctx, r.Client, member.Namespace, member.Name); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, nil
 		}
 		if setMemberCondition(member, lll.MemberReady, metav1.ConditionFalse, "PodNotReady",
@@ -1133,6 +1207,18 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 		if err := r.Status().Update(ctx, member); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Track the volume's lifecycle marker alongside member readiness: a
+	// member that is serving means its volume is in use, anything else means
+	// it is still filling. Best-effort — never fail a reconcile over an
+	// observability annotation.
+	pvcStatus := PVCStatusInitializing
+	if ready {
+		pvcStatus = PVCStatusReady
+	}
+	if err := r.setPVCStatus(ctx, member, pvcStatus); err != nil {
+		log.Error(err, "failed to update PVC status annotation")
 	}
 
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil

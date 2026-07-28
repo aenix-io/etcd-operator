@@ -57,7 +57,7 @@ kubectl patch etcdcluster.etcd-operator.cozystack.io <name> -n <ns> --type=merge
   -p '{"spec":{"replicas":3}}'
 ```
 
-Picks the most-recently-created member as the victim (`CreationTimestamp` DESC, name DESC tiebreak). The finalizer calls `MemberRemove` against the remaining peers before the Pod and PVC are garbage-collected. No special seed-protection — the seed (the original bootstrap member) has no permanent special role and can be removed like any other member.
+Picks the most-recently-created member as the victim (`CreationTimestamp` DESC, name DESC tiebreak). The finalizer calls `MemberRemove` against the remaining peers, the Pod is garbage-collected with its member, and the operator explicitly reclaims that member's data volume — its contents are already replicated on the peers that remain. No special seed-protection — the seed (the original bootstrap member) has no permanent special role and can be removed like any other member.
 
 ### Pause (scale to 0)
 
@@ -66,7 +66,7 @@ kubectl patch etcdcluster.etcd-operator.cozystack.io <name> -n <ns> --type=merge
   -p '{"spec":{"replicas":0}}'
 ```
 
-For an N>1 cluster this is a staged descent: each intermediate step (`MemberRemove` + Pod/PVC GC) until one member remains, then a 1→0 "pause" — the surviving member's `spec.dormant` is patched to `true`. The Pod goes away; the PVC stays owned by the `EtcdMember`, which itself stays alive. `etcdctl` from outside is no longer reachable (no Pod) but the data is intact.
+For an N>1 cluster this is a staged descent: each intermediate step (`MemberRemove`, Pod GC, volume reclaimed) until one member remains, then a 1→0 "pause" — the surviving member's `spec.dormant` is patched to `true`. The Pod goes away; the volume stays, marked `pvc-status: detached`, and its `EtcdMember` stays alive. `etcdctl` from outside is no longer reachable (no Pod) but the data is intact.
 
 Observable state once paused:
 
@@ -161,7 +161,11 @@ kubectl get etcdmember,pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <n
 kubectl apply -f <your-cluster-manifest>.yaml
 ```
 
-The PVC GC step is important: re-creating before the prior PVCs are gone causes the new EtcdMember to refuse to adopt them (`pvcOwnedBy` UID check fails — see [concepts](concepts.md#api-model)). The operator's check is a safety feature; the right answer is to wait.
+Volumes from the deleted cluster are **not** garbage-collected (see [data volume lifecycle](concepts.md#data-volume-lifecycle)) — they remain as `detached` PVCs. A recreated cluster never adopts them: its members get fresh names and fresh UIDs, and the member-UID check refuses anything that is not theirs. Delete the leftovers yourself once you have confirmed the data is not needed:
+
+```sh
+kubectl get pvc -l etcd-operator.cozystack.io/cluster=<cluster> -n <ns>
+```
 
 ### `Available=False/DeadlineExceeded`
 
@@ -488,7 +492,7 @@ If a non-bootstrap PVC member's etcd cannot start — classically because its da
 
 - **Detection**: the etcd container is not ready and has restarted at least 5 times (`dataLossRestartThreshold`), excluding `OOMKilled` (a resource problem, not a lost data dir — raising `spec.resources.limits.memory` is the fix there, not replacement). A Pod that is being deleted (drain, eviction, manual restart) is never treated as stuck.
 - **Quorum gate**: the operator deletes the member only when the *rest* of the cluster still has quorum, so a cluster-wide outage never cascades into mass deletion. The gate reads `Status.ReadyMembers` (maintained by the cluster controller, and possibly lagging) and subtracts the stuck member if it is still counted; the finalizer's `MemberRemove` is independently quorum-gated as a backstop.
-- **Replacement**: the `EtcdMember` CR is deleted → finalizer `MemberRemove` → the member-owned `data-<member>` PVC is GC'd (discarding the corrupt data dir) → the cluster controller gap-fills a fresh `GenerateName` member with a current `--initial-cluster` and a **new** etcd member ID.
+- **Replacement**: the `EtcdMember` CR is deleted → finalizer `MemberRemove` → the operator explicitly reclaims `data-<member>` (discarding the corrupt data dir) → the cluster controller gap-fills a fresh `GenerateName` member with a current `--initial-cluster` and a **new** etcd member ID.
 
 **Detection latency is much longer than the Pod-loss path.** `CrashLoopBackOff` caps backoff at 5 minutes, so reaching 5 restarts takes **tens of minutes**, not ~5 s. Budget for that before concluding the operator is misbehaving — a member that vanishes and is replaced by a fresh-named one after a long crash-loop is the operator working as designed, not flapping. Note also that a replacement which is itself slow to come up (slow restore, slow learner join) can trip the same threshold and be replaced again; this is quorum-gated and harmless to the cluster, but expect repeated replacement on a genuinely unhealthy member.
 

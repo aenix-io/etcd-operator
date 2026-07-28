@@ -359,6 +359,159 @@ func TestEnsurePVC_AcceptsOwnPVC(t *testing.T) {
 	}
 }
 
+// TestEnsurePVC_CreatesVolumeWithoutOwnerReference pins the ownership model
+// that keeps etcd data alive through events nobody intended as "discard the
+// data".
+//
+// A controller owner reference does two jobs at once: it says "this is mine"
+// and it says "delete me with my owner". For a data volume the second job is
+// a liability — every route that removes an EtcdMember (a stray kubectl
+// delete, a GitOps prune, a CRD replacement, a chart rollback that drops the
+// CRs) takes the volume with it, silently and irreversibly. Identity moves to
+// an annotation so recognition survives without the coupling.
+func TestEnsurePVC_CreatesVolumeWithoutOwnerReference(t *testing.T) {
+	ctx := context.Background()
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", UID: types.UID("member-uid")},
+		Spec: lll.EtcdMemberSpec{
+			ClusterName: "test", Version: "3.5.17",
+			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test",
+		},
+	}
+	c, _ := newTestClient(t, member)
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+
+	if err := r.ensurePVC(ctx, member); err != nil {
+		t.Fatalf("ensurePVC: %v", err)
+	}
+
+	pvc := mustGet(t, c, "data-test-0", "ns", &corev1.PersistentVolumeClaim{})
+	if len(pvc.OwnerReferences) != 0 {
+		t.Fatalf("data volume must carry no owner reference; got %+v", pvc.OwnerReferences)
+	}
+	if got := pvc.Annotations[AnnPVCMemberUID]; got != "member-uid" {
+		t.Fatalf("member-uid annotation = %q, want %q", got, "member-uid")
+	}
+	if got := pvc.Annotations[AnnPVCStatus]; got != PVCStatusInitializing {
+		t.Fatalf("fresh volume status = %q, want %q", got, PVCStatusInitializing)
+	}
+	// The annotation must be enough to recognise the volume on the next pass.
+	if !pvcBelongsTo(pvc, member) {
+		t.Fatalf("member must recognise its own volume by annotation")
+	}
+}
+
+// TestEnsurePVC_MigratesLegacyOwnerReference covers the upgrade path: volumes
+// created by an older build — and those stamped by the in-place migration
+// tool — carry a controller owner reference and no annotation. Leaving that
+// reference in place would keep exactly the cascade this change removes, so
+// the first reconcile after the upgrade must strip it and stamp the marker.
+func TestEnsurePVC_MigratesLegacyOwnerReference(t *testing.T) {
+	ctx := context.Background()
+	uid := types.UID("legacy-uid")
+	yes := true
+	legacy := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-test-0", Namespace: "ns",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion:         "etcd-operator.cozystack.io/v1alpha2",
+				Kind:               "EtcdMember",
+				Name:               "test-0",
+				UID:                uid,
+				Controller:         &yes,
+				BlockOwnerDeletion: &yes,
+			}},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+			},
+		},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", UID: uid},
+		Spec: lll.EtcdMemberSpec{
+			ClusterName: "test", Version: "3.5.17",
+			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test",
+		},
+	}
+	c, _ := newTestClient(t, member, legacy)
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+
+	if err := r.ensurePVC(ctx, member); err != nil {
+		t.Fatalf("ensurePVC on legacy volume: %v", err)
+	}
+
+	pvc := mustGet(t, c, "data-test-0", "ns", &corev1.PersistentVolumeClaim{})
+	if len(pvc.OwnerReferences) != 0 {
+		t.Fatalf("legacy owner reference must be stripped; got %+v", pvc.OwnerReferences)
+	}
+	if got := pvc.Annotations[AnnPVCMemberUID]; got != string(uid) {
+		t.Fatalf("member-uid annotation = %q, want %q", got, uid)
+	}
+	if member.Status.PVCName != "data-test-0" {
+		t.Fatalf("PVCName not recorded: %q", member.Status.PVCName)
+	}
+}
+
+// TestMemberDeletion_LeavesTheVolumeBehind is the regression this whole change
+// exists for: an EtcdMember going away must not take its data with it.
+//
+// The finalizer removes the member from etcd and lets the CR go, and the
+// volume stays — no owner reference to cascade through, and nothing in the
+// deletion path reclaims it. Recovering or discarding what is left is then a
+// human's call.
+func TestMemberDeletion_LeavesTheVolumeBehind(t *testing.T) {
+	ctx := context.Background()
+	now := metav1.Now()
+	uid := types.UID("doomed-uid")
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-0", Namespace: "ns", UID: uid,
+			Labels:            memberLabels("test", "test-0"),
+			DeletionTimestamp: &now,
+			Finalizers:        []string{MemberFinalizer},
+		},
+		Spec: lll.EtcdMemberSpec{
+			ClusterName: "test", Version: "3.5.17",
+			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test",
+		},
+		Status: lll.EtcdMemberStatus{PVCName: "data-test-0", MemberID: "abc"},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-test-0", Namespace: "ns",
+			Annotations: map[string]string{AnnPVCMemberUID: string(uid)},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+			},
+		},
+	}
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Status:     lll.EtcdClusterStatus{ClusterID: "deadbeef", ReadyMembers: 3},
+	}
+	c, _ := newTestClient(t, member, pvc, cluster)
+	fe := newFakeEtcd(0xdeadbeef)
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t), EtcdClientFactory: factoryReturning(fe)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-0", Namespace: "ns"}}); err != nil {
+		t.Fatalf("Reconcile of deleting member: %v", err)
+	}
+
+	got := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "data-test-0", Namespace: "ns"}, got); err != nil {
+		t.Fatalf("data volume must survive its member's deletion; got %v", err)
+	}
+	if got.DeletionTimestamp != nil {
+		t.Fatalf("data volume must not be marked for deletion by the member's finalizer")
+	}
+}
+
 // TestEnsurePVC_AppliesStorageClassName covers the wiring of
 // spec.storage.storageClassName onto the created PVC. The propagation
 // is what makes per-cluster StorageClass overrides actually take effect
@@ -971,6 +1124,77 @@ func TestUpdateStatus_ReplacesStuckMember(t *testing.T) {
 	err := c.Get(ctx, types.NamespacedName{Name: "test-1", Namespace: "ns"}, &lll.EtcdMember{})
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected member deleted for replacement; Get err = %v", err)
+	}
+}
+
+// TestUpdateStatus_ReplacingStuckMemberReclaimsItsVolume: the second of the
+// two paths that deliberately destroy data. The member crash-loops on its own
+// data dir while the quorum gate proves the rest of the cluster is healthy, so
+// its contents are both unusable and already replicated — the replacement is
+// meant to start clean and sync from peers. Leaving the volume would also
+// strand it: replacements get fresh apiserver-assigned names, so nothing would
+// ever mount it again.
+func TestUpdateStatus_ReplacingStuckMemberReclaimsItsVolume(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-1", Namespace: "ns", UID: types.UID("stuck-uid"), Labels: memberLabels("test", "test-1")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-test-1", Namespace: "ns",
+			Annotations: map[string]string{AnnPVCMemberUID: "stuck-uid"},
+		},
+	}
+	c, _ := newTestClient(t, cluster, member, pvc, crashLoopPod("test-1", "ns"))
+	clusterWithReady(t, c, "test", "ns", 2) // 2/3 ready → quorum without test-1
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	if err := c.Get(ctx, types.NamespacedName{Name: "data-test-1", Namespace: "ns"},
+		&corev1.PersistentVolumeClaim{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("replaced member's volume should have been reclaimed; got %v", err)
+	}
+}
+
+// TestUpdateStatus_KeepingStuckMemberKeepsItsVolume is the mirror image: when
+// the quorum gate refuses the replacement, neither the member nor its data may
+// be touched. A cluster-wide outage looks exactly like this on every member at
+// once, and reclaiming there would turn an outage into data loss.
+func TestUpdateStatus_KeepingStuckMemberKeepsItsVolume(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-1", Namespace: "ns", UID: types.UID("stuck-uid"), Labels: memberLabels("test", "test-1")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data-test-1", Namespace: "ns",
+			Annotations: map[string]string{AnnPVCMemberUID: "stuck-uid"},
+		},
+	}
+	c, _ := newTestClient(t, cluster, member, pvc, crashLoopPod("test-1", "ns"))
+	clusterWithReady(t, c, "test", "ns", 1) // 1/3 ready → no quorum without test-1
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	if err := c.Get(ctx, types.NamespacedName{Name: "data-test-1", Namespace: "ns"},
+		&corev1.PersistentVolumeClaim{}); err != nil {
+		t.Fatalf("volume must survive when the replacement is refused; got %v", err)
 	}
 }
 
@@ -1832,11 +2056,16 @@ func TestReconcile_DormantMemberDeletesPod(t *testing.T) {
 	} else if !apierrors.IsNotFound(err) {
 		t.Fatalf("unexpected error fetching Pod: %v", err)
 	}
-	// PVC must still exist with the EtcdMember as its owner-controller —
-	// nothing reparented anything.
+	// PVC must still exist, still marked as this member's — nothing
+	// reparented anything.
 	gotPVC := mustGet(t, c, "data-test-saved1", "ns", &corev1.PersistentVolumeClaim{})
-	if !pvcOwnedBy(gotPVC, dormant) {
-		t.Fatalf("PVC owner-controller must still be the EtcdMember; got %+v", gotPVC.OwnerReferences)
+	if !pvcBelongsTo(gotPVC, dormant) {
+		t.Fatalf("PVC must still be marked as the EtcdMember's; got annotations %+v owner %+v",
+			gotPVC.Annotations, gotPVC.OwnerReferences)
+	}
+	// A paused member's volume is intact but unmounted: detached.
+	if got := gotPVC.Annotations[AnnPVCStatus]; got != PVCStatusDetached {
+		t.Fatalf("paused member's PVC should be marked %q; got %q", PVCStatusDetached, got)
 	}
 	// Status.PodName cleared so /status reflects reality.
 	gotMember := mustGet(t, c, "test-saved1", "ns", &lll.EtcdMember{})
@@ -1901,10 +2130,11 @@ func TestReconcile_WakeFromDormantCreatesPod(t *testing.T) {
 	if gotPod.Name != "test-saved1" {
 		t.Fatalf("expected Pod test-saved1 to exist after wake")
 	}
-	// PVC must still exist with the same owner.
+	// PVC must still exist, still marked as the woken member's.
 	gotPVC := mustGet(t, c, "data-test-saved1", "ns", &corev1.PersistentVolumeClaim{})
-	if !pvcOwnedBy(gotPVC, woken) {
-		t.Fatalf("PVC owner-controller must still be the woken EtcdMember; got %+v", gotPVC.OwnerReferences)
+	if !pvcBelongsTo(gotPVC, woken) {
+		t.Fatalf("PVC must still be marked as the woken EtcdMember's; got annotations %+v owner %+v",
+			gotPVC.Annotations, gotPVC.OwnerReferences)
 	}
 }
 
