@@ -1,8 +1,9 @@
-# Ownership for this sub-project.
+# Review routing for this repository.
 #
 # The Cozystack maintainers are maintainers of every sub-project by default
-# (https://github.com/cozystack/cozystack/blob/main/MAINTAINERS.md). The
-# handles below are the people who own this repository day to day and whose
-# review is requested on every change here.
+# (https://github.com/cozystack/cozystack/blob/main/MAINTAINERS.md). The handles
+# below are the people whose review is requested on changes here. It is a
+# routing list, not a claim about who contributes most: some entries are here
+# because the area is theirs, others because the role carries the repository.
 
 * @lllamnyp @androndo
