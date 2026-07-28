@@ -74,7 +74,7 @@ func TestPVCMemberCrashLoopSelfHeal(t *testing.T) {
 	if len(original) != 3 {
 		t.Fatalf("expected 3 members, got %d: %v", len(original), original)
 	}
-	victim := original[0]
+	victim := selfHealReplaceableMember(ctx, t)
 	victimPVC := "data-" + victim
 	t.Logf("corrupting data dir of victim member %q (pvc %q)", victim, victimPVC)
 
@@ -99,7 +99,7 @@ func TestPVCMemberCrashLoopSelfHeal(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("victim %q still present (crash-loop not yet past threshold)", victim)
+			return fmt.Errorf("victim %q still present; %s", victim, etcdRestartState(ctx, victim))
 		})
 
 	// The corrupt member's PVC must be GC'd (owner-ref), discarding the bad
@@ -166,6 +166,66 @@ func selfHealMembers(ctx context.Context, t *testing.T) []string {
 		names = append(names, list.Items[i].Name)
 	}
 	return names
+}
+
+// selfHealReplaceableMember returns a member that is eligible for self-heal —
+// i.e. any member except the bootstrap seed.
+//
+// The seed is permanently excluded from the self-heal path: the caller of
+// etcdContainerStuck gates on !member.Spec.Bootstrap, and Spec.Bootstrap is set
+// once at member creation and never cleared. Corrupting the seed therefore
+// waits out the full 15m timeout for a deletion that is by design never coming.
+//
+// Picking by index (the previous `original[0]`) hit exactly that: List returns
+// items name-sorted and member names are apiserver-assigned random suffixes, so
+// the seed sorted first — and became the victim — in roughly one run in three.
+// The seed-exclusion contract itself is covered by the unit test
+// TestUpdateStatus_KeepsStuckBootstrapMember; this test covers the replaceable
+// case, so it must pick a replaceable member deterministically.
+func selfHealReplaceableMember(ctx context.Context, t *testing.T) string {
+	t.Helper()
+	list := &etcdv1alpha2.EtcdMemberList{}
+	if err := kube.List(ctx, list, client.InNamespace(selfHealNamespace),
+		client.MatchingLabels{"etcd-operator.cozystack.io/cluster": selfHealCluster}); err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	var seeds, eligible []string
+	for i := range list.Items {
+		if list.Items[i].Spec.Bootstrap {
+			seeds = append(seeds, list.Items[i].Name)
+			continue
+		}
+		eligible = append(eligible, list.Items[i].Name)
+	}
+	// Exactly one seed is an invariant of bootstrap (the cluster controller
+	// finds the seed by Spec.Bootstrap and assumes a single one); assert it
+	// rather than silently picking a victim from a cluster shaped wrongly.
+	if len(seeds) != 1 {
+		t.Fatalf("expected exactly 1 bootstrap seed, got %d: seeds=%v eligible=%v", len(seeds), seeds, eligible)
+	}
+	if len(eligible) == 0 {
+		t.Fatalf("no non-bootstrap member to corrupt; seeds=%v", seeds)
+	}
+	return eligible[0]
+}
+
+// etcdRestartState renders the member pod's etcd container restart count and
+// readiness for failure messages. The previous wording asserted the member was
+// "not yet past threshold" unconditionally, which sent the one real failure
+// this test has produced — a victim well past the threshold, held back by the
+// bootstrap gate instead — looking in entirely the wrong place.
+func etcdRestartState(ctx context.Context, member string) string {
+	pod, err := clientset.CoreV1().Pods(selfHealNamespace).Get(ctx, member, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Sprintf("pod state unknown: %v", err)
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name != "etcd" {
+			continue
+		}
+		return fmt.Sprintf("etcd container restarts=%d ready=%t", cs.RestartCount, cs.Ready)
+	}
+	return fmt.Sprintf("pod phase %s has no etcd container status", pod.Status.Phase)
 }
 
 // selfHealMembersErr is the error-tolerant form for use inside waitFor (a list
