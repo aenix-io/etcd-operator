@@ -448,3 +448,24 @@ func TestEnsurePod_LeavesPodAloneWhenTLSMatches(t *testing.T) {
 		t.Fatalf("Pod on current TLS material was deleted: %v", err)
 	}
 }
+
+// A conflict is reported even when no member happens to be drifting.
+// Reporting Complete while the operator cannot own its own material would
+// be a lie of omission.
+func TestTLSHandover_ConflictReportedEvenWhenMembersAreAligned(t *testing.T) {
+	ctx := context.Background()
+	cluster := handoverCluster()
+	aligned := byoMember("etcd-aaa")
+	aligned.Spec.TLS = deriveMemberTLS(cluster)
+	c, s := newTestClient(t, cluster, aligned)
+	r := &EtcdClusterReconciler{Client: c, Scheme: s}
+
+	conflict := &tlsMaterialConflictError{kind: "Certificate", name: "etcd-server"}
+	if _, err := r.reconcileTLSHandover(ctx, cluster, []lll.EtcdMember{*aligned}, conflict); err != nil {
+		t.Fatalf("reconcileTLSHandover: %v", err)
+	}
+	cond := handoverCondition(t, c)
+	if cond == nil || cond.Reason != lll.TLSHandoverBlocked {
+		t.Fatalf("want Blocked even with aligned members, got %+v", cond)
+	}
+}

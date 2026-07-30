@@ -187,21 +187,11 @@ func (r *EtcdClusterReconciler) reconcileTLSHandover(
 	log := log.FromContext(ctx)
 
 	stale := membersNeedingTLSHandover(cluster, members)
-	if len(stale) == 0 {
-		// Nothing pending. Only claim completion if we ever said otherwise;
-		// clusters that were born on cert-manager material never had a
-		// handover and should not carry a condition about one.
-		if meta := findClusterCondition(cluster, lll.ClusterTLSHandover); meta != nil {
-			if setClusterCondition(cluster, lll.ClusterTLSHandover, metav1.ConditionFalse,
-				lll.TLSHandoverComplete, "all members run on the TLS material named by spec.tls") {
-				if err := r.statusUpdateTolerateConflict(ctx, cluster); err != nil {
-					return nil, err
-				}
-			}
-		}
-		return nil, nil
-	}
 
+	// Conflict first, before the members are even considered. A Certificate
+	// this cluster must own but does not is worth surfacing whether or not
+	// any member happens to be drifting right now — reporting Complete while
+	// the operator cannot own its own material would be a lie of omission.
 	if conflict != nil {
 		// Blocked, and only a human can unblock it. Deliberately not fatal
 		// to the reconcile: the cluster is still serving on the material it
@@ -218,6 +208,21 @@ func (r *EtcdClusterReconciler) reconcileTLSHandover(
 				"into it without a gap.", conflict.kind, conflict.name)) {
 			if err := r.statusUpdateTolerateConflict(ctx, cluster); err != nil {
 				return nil, err
+			}
+		}
+		return nil, nil
+	}
+
+	if len(stale) == 0 {
+		// Nothing pending. Only claim completion if we ever said otherwise;
+		// clusters that were born on cert-manager material never had a
+		// handover and should not carry a condition about one.
+		if prev := findClusterCondition(cluster, lll.ClusterTLSHandover); prev != nil {
+			if setClusterCondition(cluster, lll.ClusterTLSHandover, metav1.ConditionFalse,
+				lll.TLSHandoverComplete, "all members run on the TLS material named by spec.tls") {
+				if err := r.statusUpdateTolerateConflict(ctx, cluster); err != nil {
+					return nil, err
+				}
 			}
 		}
 		return nil, nil
