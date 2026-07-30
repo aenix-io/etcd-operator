@@ -205,6 +205,62 @@ kubectl patch etcdcluster.etcd-operator.cozystack.io <name> -n <ns> --subresourc
 
 This pushes the cluster into the terminal-error state immediately. Recovery follows the relevant condition arm above (delete-and-recreate for pre-bootstrap, spec-edit for post-bootstrap).
 
+## Handing TLS over to the operator
+
+A cluster running on user-provided TLS Secrets can be moved onto operator-managed cert-manager issuance in place. This is the only permitted change to `spec.tls` after create — see the [validation table](concepts.md#apiserver-enforced-validation).
+
+**It costs a brief outage.** The new material is signed by a different CA, so an old member and a new one cannot authenticate to each other at all. The operator therefore repoints every member in one pass and lets their Pods come back together, rather than rolling one at a time — a staggered roll would spend its entire duration with a split, quorum-less cluster instead of a single pod-restart window.
+
+### 1. Free up the names, if something else holds them
+
+The operator emits `Certificate/<cluster>-server` and `Certificate/<cluster>-peer`. If a Helm chart already installs Certificates under those names — which it does whenever the cluster is called `etcd` — the operator refuses to touch them and reports:
+
+```
+TLSHandover=False  reason=Blocked
+  cannot take over Certificate "etcd-peer": it exists but another controller owns it …
+```
+
+Stop the chart from emitting them (drop the templates, re-reconcile). cert-manager leaves the **Secret** in place when its Certificate is deleted, so there is no gap: the Certificate the operator then creates reissues into the same Secret.
+
+### 2. Flip the spec
+
+```yaml
+spec:
+  tls:
+    client:
+      certManager:
+        serverIssuerRef: {name: etcd-issuer}
+        # Required if — and only if — the cluster previously set
+        # operatorClientSecretRef. The handover may not change whether
+        # client mTLS is in effect; CEL rejects a posture flip.
+        operatorClientIssuerRef: {name: etcd-issuer}
+    peer:
+      certManager:
+        issuerRef: {name: etcd-peer-issuer}
+```
+
+Drop `serverSecretRef` / `operatorClientSecretRef` / `secretRef` in the same edit — they are mutually exclusive with `certManager`, and CEL rejects an object carrying both.
+
+### 3. Watch it land
+
+```sh
+kubectl get etcdcluster <name> -n <ns> \
+  -o jsonpath='{range .status.conditions[?(@.type=="TLSHandover")]}{.status} {.reason} {.message}{"\n"}{end}'
+```
+
+| Reason | Meaning |
+|---|---|
+| `AwaitingMaterial` | Certificates requested; waiting for cert-manager to write every key. **No member has been touched yet** — the cluster is still serving on its old material. |
+| `RollingMembers` | Every member has been repointed; their Pods are being rebuilt. This is the outage window. |
+| `Complete` | Every member runs on operator-managed material. |
+| `Blocked` | Step 1 is not done. Nothing has been touched. |
+
+A handover that stalls in `AwaitingMaterial` is a cert-manager problem, not an operator one — the message names the Secret and the key it is waiting on. Check the `Certificate` and its `CertificateRequest`.
+
+### Going back
+
+There is no reverse. `certManager` → `secretRef` is CEL-rejected: the operator would be handing a live cluster to material it cannot verify, while the Certificates it owns get garbage-collected out from under it. If you need BYO Secrets again, it is delete-and-recreate.
+
 ## Broken member
 
 Recovery from a permanently broken **PVC-backed** member (e.g. PVC lost, node retired) is currently manual. Memory-backed members are auto-replaced on Pod loss — see [Memory-backed clusters](#memory-backed-clusters) above. For PVC-backed clusters the `isBroken` predicate stays a stub; auto-replacement is not wired up (see [concepts](concepts.md#what-is-not-in-the-design)).
