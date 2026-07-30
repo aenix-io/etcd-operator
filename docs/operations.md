@@ -259,6 +259,10 @@ kubectl get etcdcluster <name> -n <ns> \
 
 A handover that stalls in `AwaitingMaterial` is a cert-manager problem, not an operator one — the message names the Secret and the key it is waiting on. Check the `Certificate` and its `CertificateRequest`.
 
+### Members adopted in place
+
+Members adopted by `etcd-migrate` keep the Pod the legacy StatefulSet created — adoption rewrites labels and owner refs but deliberately never restarts them. The operator does not roll those Pods during a handover: it only rebuilds Pods it authored itself, so an adopted member keeps running on its old material until you roll it. Once rolled onto the operator's own Pod shape it participates normally. Check with `kubectl get pod <member> -o jsonpath='{.spec.volumes[*].name}'` — an operator-built Pod carries `tls-client` / `tls-peer`.
+
 ### Going back
 
 There is no reverse. `certManager` → `secretRef` is CEL-rejected: the operator would be handing a live cluster to material it cannot verify, while the Certificates it owns get garbage-collected out from under it. If you need BYO Secrets again, it is delete-and-recreate.

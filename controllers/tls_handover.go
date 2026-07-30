@@ -323,7 +323,22 @@ func podTLSSecretNames(pod *corev1.Pod) (clientSecret, peerSecret string) {
 // renewal writing a fresh leaf into the same Secret) are not a reason to
 // rebuild anything: the kubelet refreshes the projected volume in place and
 // etcd picks the new leaf up on subsequent handshakes.
+//
+// Only Pods this operator built are candidates. A Pod carrying neither of
+// the operator's TLS volumes is either plaintext (nothing to compare) or a
+// shape the operator did not author — an adopted member from etcd-migrate
+// keeps the legacy StatefulSet's volume names, and adoption deliberately
+// never restarts it. Treating that as drift would delete every adopted Pod
+// on the first reconcile after a migration, which is precisely the outcome
+// in-place adoption exists to avoid. Such members are left alone; a
+// handover rolls them only when they are rolled onto the operator's own
+// Pod shape.
 func tlsMountsOutOfDate(pod *corev1.Pod, member *lll.EtcdMember) bool {
+	gotClient, gotPeer := podTLSSecretNames(pod)
+	if gotClient == "" && gotPeer == "" {
+		return false
+	}
+
 	var wantClient, wantPeer string
 	if member.Spec.TLS != nil {
 		if member.Spec.TLS.ClientServerSecretRef != nil {
@@ -333,6 +348,5 @@ func tlsMountsOutOfDate(pod *corev1.Pod, member *lll.EtcdMember) bool {
 			wantPeer = member.Spec.TLS.PeerSecretRef.Name
 		}
 	}
-	gotClient, gotPeer := podTLSSecretNames(pod)
 	return gotClient != wantClient || gotPeer != wantPeer
 }

@@ -373,6 +373,12 @@ func TestTLSMountsOutOfDate(t *testing.T) {
 			ClientServerSecretRef: &corev1.LocalObjectReference{Name: "s"},
 			PeerAutoTLS:           true,
 		}), false},
+		// An adopted member keeps the legacy StatefulSet's volume names and
+		// is never restarted by adoption. Its Pod carries none of the
+		// operator's TLS volumes even though the member spec names Secrets;
+		// calling that drift would delete every adopted Pod on the first
+		// reconcile after a migration.
+		{"adopted pod with foreign volume names", adoptedPod(), memberWith(refs("s", "p")), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -468,4 +474,15 @@ func TestTLSHandover_ConflictReportedEvenWhenMembersAreAligned(t *testing.T) {
 	if cond == nil || cond.Reason != lll.TLSHandoverBlocked {
 		t.Fatalf("want Blocked even with aligned members, got %+v", cond)
 	}
+}
+
+// adoptedPod mimics a member adopted in place by etcd-migrate: the legacy
+// StatefulSet's volume names, which the operator never authored.
+func adoptedPod() *corev1.Pod {
+	return &corev1.Pod{Spec: corev1.PodSpec{Volumes: []corev1.Volume{
+		{Name: "etcd-client-certs", VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{SecretName: "legacy-server-tls"}}},
+		{Name: "etcd-peer-certs", VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{SecretName: "legacy-peer-tls"}}},
+	}}}
 }
