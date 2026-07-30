@@ -382,7 +382,9 @@ Every `EtcdCluster` gets a per-cluster `PodDisruptionBudget` (`policy/v1`) named
 ### Selector and budget
 
 - **Selector**: `etcd-operator.cozystack.io/cluster=<name>, etcd-operator.cozystack.io/role=voter`. Only voting members are protected; learners can be evicted freely (a learner-only loss does not affect quorum, and the operator's existing scale-up flow will re-add a learner if the cluster was mid-promotion).
-- **MaxUnavailable**: `(votingMembers - 1) / 2`, integer-divided so the result floors automatically. For 1 voter → 0 (any disruption is quorum loss). For 3 → 1, 4 → 1, 5 → 2, 7 → 3.
+- **MinAvailable**: the quorum (`n/2 + 1`, integer-divided) of `max(votingMembers, status.observed.replicas)`. For 1 voter → 1, 3 → 2, 4 → 3, 5 → 3, 7 → 4.
+
+Allowed disruptions = healthy voters − `minAvailable`; there is no `expectedCount` term for churn to re-base the budget against. Anchored to `max(live, target)`, the floor holds at the target's quorum while a node rotation shrinks live membership, steps down with the live count during an intentional scale-down (member removal goes through `MemberRemove`, not the eviction API, so the PDB never blocks it), and blocks voter evictions entirely while the cluster is below target (bootstrap, scale-up). Learners are outside the selector and evict freely throughout.
 
 ### Where the `role=voter` label comes from
 
@@ -394,14 +396,14 @@ The seed is **pre-stamped** with `Status.IsVoter=true` at creation — it's neve
 
 Two windows exist; both are safe:
 
-- **Scale-up (after promote).** Etcd's `MemberList` reports N+1 voters but `Status.IsVoter` for the freshly-promoted member hasn't been patched yet. The PDB therefore protects N voter Pods. A drain in this window could evict the unlabelled new voter (no PDB protection) — etcd is left with N voters running of N+1 registered. Etcd's write quorum for an M-voter cluster is `⌊M/2⌋+1`, so for M=N+1 the cluster still tolerates one missing voter as long as N ≥ 1.
-- **Scale-down (after `MemberRemove`).** Etcd has N-1 voters but the victim's Pod is briefly Terminating. The PDB's own selector still matches the Terminating Pod, but the k8s PDB controller's `currentHealthy` counts only Pods whose `Ready` condition is `True` — once kubelet flips the Terminating Pod's `Ready` to `False` (which happens at the start of graceful shutdown, before the Pod is gone), it stops counting toward the budget's healthy total. The in-flight removal is naturally accounted for and the budget shrinks accordingly.
+- **Scale-up (after promote).** Etcd's `MemberList` reports N+1 voters but `Status.IsVoter` for the freshly-promoted member hasn't been patched yet, so the PDB selects only the N old voter Pods. A drain in this window could evict the unlabelled new voter (no PDB protection) — etcd is left with N voters running of N+1 registered, which an M=N+1-voter cluster (write quorum `⌊M/2⌋+1`) tolerates for any N ≥ 2. That exposure is unchanged from the old budget. The N labelled voters are protected at least as strongly as before: the floor is the quorum of the scale-up *target* (≥ N+1), so `allowed = currentHealthy - minAvailable` in this window is never more permissive than the old `(N-1)/2` budget, and is often 0.
+- **Scale-down (after `MemberRemove`).** Etcd has N-1 voters but the victim's Pod is briefly Terminating. The PDB's own selector still matches the Terminating Pod, but the k8s PDB controller's `currentHealthy` counts only Pods whose `Ready` condition is `True` — once kubelet flips the Terminating Pod's `Ready` to `False` (which happens at the start of graceful shutdown, before the Pod is gone), it stops counting toward the budget's healthy total. Under `minAvailable` that is the whole story: `allowed = currentHealthy - minAvailable`, and — unlike `maxUnavailable` — there is no `expectedCount` for the disappearing member's scale subresource to shrink, so an in-flight removal consumes budget instead of refilling it.
 
 Both windows are one reconcile cycle wide.
 
 ### What happens with zero voters
 
-Pre-bootstrap, paused (PVC clusters at `replicas: 0`), or wedged: voter count is 0 and the operator **deletes** the PDB entirely. A PDB with zero matching Pods and a stale `MaxUnavailable` from a prior state would mislead `kubectl get pdb`; better to leave nothing than to leave noise.
+Pre-bootstrap, paused (PVC clusters at `replicas: 0`), or wedged: voter count is 0 and the operator **deletes** the PDB entirely. A PDB with zero matching Pods and a stale `minAvailable` from a prior state would mislead `kubectl get pdb`; better to leave nothing than to leave noise.
 
 ## Conditions
 

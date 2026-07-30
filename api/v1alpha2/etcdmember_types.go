@@ -143,11 +143,10 @@ type EtcdMemberSpec struct {
 	// affect already-running members.
 	ClusterToken string `json:"clusterToken"`
 
-	// Replicas exists only because the PodDisruptionBudget controller
-	// traverses Pods' controllerRef looking for /scale on the parent and
-	// fails closed ("does not implement the scale subresource") if it
-	// isn't there. Each EtcdMember represents exactly one Pod; this field
-	// is locked to 1 by validation and cannot be tuned.
+	// Replicas backs the /scale subresource. The operator's own PDB
+	// (integer minAvailable) never resolves scale; kept because
+	// maxUnavailable or percentage budgets over member Pods fail
+	// without it. Locked to 1: an EtcdMember is exactly one Pod.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=1
@@ -214,14 +213,13 @@ type EtcdMemberStatus struct {
 	IsVoter bool `json:"isVoter,omitempty"`
 
 	// Replicas exposes via /scale "this EtcdMember owns 1 Pod if it has
-	// a PodName, 0 otherwise". Required by the PodDisruptionBudget
-	// controller to derive expectedPods for the cluster's PDB — without
-	// /scale on the Pod controller-ref it sets the PDB to SyncFailed.
+	// a PodName, 0 otherwise". Unused by the operator's own PDB;
+	// scale-resolving budgets go SyncFailed without it.
 	// +optional
 	Replicas int32 `json:"replicas,omitempty"`
 
-	// Selector exposes the label-selector that matches this member's Pod
-	// via /scale (consumed by the PDB controller; not user-facing).
+	// Selector exposes the label-selector matching this member's Pod via
+	// /scale (for scale-resolving disruption budgets; not user-facing).
 	// +optional
 	Selector string `json:"selector,omitempty"`
 
