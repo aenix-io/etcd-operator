@@ -208,7 +208,7 @@ The `PodDisruptionBudget` *is* auto-emitted now — see the [PodDisruptionBudget
 
 ### Apiserver-enforced validation
 
-Four CEL `x-kubernetes-validations` rules on `EtcdClusterSpec` are evaluated at admission time. **k8s 1.29+ is the safe floor**: CEL CRD validation (`CustomResourceValidationExpressions`) went GA in 1.29, and the `quantity()` extension function used by two of the rules was added in 1.28. The CEL gate was beta-on-by-default from 1.25, so 1.28 *may* work in practice — but 1.29 is the first version where both pieces are GA and the project doesn't have to chase feature-gate state across releases.
+The CEL `x-kubernetes-validations` rules on `EtcdClusterSpec` listed below are evaluated at admission time. **k8s 1.29+ is the safe floor**: CEL CRD validation (`CustomResourceValidationExpressions`) went GA in 1.29, and the `quantity()` extension function used by two of the rules was added in 1.28. The CEL gate was beta-on-by-default from 1.25, so 1.28 *may* work in practice — but 1.29 is the first version where both pieces are GA and the project doesn't have to chase feature-gate state across releases.
 
 | Rule | When | Why |
 |---|---|---|

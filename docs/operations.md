@@ -213,12 +213,14 @@ A cluster running on user-provided TLS Secrets can be moved onto operator-manage
 
 ### 1. Free up the names, if something else holds them
 
-The operator emits `Certificate/<cluster>-server` and `Certificate/<cluster>-peer`. If a Helm chart already installs Certificates under those names — which it does whenever the cluster is called `etcd` — the operator refuses to touch them and reports:
+The operator emits up to three Certificates — `Certificate/<cluster>-server`, `Certificate/<cluster>-peer`, and `Certificate/<cluster>-operator-client` when client mTLS is on (see [census of certs](concepts.md#census-of-certs)). If a Helm chart already installs Certificates under any of those names — which it does whenever the cluster is called `etcd` — the operator refuses to touch them and reports:
 
-```
+```text
 TLSHandover=False  reason=Blocked
   cannot take over Certificate "etcd-peer": it exists but another controller owns it …
 ```
+
+Only the first collision is reported per pass, so expect to clear them one at a time: fix the named object, and the next reconcile either proceeds or names the next one.
 
 Stop the chart from emitting them (drop the templates, re-reconcile). cert-manager leaves the **Secret** in place when its Certificate is deleted, so there is no gap: the Certificate the operator then creates reissues into the same Secret.
 
