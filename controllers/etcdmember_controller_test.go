@@ -974,6 +974,33 @@ func TestUpdateStatus_ReplacesStuckMember(t *testing.T) {
 	}
 }
 
+// TestUpdateStatus_ReplacesStuckMemoryMember: wedged-learner regression — a
+// crash-looping memory member keeps its Pod (and UID) alive, so only the
+// crashloop self-heal can replace it.
+func TestUpdateStatus_ReplacesStuckMemoryMember(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-1", Namespace: "ns", Labels: memberLabels("test", "test-1")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi"), Medium: lll.StorageMediumMemory}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	c, _ := newTestClient(t, cluster, member, crashLoopPod("test-1", "ns"))
+	clusterWithReady(t, c, "test", "ns", 2) // 2/3 ready → quorum without test-1
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	err := c.Get(ctx, types.NamespacedName{Name: "test-1", Namespace: "ns"}, &lll.EtcdMember{})
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected stuck memory member deleted for replacement; Get err = %v", err)
+	}
+}
+
 // TestUpdateStatus_KeepsStuckMemberWithoutQuorum: the same crash-looping member
 // is NOT deleted when the rest of the cluster lacks quorum — self-heal must
 // never cascade a cluster-wide outage into mass deletion.
