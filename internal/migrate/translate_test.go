@@ -191,7 +191,7 @@ func TestTranslateCluster_KitchenSink(t *testing.T) {
 		`spec.options keys with no typed v1alpha2 equivalent; dropped etcd args: enable-v2="false"`,
 		"spec.serviceTemplate",
 		"spec.headlessServiceTemplate",
-		"spec.podDisruptionBudgetTemplate",
+		"spec.podDisruptionBudgetTemplate is dropped: the new operator auto-emits a PDB with minAvailable = quorum (n/2+1) of the cluster's voter count",
 		"containers[etcd].env",
 		"containers[exporter] (sidecar)",
 		"nodeSelector",

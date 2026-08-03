@@ -3185,6 +3185,13 @@ func TestPDBMinAvailable(t *testing.T) {
 		// Churn: live voters shrink, target holds the floor.
 		{voters: 3, target: 5, want: 3},
 		{voters: 2, target: 5, want: 3},
+		// Below target the floor holds but the budget only reaches zero
+		// once healthy voters fall to it. Allowed = healthy - want, so a
+		// one-voter shortfall still permits disruptions on targets > 3:
+		{voters: 4, target: 5, want: 3}, // 4-3 = 1 allowed
+		{voters: 6, target: 7, want: 4}, // 6-4 = 2 allowed
+		{voters: 5, target: 7, want: 4}, // 5-4 = 1 allowed
+		{voters: 4, target: 7, want: 4}, // 4-4 = 0, blocked
 		// Scale-down 5→3: live count dominates until members go.
 		{voters: 5, target: 3, want: 3},
 		{voters: 4, target: 3, want: 3},

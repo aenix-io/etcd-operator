@@ -1536,7 +1536,7 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 	if cluster.Status.Observed != nil {
 		targetReplicas = cluster.Status.Observed.Replicas
 	}
-	min := intstr.FromInt32(pdbMinAvailable(voterCount, targetReplicas))
+	minAvail := intstr.FromInt32(pdbMinAvailable(voterCount, targetReplicas))
 	wantSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			LabelCluster: cluster.Name,
@@ -1554,7 +1554,7 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 				Annotations: pdbAnnotations,
 			},
 			Spec: policyv1.PodDisruptionBudgetSpec{
-				MinAvailable: &min,
+				MinAvailable: &minAvail,
 				Selector:     wantSelector,
 			},
 		}
@@ -1575,12 +1575,12 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 	if pdb.Spec.MaxUnavailable == nil && pdb.Spec.MinAvailable != nil {
 		currentMin = int32(pdb.Spec.MinAvailable.IntValue())
 	}
-	if currentMin == min.IntVal {
+	if currentMin == minAvail.IntVal {
 		return nil
 	}
 	orig := pdb.DeepCopy()
 	pdb.Spec.MaxUnavailable = nil
-	pdb.Spec.MinAvailable = &min
+	pdb.Spec.MinAvailable = &minAvail
 	return r.Patch(ctx, pdb, client.MergeFrom(orig))
 }
 
