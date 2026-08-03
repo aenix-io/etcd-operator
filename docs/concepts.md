@@ -88,7 +88,9 @@ The cluster forms from a single seed member. Multi-seed bootstrap (multiple memb
 
 **Discovery** is the bridge between "seed pod is up" and "operator knows the cluster ID". The cluster controller calls `MemberList` against the seed's client URL, validates the response (exactly one member, matching the seed's name or peer URL), and latches `status.clusterID`. Once latched, discovery is never run again.
 
-The seed is identified by `spec.bootstrap=true`. Member names being random precludes a name-based lookup, and trusting list order (`members[0]`) silently anchors discovery to the wrong member when scale-up CRs land in front of the seed. Once `clusterID` is set, the operator never re-reads `spec.bootstrap` for any decision — the seed is, from that point on, just a regular member.
+The seed is identified by `spec.bootstrap=true`. Member names being random precludes a name-based lookup, and trusting list order (`members[0]`) silently anchors discovery to the wrong member when scale-up CRs land in front of the seed. Once `clusterID` is set, no *membership* decision re-reads `spec.bootstrap` — the seed is, from that point on, just a regular member. It is not scheduled differently, not weighted in quorum, and not exempt from [crash-loop self-heal](#crash-loop-self-heal-pvc-members). A cluster running with no `spec.bootstrap=true` member at all is a normal, supported state: it is what every cluster adopted by `cmd/etcd-migrate` starts out as, and what any cluster becomes once its seed is replaced.
+
+One reader does survive past latch: `buildPod` still derives `--initial-cluster-state` from `spec.bootstrap`, so a *re-created* seed Pod is handed `=new` rather than `=existing` for the life of the cluster. etcd consults that flag only when the data dir is empty, so it is inert on every ordinary restart. It is not inert if the seed's data dir is ever lost while the PVC binding survives — see [Known gap: a seed that re-bootstraps](#known-gap-a-seed-that-re-bootstraps).
 
 If the seed's pod hasn't been created yet (between Create and Pod-up), the controller surfaces `Progressing=True/WaitingForSeed` rather than dialing a nonexistent endpoint and burning the reconcile budget.
 
@@ -163,8 +165,26 @@ The member controller detects this and replaces the member:
 
 - **Trigger.** The etcd container is not ready and has restarted at least `dataLossRestartThreshold` (5) times. `OOMKilled` is excluded (whether it's the current or the last termination) — that's a resource problem re-creating the member would not fix — and a Pod that is itself being deleted (drain/eviction/manual restart) is never treated as stuck.
 - **Quorum gate.** The operator deletes the member only when the *rest* of the cluster still has quorum, so a cluster-wide outage (many members crashing at once) never cascades into mass deletion. The count is read from `Status.ReadyMembers`, which the cluster controller maintains and which can lag; if the stuck member is still counted ready, the gate subtracts it. As a second line of defence the finalizer's `MemberRemove` is itself quorum-gated, so even a stale-high count cannot delete data below quorum.
+- **No seed exemption.** The trigger is the member's *state*, never its identity, so the bootstrap seed is replaced on the same terms as anyone else. Only the bootstrap *window* needs protecting, and the quorum gate delivers that for free: `updateStatus` does not run until `clusterID` is latched, so `ReadyMembers` is 0 throughout bootstrap and nothing can pass the gate. Phase expires; identity does not.
 - **Replacement.** Deleting the `EtcdMember` runs the finalizer's clean `MemberRemove`, any member-owned PVC is GC'd (discarding the corrupt data dir; memory members have none), and the cluster controller gap-fills a fresh `GenerateName` member with a current `--initial-cluster` and a **new** etcd member ID — not a same-ID rejoin.
 - **Latency.** `CrashLoopBackOff` caps its backoff at 5 minutes, so reaching 5 restarts takes on the order of **tens of minutes**, not the ~5s of the memory Pod-loss path. A deliberately-deleted-and-replaced member during this window is expected operator behavior, not a fault. A slow restore or slow learner join on the *replacement* can itself trip the threshold and be replaced again; this is quorum-gated and self-limiting, but expect it on a struggling cluster.
+
+### Known gap: a seed that re-bootstraps
+
+Crash-loop self-heal keys on a Pod that will not become ready. There is one seed-specific data-loss shape it therefore cannot see, and it is worth knowing about because it is *quieter* than the crash-loop it resembles.
+
+`buildPod` sets `--initial-cluster-state=new` for `spec.bootstrap=true` members and `=existing` for everyone else, and `spec.bootstrap` is never cleared — so the seed's Pod is built with `=new` for the whole life of the cluster, not just for its first boot. Its `--initial-cluster` is likewise frozen at the value written during bootstrap, which lists only itself.
+
+etcd reads both flags only when the data dir is empty. So on an ordinary restart, or on a restart onto a *corrupt* data dir, nothing changes: a corrupt dir makes etcd fail to boot, the Pod crash-loops, and self-heal replaces the member as described above. The gap is the case where the seed's data dir comes back **empty** rather than corrupt, with the PVC binding intact — a re-provisioned or wiped volume, a PV restored blank, node-local storage lost on reimage. Then:
+
+- a non-seed member gets `=existing` against a stale `--initial-cluster` and fails loudly (`member count is unequal`), crash-loops, and is self-healed;
+- the **seed** gets `=new` against an `--initial-cluster` naming only itself, which is a complete and internally consistent bootstrap instruction. etcd does not error. It forms a fresh one-member cluster on the empty dir and reports healthy.
+
+The Pod then becomes *ready*, so neither self-heal trigger fires — not the `Status.PodUID` check (the Pod was never lost) and not the crash-loop check (`etcdContainerStuck` requires not-ready). Meanwhile `<cluster>-client` selects every member Pod with no role filter, so a share of client traffic lands on a member serving an empty keyspace, and writes routed there are invisible to the real cluster.
+
+Note also that etcd derives both the cluster ID and the member ID from the initial peer-URL set plus `--initial-cluster-token`, all of which are unchanged here — so the re-bootstrapped seed is expected to come back up under the *same* cluster ID as the cluster it lost, rather than being rejected on an ID mismatch. That reasoning is from etcd's ID derivation, not from an observed incident.
+
+Closing this means decoupling "which member bootstrapped the cluster" from "which member should boot with `=new`" — the same phase-versus-identity split that removed the self-heal exemption. It is tracked separately from that fix.
 
 ### What is missing from memory clusters today
 
