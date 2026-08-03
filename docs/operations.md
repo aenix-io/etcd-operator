@@ -512,10 +512,10 @@ Every `EtcdCluster` carries a per-cluster `PodDisruptionBudget` named after the 
 ```sh
 kubectl get pdb -n <ns> <cluster>
 # NAME       MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
-# my-etcd    N/A             1                 1                     12m
+# my-etcd    2               N/A               1                     12m
 ```
 
-`MAX UNAVAILABLE` is the budget. `ALLOWED DISRUPTIONS` is how many voter evictions are still in budget right now (= max unavailable − currently unavailable). When it reaches 0, `kubectl drain` of any node hosting a voter Pod blocks:
+`MIN AVAILABLE` is the floor: the quorum of the cluster's intended size (or of the live voter count during a scale-down, whichever is larger — see [concepts](concepts.md#poddisruptionbudget)). `ALLOWED DISRUPTIONS` is how many voter evictions are still in budget right now (= currently healthy voters − min available). When it reaches 0, `kubectl drain` of any node hosting a voter Pod blocks:
 
 ```
 error when evicting pods/"my-etcd-7xq2k" -n my-ns:
@@ -537,6 +537,8 @@ Cross-reference against `kubectl get etcdmember.etcd-operator.cozystack.io -n <n
 ### Why drains might block during scale events
 
 The PDB updates **one reconcile after** etcd's view changes (cluster controller's next pass picks up the new voter count from `MemberList`). This is intentional — see [concepts](concepts.md#transient-races) for the safety analysis. The race window is one reconcile cycle wide (steady-state `RequeueAfter` is 30 s, so up to ~30 s in the worst case); a drain attempted in that window fails closed (refuses the eviction) rather than open, which is the correct direction.
+
+Separately, the floor anchors to the cluster's *intended* size, not just the live voter count. While the cluster is below target — bootstrap, scale-up, or a node rotation that removed members faster than the operator could refill them — the floor stays at the target's quorum even as healthy voters drop, so the budget tightens with every missing voter and reaches zero once healthy voters fall to `⌊target/2⌋ + 1`. On a 3-member target that is any shortfall at all; on larger targets it takes a shortfall of more than one (a target of 5 with 4 healthy voters still allows 1 eviction, a target of 7 with 6 allows 2). A drain that stalls here is the budget doing its job; wait for the operator to restore the missing voters.
 
 If you're doing a planned rolling node maintenance, scale down to the resilient quorum size first, drain, scale back up.
 

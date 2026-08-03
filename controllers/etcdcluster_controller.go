@@ -1492,16 +1492,16 @@ func (r *EtcdClusterReconciler) updateStatus(
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
-// pdbMaxUnavailable returns the disruption budget for a cluster with
-// the given voting-member count. The formula is (voters-1)/2, Go
-// integer-divided so the result auto-floors. Equivalently: at most
-// fewer-than-quorum voters may be unavailable. For 1 voter the budget
-// is 0 (any disruption is quorum loss); for 3 → 1, 4 → 1, 5 → 2.
-func pdbMaxUnavailable(voterCount int32) int32 {
-	if voterCount < 1 {
+// pdbMinAvailable returns the eviction floor: quorum (n/2+1) of
+// max(live voters, latched target). The target keeps the floor from
+// re-basing during churn; the live count covers scale-down. Full
+// analysis in docs/concepts.md#poddisruptionbudget.
+func pdbMinAvailable(voterCount, targetReplicas int32) int32 {
+	anchor := max(voterCount, targetReplicas)
+	if anchor < 1 {
 		return 0
 	}
-	return (voterCount - 1) / 2
+	return anchor/2 + 1
 }
 
 // reconcilePDB ensures a per-cluster PodDisruptionBudget exists that
@@ -1512,7 +1512,7 @@ func pdbMaxUnavailable(voterCount int32) int32 {
 // When voterCount is 0 (pre-bootstrap, paused, or wedged), the PDB is
 // deleted: there are no Pods to protect and a stale PDB selector
 // against missing labels is at best confusing, at worst (with a
-// non-zero MaxUnavailable from a prior state) misleading.
+// stale MinAvailable from a prior state) misleading.
 func (r *EtcdClusterReconciler) reconcilePDB(
 	ctx context.Context,
 	cluster *lll.EtcdCluster,
@@ -1532,7 +1532,11 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 		return r.Delete(ctx, pdb)
 	}
 
-	max := intstr.FromInt32(pdbMaxUnavailable(voterCount))
+	targetReplicas := int32(0)
+	if cluster.Status.Observed != nil {
+		targetReplicas = cluster.Status.Observed.Replicas
+	}
+	minAvail := intstr.FromInt32(pdbMinAvailable(voterCount, targetReplicas))
 	wantSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			LabelCluster: cluster.Name,
@@ -1550,8 +1554,8 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 				Annotations: pdbAnnotations,
 			},
 			Spec: policyv1.PodDisruptionBudgetSpec{
-				MaxUnavailable: &max,
-				Selector:       wantSelector,
+				MinAvailable: &minAvail,
+				Selector:     wantSelector,
 			},
 		}
 		if err := controllerutil.SetControllerReference(cluster, fresh, r.Scheme); err != nil {
@@ -1563,19 +1567,20 @@ func (r *EtcdClusterReconciler) reconcilePDB(
 		return getErr
 	}
 
-	// Patch only if maxUnavailable diverged. Selector is invariant by
-	// construction; if a future change wanted a different selector,
-	// PDB Selector is immutable on the apiserver side anyway, so the
-	// correct path would be Delete+Create rather than Patch.
-	currentMax := int32(-1)
-	if pdb.Spec.MaxUnavailable != nil {
-		currentMax = int32(pdb.Spec.MaxUnavailable.IntValue())
+	// Patch if minAvailable diverged or a pre-migration maxUnavailable
+	// remains (setting both is invalid). Selector is invariant by
+	// construction; it's immutable server-side anyway, so changing it
+	// would take Delete+Create rather than Patch.
+	currentMin := int32(-1)
+	if pdb.Spec.MaxUnavailable == nil && pdb.Spec.MinAvailable != nil {
+		currentMin = int32(pdb.Spec.MinAvailable.IntValue())
 	}
-	if currentMax == pdbMaxUnavailable(voterCount) {
+	if currentMin == minAvail.IntVal {
 		return nil
 	}
 	orig := pdb.DeepCopy()
-	pdb.Spec.MaxUnavailable = &max
+	pdb.Spec.MaxUnavailable = nil
+	pdb.Spec.MinAvailable = &minAvail
 	return r.Patch(ctx, pdb, client.MergeFrom(orig))
 }
 

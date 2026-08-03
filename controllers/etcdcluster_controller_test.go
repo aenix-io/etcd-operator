@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -3164,27 +3165,45 @@ func TestUpdateStatus_SetsScaleSelector(t *testing.T) {
 	}
 }
 
-// TestPDBMaxUnavailable pins the disruption budget formula. The
-// PodDisruptionBudget protects voting members; this is the single
-// place where the (n-1)/2 floor is computed.
-func TestPDBMaxUnavailable(t *testing.T) {
+// TestPDBMinAvailable pins the formula: quorum of max(voters, target).
+func TestPDBMinAvailable(t *testing.T) {
 	cases := []struct {
 		voters int32
+		target int32
 		want   int32
 	}{
-		{voters: 0, want: 0},
-		{voters: 1, want: 0},
-		{voters: 2, want: 0},
-		{voters: 3, want: 1},
-		{voters: 4, want: 1},
-		{voters: 5, want: 2},
-		{voters: 6, want: 2},
-		{voters: 7, want: 3},
+		// Steady state: quorum(n) = n/2+1.
+		{voters: 1, target: 1, want: 1},
+		{voters: 2, target: 2, want: 2},
+		{voters: 3, target: 3, want: 2},
+		{voters: 4, target: 4, want: 3},
+		{voters: 5, target: 5, want: 3},
+		{voters: 7, target: 7, want: 4},
+		// No latched target (Observed nil): anchor to live voters.
+		{voters: 3, target: 0, want: 2},
+		{voters: 5, target: 0, want: 3},
+		// Churn: live voters shrink, target holds the floor.
+		{voters: 3, target: 5, want: 3},
+		{voters: 2, target: 5, want: 3},
+		// Below target the floor holds but the budget only reaches zero
+		// once healthy voters fall to it. Allowed = healthy - want, so a
+		// one-voter shortfall still permits disruptions on targets > 3:
+		{voters: 4, target: 5, want: 3}, // 4-3 = 1 allowed
+		{voters: 6, target: 7, want: 4}, // 6-4 = 2 allowed
+		{voters: 5, target: 7, want: 4}, // 5-4 = 1 allowed
+		{voters: 4, target: 7, want: 4}, // 4-4 = 0, blocked
+		// Scale-down 5→3: live count dominates until members go.
+		{voters: 5, target: 3, want: 3},
+		{voters: 4, target: 3, want: 3},
+		// Bootstrap 1→3: target dominates from the start.
+		{voters: 1, target: 3, want: 2},
+		{voters: 2, target: 3, want: 2},
+		{voters: 0, target: 0, want: 0},
 	}
 	for _, tc := range cases {
-		got := pdbMaxUnavailable(tc.voters)
+		got := pdbMinAvailable(tc.voters, tc.target)
 		if got != tc.want {
-			t.Fatalf("pdbMaxUnavailable(%d) = %d, want %d", tc.voters, got, tc.want)
+			t.Fatalf("pdbMinAvailable(%d, %d) = %d, want %d", tc.voters, tc.target, got, tc.want)
 		}
 	}
 }
@@ -3210,8 +3229,11 @@ func TestReconcilePDB_CreatesWithVoterSelector(t *testing.T) {
 	if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "test"}, pdb); err != nil {
 		t.Fatalf("Get PDB: %v", err)
 	}
-	if pdb.Spec.MaxUnavailable == nil || pdb.Spec.MaxUnavailable.IntValue() != 1 {
-		t.Fatalf("MaxUnavailable = %v, want 1", pdb.Spec.MaxUnavailable)
+	if pdb.Spec.MinAvailable == nil || pdb.Spec.MinAvailable.IntValue() != 2 {
+		t.Fatalf("MinAvailable = %v, want 2", pdb.Spec.MinAvailable)
+	}
+	if pdb.Spec.MaxUnavailable != nil {
+		t.Fatalf("MaxUnavailable = %v, want nil", pdb.Spec.MaxUnavailable)
 	}
 	want := map[string]string{LabelCluster: "test", LabelRole: RoleVoter}
 	if !reflect.DeepEqual(pdb.Spec.Selector.MatchLabels, want) {
@@ -3273,7 +3295,7 @@ func TestAdditionalMetadata_AppliedToServiceAndPDB(t *testing.T) {
 }
 
 // TestReconcilePDB_UpdatesOnVoterCountChange verifies the in-place
-// Patch path: existing PDB's MaxUnavailable is updated rather than the
+// Patch path: existing PDB's MinAvailable is updated rather than the
 // PDB being deleted+recreated. PDB Selector is immutable on the
 // apiserver side; the test also implicitly guards against an
 // accidental Selector change attempting that path.
@@ -3296,16 +3318,80 @@ func TestReconcilePDB_UpdatesOnVoterCountChange(t *testing.T) {
 	if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "test"}, pdb); err != nil {
 		t.Fatalf("Get PDB: %v", err)
 	}
-	if pdb.Spec.MaxUnavailable.IntValue() != 2 {
-		t.Fatalf("MaxUnavailable after 3→5 transition = %d, want 2", pdb.Spec.MaxUnavailable.IntValue())
+	if pdb.Spec.MinAvailable.IntValue() != 3 {
+		t.Fatalf("MinAvailable after 3→5 transition = %d, want 3", pdb.Spec.MinAvailable.IntValue())
+	}
+}
+
+// A pre-upgrade maxUnavailable PDB is converted; both fields set is invalid.
+func TestReconcilePDB_MigratesMaxUnavailable(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+	}
+	oldMax := intstr.FromInt32(1)
+	oldPDB := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &oldMax,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{LabelCluster: "test", LabelRole: RoleVoter},
+			},
+		},
+	}
+	c, _ := newTestClient(t, cluster, oldPDB)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t)}
+
+	if err := r.reconcilePDB(ctx, cluster, 3); err != nil {
+		t.Fatalf("reconcilePDB: %v", err)
+	}
+
+	pdb := &policyv1.PodDisruptionBudget{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "test"}, pdb); err != nil {
+		t.Fatalf("Get PDB: %v", err)
+	}
+	if pdb.Spec.MaxUnavailable != nil {
+		t.Fatalf("MaxUnavailable = %v, want cleared", pdb.Spec.MaxUnavailable)
+	}
+	if pdb.Spec.MinAvailable == nil || pdb.Spec.MinAvailable.IntValue() != 2 {
+		t.Fatalf("MinAvailable = %v, want 2", pdb.Spec.MinAvailable)
+	}
+}
+
+// Voters shrink during churn; the floor stays at the target's quorum.
+func TestReconcilePDB_HoldsFloorDuringChurn(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Status: lll.EtcdClusterStatus{
+			Observed: &lll.ObservedClusterSpec{Replicas: 5},
+		},
+	}
+	c, _ := newTestClient(t, cluster)
+	r := &EtcdClusterReconciler{Client: c, Scheme: testScheme(t)}
+
+	if err := r.reconcilePDB(ctx, cluster, 5); err != nil {
+		t.Fatalf("reconcilePDB(5): %v", err)
+	}
+	for _, voters := range []int32{4, 3, 2} {
+		if err := r.reconcilePDB(ctx, cluster, voters); err != nil {
+			t.Fatalf("reconcilePDB(%d): %v", voters, err)
+		}
+		pdb := &policyv1.PodDisruptionBudget{}
+		if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "test"}, pdb); err != nil {
+			t.Fatalf("Get PDB: %v", err)
+		}
+		if pdb.Spec.MinAvailable.IntValue() != 3 {
+			t.Fatalf("MinAvailable at %d live voters = %d, want 3", voters, pdb.Spec.MinAvailable.IntValue())
+		}
 	}
 }
 
 // TestReconcilePDB_DeletesWhenNoVoters covers pre-bootstrap, paused,
 // and wedged states: a PDB with zero matching Pods (because the
 // label-bearing voters don't exist) would be inert anyway, but its
-// staleness — particularly with a non-zero MaxUnavailable from a
-// prior state — would mislead operators reading kubectl get pdb.
+// staleness — particularly with a stale MinAvailable from a prior
+// state — would mislead operators reading kubectl get pdb.
 func TestReconcilePDB_DeletesWhenNoVoters(t *testing.T) {
 	ctx := context.Background()
 	cluster := &lll.EtcdCluster{

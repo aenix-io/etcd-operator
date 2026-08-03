@@ -103,7 +103,7 @@ func TranslateCluster(name, namespace string, spec legacy.EtcdClusterSpec, opts 
 	}
 	if spec.PodDisruptionBudgetTemplate != nil {
 		plan.Warnings = append(plan.Warnings,
-			"spec.podDisruptionBudgetTemplate is dropped: the new operator auto-emits a PDB with maxUnavailable=(voters-1)/2")
+			"spec.podDisruptionBudgetTemplate is dropped: the new operator auto-emits a PDB with minAvailable = quorum (n/2+1) of the cluster's voter count")
 	}
 
 	// etcd args: v1alpha2's spec.options is a closed typed struct covering

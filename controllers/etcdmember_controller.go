@@ -1020,8 +1020,8 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 	}
 
 	// /scale fields: Replicas reflects "Pod exists" (1) or not (0).
-	// Selector matches this member's single Pod. Consumed by the PDB
-	// controller during expectedPods derivation; not user-facing.
+	// Selector matches this member's single Pod. Read only by
+	// scale-resolving disruption budgets; not user-facing.
 	if member.Status.Replicas != 1 {
 		member.Status.Replicas = 1
 		changed = true
