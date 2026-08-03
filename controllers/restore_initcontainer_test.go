@@ -47,7 +47,7 @@ func findInitContainer(pod *corev1.Pod, name string) (corev1.Container, bool) {
 
 func TestBuildPod_NoRestoreInitContainerWithoutSpec(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
-	pod := r.buildPod(seedMember(nil))
+	pod := r.buildPod(seedMember(nil), false)
 	if _, ok := findInitContainer(pod, "restore"); ok {
 		t.Error("restore initContainer present though no restore spec was set")
 	}
@@ -64,7 +64,7 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 		},
 	}}
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
-	pod := r.buildPod(seedMember(restore))
+	pod := r.buildPod(seedMember(restore), false)
 
 	ic, ok := findInitContainer(pod, "restore")
 	if !ok {
@@ -128,7 +128,7 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 // auto-mount a ServiceAccount token.
 func TestBuildPod_NoServiceAccountToken(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
-	pod := r.buildPod(seedMember(nil))
+	pod := r.buildPod(seedMember(nil), false)
 	if pod.Spec.AutomountServiceAccountToken == nil || *pod.Spec.AutomountServiceAccountToken {
 		t.Errorf("AutomountServiceAccountToken = %v, want explicit false", pod.Spec.AutomountServiceAccountToken)
 	}
@@ -161,7 +161,7 @@ func TestBuildPod_RestoreInitContainerPVC(t *testing.T) {
 		PVC: &lll.PVCSnapshotLocation{ClaimName: "snap-pvc", SubPath: "b1.db"},
 	}}
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
-	pod := r.buildPod(seedMember(restore))
+	pod := r.buildPod(seedMember(restore), false)
 
 	ic, ok := findInitContainer(pod, "restore")
 	if !ok {
