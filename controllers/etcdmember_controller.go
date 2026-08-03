@@ -909,7 +909,7 @@ func restoreInitContainer(member *lll.EtcdMember, peerAddr, operatorImage string
 }
 
 // dataLossRestartThreshold is how many times the etcd container must have
-// restarted before we treat a non-bootstrap PVC member as unrecoverable and
+// restarted before we treat a non-bootstrap member as unrecoverable and
 // replace it. High enough to ride out transient join churn and slow restores;
 // CrashLoopBackOff caps its backoff at 5m, so this many restarts means a
 // member that has been unable to start for several minutes.
@@ -1046,17 +1046,14 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 
 	switch {
 	case !podReady:
-		// Self-heal an unrecoverable member. A non-bootstrap PVC member whose
-		// etcd cannot start — classically because its data dir was lost while
-		// the cluster membership moved on, leaving its frozen --initial-cluster
-		// stale (etcd: "member count is unequal") — crash-loops forever on its
-		// own. Replace it: delete the CR so the finalizer does a clean
-		// MemberRemove and the cluster controller gap-fills a fresh member with
-		// a current --initial-cluster. Gate on the rest of the cluster having
-		// quorum so a cluster-wide outage never cascades into mass deletion
-		// (the finalizer's MemberRemove is quorum-gated too — belt and braces).
+		// Self-heal: etcd that can never start (classically a stale frozen
+		// --initial-cluster: "member count is unequal") crash-loops forever.
+		// Delete the CR — the finalizer MemberRemoves it and the cluster
+		// controller gap-fills a replacement. Quorum-gated so a cluster-wide
+		// outage never cascades into mass deletion. Covers memory members
+		// too: the pod-loss check needs the Pod gone, but a wedged member's
+		// Pod stays alive under the same UID.
 		if !member.Spec.Bootstrap &&
-			member.Spec.Storage.Medium != lll.StorageMediumMemory &&
 			etcdContainerStuck(pod) &&
 			r.clusterHasQuorumWithout(ctx, member) {
 			log.Info("etcd member is persistently crash-looping while the rest of the cluster is healthy; deleting it for replacement",
