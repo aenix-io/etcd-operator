@@ -1027,9 +1027,11 @@ func TestUpdateStatus_KeepsStuckMemberWithoutQuorum(t *testing.T) {
 	}
 }
 
-// TestUpdateStatus_KeepsStuckBootstrapMember: the bootstrap seed is never
-// self-healed by deletion — there is nothing to replace it from yet.
-func TestUpdateStatus_KeepsStuckBootstrapMember(t *testing.T) {
+// TestUpdateStatus_ReplacesStuckSeedAfterBootstrap: the bootstrap seed enjoys
+// no lifelong exemption. Once the cluster is formed it is an ordinary voter, so
+// a crash-looping seed backed by a healthy majority is replaced like any other
+// member. Exempting it on identity used to strand it crash-looping forever.
+func TestUpdateStatus_ReplacesStuckSeedAfterBootstrap(t *testing.T) {
 	ctx := context.Background()
 	cluster := &lll.EtcdCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
@@ -1040,6 +1042,8 @@ func TestUpdateStatus_KeepsStuckBootstrapMember(t *testing.T) {
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Bootstrap: true, Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
 	}
 	c, _ := newTestClient(t, cluster, member, crashLoopPod("test-0", "ns"))
+	// Cluster is formed and the other two members are ready → quorum without
+	// the seed, exactly as for any non-seed member.
 	clusterWithReady(t, c, "test", "ns", 2)
 
 	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
@@ -1047,8 +1051,72 @@ func TestUpdateStatus_KeepsStuckBootstrapMember(t *testing.T) {
 		t.Fatalf("updateStatus: %v", err)
 	}
 
+	err := c.Get(ctx, types.NamespacedName{Name: "test-0", Namespace: "ns"}, &lll.EtcdMember{})
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected a formed cluster's seed to be self-healed like any other member; Get err = %v", err)
+	}
+}
+
+// TestUpdateStatus_KeepsStuckSeedDuringBootstrap: the bootstrap *window* is
+// what must be protected, and the quorum gate alone protects it. Before
+// clusterID is latched the cluster controller never runs updateStatus, so
+// ReadyMembers is 0 and no member — seed or otherwise — can pass the gate.
+// Deleting the seed here would destroy the only copy of a cluster that no other
+// member has joined yet.
+func TestUpdateStatus_KeepsStuckSeedDuringBootstrap(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Bootstrap: true, Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	c, _ := newTestClient(t, cluster, member, crashLoopPod("test-0", "ns"))
+	// Mid-bootstrap: clusterID unlatched, nothing has ever been counted ready.
+	clusterWithReady(t, c, "test", "ns", 0)
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
 	if err := c.Get(ctx, types.NamespacedName{Name: "test-0", Namespace: "ns"}, &lll.EtcdMember{}); err != nil {
-		t.Fatalf("bootstrap member must NOT be self-deleted; Get err = %v", err)
+		t.Fatalf("seed must NOT be self-deleted while the cluster is still forming; Get err = %v", err)
+	}
+}
+
+// TestUpdateStatus_KeepsStuckSoleMember: a single-member cluster's only member
+// can never be self-healed, seed or not — there is no majority to survive its
+// removal, so the quorum gate holds for the life of the cluster. Total loss is
+// reported rather than healed.
+func TestUpdateStatus_KeepsStuckSoleMember(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(1)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Bootstrap: true, Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test"},
+	}
+	// The worst case for the gate: ReadyMembers has not yet been decremented
+	// for the member that just started crash-looping, and the member's own
+	// status still says Ready. Subtracting it is what keeps readyOthers at 0.
+	member.Status.Conditions = []metav1.Condition{{
+		Type: lll.MemberReady, Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now(),
+	}}
+	c, _ := newTestClient(t, cluster, member, crashLoopPod("test-0", "ns"))
+	clusterWithReady(t, c, "test", "ns", 1) // stale-high: still counts test-0
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if _, err := r.updateStatus(ctx, member); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	if err := c.Get(ctx, types.NamespacedName{Name: "test-0", Namespace: "ns"}, &lll.EtcdMember{}); err != nil {
+		t.Fatalf("the only member of a 1-replica cluster must NOT be self-deleted; Get err = %v", err)
 	}
 }
 

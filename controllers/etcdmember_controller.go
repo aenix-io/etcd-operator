@@ -1053,8 +1053,14 @@ func (r *EtcdMemberReconciler) updateStatus(ctx context.Context, member *lll.Etc
 		// outage never cascades into mass deletion. Covers memory members
 		// too: the pod-loss check needs the Pod gone, but a wedged member's
 		// Pod stays alive under the same UID.
-		if !member.Spec.Bootstrap &&
-			etcdContainerStuck(pod) &&
+		//
+		// Covers the bootstrap seed too. Only the bootstrap *window* needs
+		// protecting, and the quorum gate already does it: ReadyMembers stays 0
+		// until clusterID latches, so nothing passes at any replica count (which
+		// also permanently protects a 1-replica cluster's only member). Gating
+		// on spec.bootstrap instead made the exemption outlive the window and
+		// stranded corrupt seeds forever. Phase, not identity.
+		if etcdContainerStuck(pod) &&
 			r.clusterHasQuorumWithout(ctx, member) {
 			log.Info("etcd member is persistently crash-looping while the rest of the cluster is healthy; deleting it for replacement",
 				"restartThreshold", dataLossRestartThreshold)

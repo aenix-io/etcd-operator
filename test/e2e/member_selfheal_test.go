@@ -74,7 +74,13 @@ func TestPVCMemberCrashLoopSelfHeal(t *testing.T) {
 	if len(original) != 3 {
 		t.Fatalf("expected 3 members, got %d: %v", len(original), original)
 	}
-	victim := original[0]
+	// Target the bootstrap seed on purpose. It used to be exempt from self-heal
+	// for the life of the cluster, so a corrupt seed crash-looped forever; the
+	// exemption now expires with the bootstrap window. Picking it deliberately
+	// also makes the victim deterministic — member names are apiserver-assigned
+	// random suffixes, so indexing into a name-sorted list chose the seed about
+	// a third of the time and turned this into a coin-flip test.
+	victim := selfHealSeedMember(ctx, t)
 	victimPVC := "data-" + victim
 	t.Logf("corrupting data dir of victim member %q (pvc %q)", victim, victimPVC)
 
@@ -99,7 +105,10 @@ func TestPVCMemberCrashLoopSelfHeal(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("victim %q still present (crash-loop not yet past threshold)", victim)
+			return fmt.Errorf("victim %q still present; self-heal has not deleted it "+
+				"(either the crash-loop is not yet past the restart threshold, or a gate is "+
+				"rejecting it — check the member's restartCount against dataLossRestartThreshold "+
+				"and the cluster's readyMembers against the quorum gate)", victim)
 		})
 
 	// The corrupt member's PVC must be GC'd (owner-ref), discarding the bad
@@ -166,6 +175,30 @@ func selfHealMembers(ctx context.Context, t *testing.T) []string {
 		names = append(names, list.Items[i].Name)
 	}
 	return names
+}
+
+// selfHealSeedMember returns the name of the cluster's bootstrap seed — the one
+// member with spec.bootstrap=true. Asserts the single-seed invariant the cluster
+// controller relies on (it locates the seed by that field and assumes exactly
+// one), so a wrongly-shaped cluster fails loudly here rather than silently
+// selecting some other member.
+func selfHealSeedMember(ctx context.Context, t *testing.T) string {
+	t.Helper()
+	list := &etcdv1alpha2.EtcdMemberList{}
+	if err := kube.List(ctx, list, client.InNamespace(selfHealNamespace),
+		client.MatchingLabels{"etcd-operator.cozystack.io/cluster": selfHealCluster}); err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	var seeds []string
+	for i := range list.Items {
+		if list.Items[i].Spec.Bootstrap {
+			seeds = append(seeds, list.Items[i].Name)
+		}
+	}
+	if len(seeds) != 1 {
+		t.Fatalf("expected exactly one spec.bootstrap=true member, got %d: %v", len(seeds), seeds)
+	}
+	return seeds[0]
 }
 
 // selfHealMembersErr is the error-tolerant form for use inside waitFor (a list
