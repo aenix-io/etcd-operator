@@ -478,7 +478,15 @@ func (r *EtcdMemberReconciler) ensurePod(ctx context.Context, member *lll.EtcdMe
 			"(set --operator-image / OPERATOR_IMAGE); refusing to create a seed Pod with an empty restore image", member.Name)
 	}
 
-	pod = r.buildPod(member)
+	// A missing/unreadable parent is treated as "not formed": that can only
+	// happen before the cluster exists or while it is being deleted, and the
+	// member's own MemberID still guards the seed case independently.
+	clusterFormed := false
+	if cluster, cErr := r.clusterFor(ctx, member); cErr == nil {
+		clusterFormed = cluster.Status.ClusterID != ""
+	}
+
+	pod = r.buildPod(member, clusterFormed)
 	if err := controllerutil.SetControllerReference(member, pod, r.Scheme); err != nil {
 		return err
 	}
@@ -617,10 +625,32 @@ func optionFlags(o *lll.EtcdOptions) []string {
 	return flags
 }
 
-func (r *EtcdMemberReconciler) buildPod(member *lll.EtcdMember) *corev1.Pod {
-	clusterState := "new"
-	if !member.Spec.Bootstrap {
-		clusterState = "existing"
+// buildPod renders a member's Pod. clusterFormed reports whether the parent
+// cluster has latched status.clusterID; see the --initial-cluster-state
+// derivation below for why it is a parameter rather than read from the member.
+func (r *EtcdMemberReconciler) buildPod(member *lll.EtcdMember, clusterFormed bool) *corev1.Pod {
+	// --initial-cluster-state=new is a bootstrap instruction, not a property of
+	// the seed. etcd honours it only on an empty data dir, so emitting it for
+	// life means a seed that comes back with an *empty* dir (re-provisioned
+	// volume, blank PV restore) silently forms a fresh one-member cluster on
+	// its frozen self-only --initial-cluster and reports healthy — invisible to
+	// self-heal, which needs a not-ready container. =existing fails loudly
+	// instead, which is recoverable.
+	//
+	// Three conditions, and the first is a hard gate rather than a phase
+	// signal: only the seed may ever be told to bootstrap. Keep it even though
+	// the phase signals usually imply it — clusterFormed falls back to false
+	// when the parent cluster cannot be read, and a scale-up member's MemberID
+	// is empty until its Pod is Ready, so without spec.bootstrap a transient
+	// Get failure would hand a scale-up member =new.
+	//
+	// The other two are the phase signals: the member has never been seen in
+	// etcd's member list, and the cluster has not latched a clusterID. Either
+	// one being set proves the cluster formed, which makes an empty data dir
+	// data loss rather than a pending bootstrap.
+	clusterState := "existing"
+	if member.Spec.Bootstrap && member.Status.MemberID == "" && !clusterFormed {
+		clusterState = "new"
 	}
 
 	clientScheme := memberClientScheme(member)

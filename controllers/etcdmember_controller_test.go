@@ -1270,7 +1270,7 @@ func TestBuildPod_LivenessIsNotQuorumAware(t *testing.T) {
 	pod := r.buildPod(&lll.EtcdMember{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17"},
-	})
+	}, false)
 	lp := pod.Spec.Containers[0].LivenessProbe
 	if lp == nil {
 		t.Fatalf("missing liveness probe entirely")
@@ -1295,7 +1295,7 @@ func TestBuildPod_ImageRepoAndPullSecrets(t *testing.T) {
 		pod := r.buildPod(&lll.EtcdMember{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
 			Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.6.11"},
-		})
+		}, false)
 		if got := pod.Spec.Containers[0].Image; got != "registry.internal/mirror/etcd:v3.6.11" {
 			t.Errorf("image = %q, want operator-default mirror", got)
 		}
@@ -1310,7 +1310,7 @@ func TestBuildPod_ImageRepoAndPullSecrets(t *testing.T) {
 				Version:          "3.6.11",
 				ImagePullSecrets: []corev1.LocalObjectReference{{Name: "regcreds"}},
 			},
-		})
+		}, false)
 		if len(pod.Spec.ImagePullSecrets) != 1 || pod.Spec.ImagePullSecrets[0].Name != "regcreds" {
 			t.Errorf("pod.imagePullSecrets = %+v, want [regcreds]", pod.Spec.ImagePullSecrets)
 		}
@@ -1352,7 +1352,7 @@ func TestBuildPod_AppliesSchedulingAndMetadata(t *testing.T) {
 				Annotations: map[string]string{"example.com/note": "bar"},
 			},
 		},
-	})
+	}, false)
 
 	if !equality.Semantic.DeepEqual(pod.Spec.Affinity, aff) {
 		t.Errorf("pod affinity = %+v, want %+v", pod.Spec.Affinity, aff)
@@ -1379,7 +1379,7 @@ func TestBuildPod_NoAdditionalMetadataLeavesAnnotationsNil(t *testing.T) {
 	pod := r.buildPod(&lll.EtcdMember{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17"},
-	})
+	}, false)
 	if pod.Annotations != nil {
 		t.Errorf("expected nil annotations, got %+v", pod.Annotations)
 	}
@@ -2021,7 +2021,7 @@ func TestBuildPod_MemoryMediumUsesEmptyDir(t *testing.T) {
 			Version:     "3.5.17",
 			Storage:     lll.StorageSpec{Size: storage, Medium: lll.StorageMediumMemory},
 		},
-	})
+	}, false)
 
 	if len(pod.Spec.Volumes) != 1 {
 		t.Fatalf("expected one Volume; got %d", len(pod.Spec.Volumes))
@@ -2055,7 +2055,7 @@ func TestBuildPod_DefaultMediumUsesPVC(t *testing.T) {
 			Storage:     lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			// storage.medium left empty.
 		},
-	})
+	}, false)
 	v := pod.Spec.Volumes[0]
 	if v.EmptyDir != nil {
 		t.Fatalf("default member must not have an EmptyDir volume source; got %+v", v.EmptyDir)
@@ -2466,7 +2466,7 @@ func TestBuildPod_RoleLabelAtCreateForVoter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "m-1", Namespace: "ns"},
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17"},
 		Status:     lll.EtcdMemberStatus{IsVoter: true},
-	})
+	}, false)
 	if pod.Labels[LabelRole] != RoleVoter {
 		t.Fatalf("buildPod with IsVoter=true must emit %s=%q; got %q", LabelRole, RoleVoter, pod.Labels[LabelRole])
 	}
@@ -2477,7 +2477,7 @@ func TestBuildPod_RoleLabelAtCreateForVoter(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "m-2", Namespace: "ns"},
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17"},
 		Status:     lll.EtcdMemberStatus{IsVoter: false},
-	})
+	}, false)
 	if _, present := pod2.Labels[LabelRole]; present {
 		t.Fatalf("buildPod with IsVoter=false must not set %s; got %q", LabelRole, pod2.Labels[LabelRole])
 	}
@@ -2520,7 +2520,7 @@ func TestBuildPod_PlaintextHasNoTLSFlags(t *testing.T) {
 	pod := r.buildPod(&lll.EtcdMember{
 		ObjectMeta: metav1.ObjectMeta{Name: "m", Namespace: "ns"},
 		Spec:       lll.EtcdMemberSpec{ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	if !cmdContains(cmd, "--listen-peer-urls=http://0.0.0.0:2380") {
 		t.Fatalf("plaintext peer listen URL missing: %v", cmd)
@@ -2558,7 +2558,7 @@ func TestBuildPod_ClientTLSOnlyAddsServerCertButNoClientAuth(t *testing.T) {
 				ClientMTLS:            false,
 			},
 		},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	if !cmdContains(cmd, "--listen-client-urls=https://0.0.0.0:2379") {
 		t.Fatalf("client listen URL not https: %v", cmd)
@@ -2600,7 +2600,7 @@ func TestBuildPod_ClientMTLSAddsTrustedCAAndClientCertAuth(t *testing.T) {
 				ClientMTLS:            true,
 			},
 		},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	if !cmdContains(cmd, "--client-cert-auth=true") {
 		t.Fatalf("mTLS pod must set --client-cert-auth=true: %v", cmd)
@@ -2624,7 +2624,7 @@ func TestBuildPod_PeerTLSAlwaysMTLS(t *testing.T) {
 				PeerSecretRef: &corev1.LocalObjectReference{Name: "peer"},
 			},
 		},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	if !cmdContains(cmd, "--listen-peer-urls=https://0.0.0.0:2380") {
 		t.Fatalf("peer listen URL not https: %v", cmd)
@@ -2655,7 +2655,7 @@ func TestBuildPod_PeerAutoTLS(t *testing.T) {
 			ClusterName: "test", Version: "3.5.17", Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			TLS: &lll.EtcdMemberTLS{PeerAutoTLS: true},
 		},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	if !cmdContains(cmd, "--listen-peer-urls=https://0.0.0.0:2380") {
 		t.Fatalf("peer listen URL not https: %v", cmd)
@@ -2708,7 +2708,7 @@ func TestBuildPod_AlwaysExposesMetricsPort(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pod := r.buildPod(tc.member)
+			pod := r.buildPod(tc.member, false)
 			var foundPort *corev1.ContainerPort
 			for i, p := range pod.Spec.Containers[0].Ports {
 				if p.Name == "metrics" {
@@ -2752,7 +2752,7 @@ func TestBuildPod_UsesSpecResources(t *testing.T) {
 			Storage:   lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			Resources: want,
 		},
-	})
+	}, false)
 	got := pod.Spec.Containers[0].Resources
 	if got.Requests.Cpu().Cmp(*want.Requests.Cpu()) != 0 ||
 		got.Requests.Memory().Cmp(*want.Requests.Memory()) != 0 ||
@@ -2781,7 +2781,7 @@ func TestBuildPod_ClaimsOnlyResourcesNotDroppedToDefault(t *testing.T) {
 			Storage:   lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			Resources: in,
 		},
-	})
+	}, false)
 	got := pod.Spec.Containers[0].Resources
 	if len(got.Claims) != 1 || got.Claims[0].Name != "gpu" {
 		t.Fatalf("Claims dropped on the floor; got %+v", got.Claims)
@@ -2805,7 +2805,7 @@ func TestBuildPod_DefaultsResourcesWhenUnset(t *testing.T) {
 			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			// Resources intentionally zero.
 		},
-	})
+	}, false)
 	got := pod.Spec.Containers[0].Resources
 	if got.Requests.Cpu().Cmp(resource.MustParse("100m")) != 0 {
 		t.Fatalf("default CPU request = %v; want 100m", got.Requests.Cpu())
@@ -2839,7 +2839,7 @@ func TestBuildPod_AppliesEtcdOptions(t *testing.T) {
 				SnapshotCount:           &snapCount,
 			},
 		},
-	})
+	}, false)
 	cmd := pod.Spec.Containers[0].Command
 	for _, want := range []string{
 		"--quota-backend-bytes=10200547328",
@@ -2859,7 +2859,7 @@ func TestBuildPod_AppliesEtcdOptions(t *testing.T) {
 			ClusterName: "test", Version: "3.5.17",
 			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 		},
-	})
+	}, false)
 	for _, arg := range pod.Spec.Containers[0].Command {
 		for _, prefix := range []string{"--quota-backend-bytes", "--auto-compaction", "--snapshot-count"} {
 			if strings.HasPrefix(arg, prefix) {
@@ -2893,7 +2893,7 @@ func TestBuildPod_AdoptionAnnotations(t *testing.T) {
 			ClusterName: "etcd", Version: "3.5.17",
 			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 		},
-	})
+	}, false)
 	if pod.Spec.Subdomain != "etcd-headless" {
 		t.Errorf("subdomain = %q; want the annotation's headless service name", pod.Spec.Subdomain)
 	}
@@ -2916,7 +2916,7 @@ func TestBuildPod_AdoptionAnnotations(t *testing.T) {
 			ClusterName: "test", Version: "3.5.17",
 			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 		},
-	})
+	}, false)
 	if pod.Spec.Subdomain != "test" {
 		t.Errorf("default subdomain = %q; want cluster name", pod.Spec.Subdomain)
 	}
@@ -2950,7 +2950,7 @@ func TestBuildPod_DataDirSubPathFailsClosed(t *testing.T) {
 				ClusterName: "test", Version: "3.5.17",
 				Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 			},
-		})
+		}, false)
 		if !cmdContains(pod.Spec.Containers[0].Command, "--data-dir=/var/lib/etcd") {
 			t.Errorf("subpath %q: --data-dir not fail-closed to volume root; got %v", bad, pod.Spec.Containers[0].Command)
 		}
@@ -2971,7 +2971,7 @@ func TestBuildPod_DataDirSubPathFailsClosed(t *testing.T) {
 			ClusterName: "test", Version: "3.5.17",
 			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")},
 		},
-	})
+	}, false)
 	if !cmdContains(pod.Spec.Containers[0].Command, "--data-dir=/var/lib/etcd/default.etcd") {
 		t.Errorf("valid subpath rejected: %v", pod.Spec.Containers[0].Command)
 	}
@@ -3153,5 +3153,101 @@ func TestEnsurePod_BlocksOnMissingTLSSecret(t *testing.T) {
 	getErr := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "m"}, pod)
 	if getErr == nil {
 		t.Fatalf("Pod should not exist when referenced TLS secret is missing")
+	}
+}
+
+// podClusterState extracts the --initial-cluster-state flag from a built Pod.
+func podClusterState(t *testing.T, pod *corev1.Pod) string {
+	t.Helper()
+	for _, arg := range pod.Spec.Containers[0].Command {
+		if v, ok := strings.CutPrefix(arg, "--initial-cluster-state="); ok {
+			return v
+		}
+	}
+	t.Fatalf("no --initial-cluster-state flag in %v", pod.Spec.Containers[0].Command)
+	return ""
+}
+
+// TestBuildPod_InitialClusterState pins the one bootstrap instruction etcd acts
+// on. `new` is only ever correct while the cluster has demonstrably not formed:
+// on an empty data dir it makes etcd bootstrap a fresh cluster instead of
+// failing, so a seed that keeps `new` for life turns data-dir loss into a
+// silent one-member cluster serving an empty keyspace. Either signal proving
+// the cluster exists must therefore force `existing`.
+func TestBuildPod_InitialClusterState(t *testing.T) {
+	member := func(bootstrap bool, memberID string) *lll.EtcdMember {
+		return &lll.EtcdMember{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns"},
+			Spec: lll.EtcdMemberSpec{
+				ClusterName: "test", Version: "3.5.17", Bootstrap: bootstrap,
+				Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test",
+			},
+			Status: lll.EtcdMemberStatus{MemberID: memberID},
+		}
+	}
+
+	cases := []struct {
+		name          string
+		member        *lll.EtcdMember
+		clusterFormed bool
+		want          string
+	}{
+		{"seed mid-bootstrap: nothing says the cluster exists", member(true, ""), false, "new"},
+		{"seed already in etcd's member list", member(true, "abc"), false, "existing"},
+		{"seed whose cluster latched a clusterID", member(true, ""), true, "existing"},
+		{"seed with both signals set", member(true, "abc"), true, "existing"},
+		// Load-bearing: this is the row that pins the spec.bootstrap conjunct.
+		// clusterFormed falls back to false when the parent cluster cannot be
+		// read, and a scale-up member's MemberID is empty until its Pod is
+		// Ready, so the phase signals alone would yield "new" here.
+		{"scale-up member is never bootstrapping", member(false, ""), false, "existing"},
+		{"adopted member (no seed, clusterID pre-latched)", member(false, "abc"), true, "existing"},
+	}
+
+	r := &EtcdMemberReconciler{Scheme: testScheme(t)}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := podClusterState(t, r.buildPod(tc.member, tc.clusterFormed))
+			if got != tc.want {
+				t.Fatalf("--initial-cluster-state = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnsurePod_FormedClusterGivesSeedExistingState is the integration half:
+// ensurePod must actually read the parent cluster's clusterID, not just accept
+// a bool. A seed Pod re-created after the cluster formed gets `existing`.
+func TestEnsurePod_FormedClusterGivesSeedExistingState(t *testing.T) {
+	ctx := context.Background()
+	cluster := &lll.EtcdCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ns"},
+		Spec:       lll.EtcdClusterSpec{Replicas: ptrInt32(3)},
+	}
+	member := &lll.EtcdMember{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-0", Namespace: "ns", Labels: memberLabels("test", "test-0")},
+		Spec: lll.EtcdMemberSpec{
+			ClusterName: "test", Bootstrap: true, Version: "3.5.17",
+			Storage: lll.StorageSpec{Size: quickQty(t, "1Gi")}, InitialCluster: "x", ClusterToken: "test",
+		},
+	}
+	c, _ := newTestClient(t, cluster, member)
+	got := mustGet(t, c, "test", "ns", &lll.EtcdCluster{})
+	got.Status.ClusterID = "deadbeef"
+	if err := c.Status().Update(ctx, got); err != nil {
+		t.Fatalf("latch clusterID: %v", err)
+	}
+
+	r := &EtcdMemberReconciler{Client: c, Scheme: testScheme(t)}
+	if err := r.ensurePod(ctx, member); err != nil {
+		t.Fatalf("ensurePod: %v", err)
+	}
+
+	pod := &corev1.Pod{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: "ns", Name: "test-0"}, pod); err != nil {
+		t.Fatalf("get pod: %v", err)
+	}
+	if state := podClusterState(t, pod); state != "existing" {
+		t.Fatalf("seed Pod re-created after the cluster formed must get --initial-cluster-state=existing, got %q", state)
 	}
 }

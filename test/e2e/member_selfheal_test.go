@@ -147,11 +147,11 @@ func TestPVCMemberCrashLoopSelfHeal(t *testing.T) {
 }
 
 // readyMembersIs returns a waitFor condition that the cluster reports `want`
-// ready members.
-func readyMembersIs(name string, want int32) func(context.Context) error {
+// ready members. Namespace-scoped variant for suites with their own namespace.
+func readyMembersIsIn(namespace, name string, want int32) func(context.Context) error {
 	return func(ctx context.Context) error {
 		ec := &etcdv1alpha2.EtcdCluster{}
-		if err := kube.Get(ctx, client.ObjectKey{Namespace: selfHealNamespace, Name: name}, ec); err != nil {
+		if err := kube.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, ec); err != nil {
 			return err
 		}
 		if ec.Status.ReadyMembers != want {
@@ -159,6 +159,10 @@ func readyMembersIs(name string, want int32) func(context.Context) error {
 		}
 		return nil
 	}
+}
+
+func readyMembersIs(name string, want int32) func(context.Context) error {
+	return readyMembersIsIn(selfHealNamespace, name, want)
 }
 
 // selfHealMembers returns the cluster's EtcdMember names, failing the test on
@@ -184,9 +188,14 @@ func selfHealMembers(ctx context.Context, t *testing.T) []string {
 // selecting some other member.
 func selfHealSeedMember(ctx context.Context, t *testing.T) string {
 	t.Helper()
+	return seedMemberIn(ctx, t, selfHealNamespace, selfHealCluster)
+}
+
+func seedMemberIn(ctx context.Context, t *testing.T, namespace, cluster string) string {
+	t.Helper()
 	list := &etcdv1alpha2.EtcdMemberList{}
-	if err := kube.List(ctx, list, client.InNamespace(selfHealNamespace),
-		client.MatchingLabels{"etcd-operator.cozystack.io/cluster": selfHealCluster}); err != nil {
+	if err := kube.List(ctx, list, client.InNamespace(namespace),
+		client.MatchingLabels{"etcd-operator.cozystack.io/cluster": cluster}); err != nil {
 		t.Fatalf("list members: %v", err)
 	}
 	var seeds []string
