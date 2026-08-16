@@ -45,6 +45,14 @@ func findInitContainer(pod *corev1.Pod, name string) (corev1.Container, bool) {
 	return corev1.Container{}, false
 }
 
+func initContainerNames(pod *corev1.Pod) []string {
+	names := make([]string, len(pod.Spec.InitContainers))
+	for i, ic := range pod.Spec.InitContainers {
+		names[i] = ic.Name
+	}
+	return names
+}
+
 func TestBuildPod_NoRestoreInitContainerWithoutSpec(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
 	pod := r.buildPod(seedMember(nil), false)
@@ -83,6 +91,12 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 	}
 	if m, ok := mountByName(it.VolumeMounts, "restore-tools"); !ok || m.MountPath != "/tools" || m.ReadOnly {
 		t.Errorf("install-tools restore-tools mount = %+v, want writable at /tools", m)
+	}
+
+	// install-tools must precede restore: it stages the binary the restore
+	// container execs, so the order is correctness-critical.
+	if got := initContainerNames(pod); len(got) != 2 || got[0] != "install-tools" || got[1] != "restore" {
+		t.Errorf("initContainer order = %v, want [install-tools restore]", got)
 	}
 
 	ic, ok := findInitContainer(pod, "restore")
