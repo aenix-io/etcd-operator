@@ -870,26 +870,22 @@ func (r *EtcdMemberReconciler) buildPod(member *lll.EtcdMember, clusterFormed bo
 
 const restoreSrcMountPath = "/restore/src"
 
-// restoreToolsVolumeName is the shared volume onto which the install-tools
-// initContainer copies the operator binary so the restore container (running
-// the etcd image) can exec it. restoreToolsMountPath is where both mount it.
+// restore-tools carries the operator binary from install-tools to the restore
+// container, which runs the etcd image (for its version-matched etcdutl).
 const (
 	restoreToolsVolumeName = "restore-tools"
 	restoreToolsMountPath  = "/tools"
 )
 
 // restoreInitContainers builds the ordered initContainers that restore the data
-// dir from a snapshot before etcd starts. The rebuild must run a version-matched
-// etcdutl, so it runs from the target etcd image rather than the operator image;
-// but that image is distroless and ships only etcd binaries, with no way to copy
-// etcdutl out to the operator. So a first initContainer copies the operator
-// binary onto a shared volume, and the restore container runs the etcd image
-// with that binary as its entrypoint — giving the agent both its own logic and
-// the image's etcdutl. peerAddr is this member's peer URL; the agent feeds it
-// (with the member name / initial-cluster / token) to etcdutl so the restored
-// data matches the identity the etcd container will run with. For an S3 source
-// the object key is exact (not a prefix); for a PVC source the volume is mounted
-// read-only and PVC_SUBPATH points to the snapshot file.
+// dir before etcd starts. The rebuild runs a version-matched etcdutl by running
+// the agent from the target etcd image; that image can't copy etcdutl out, so
+// install-tools first stages the operator binary onto a shared volume for the
+// restore container to exec. peerAddr is this member's peer URL, fed (with
+// member name / initial-cluster / token) to etcdutl so the restored data matches
+// the identity the etcd container runs with. For an S3 source the object key is
+// exact (not a prefix); for a PVC source the volume is mounted read-only and
+// PVC_SUBPATH points to the snapshot file.
 func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcdImage string) ([]corev1.Container, []corev1.Volume) {
 	src := member.Spec.Restore.Source
 	env := []corev1.EnvVar{
@@ -959,10 +955,8 @@ func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcd
 	}
 
 	restore := corev1.Container{
-		Name:  "restore",
-		Image: etcdImage,
-		// Run the operator binary staged by install-tools, from the etcd image —
-		// so the agent can exec that image's version-matched etcdutl.
+		Name:            "restore",
+		Image:           etcdImage,
 		Command:         []string{restoreToolsMountPath + "/manager", "restore-agent"},
 		Env:             env,
 		SecurityContext: restrictedSecurityContext,

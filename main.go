@@ -108,10 +108,8 @@ func main() {
 			}
 			return
 		case "install-tools":
-			// Runs from the operator image as the restore seed's first
-			// initContainer, copying this binary onto a shared volume so the
-			// restore-agent container — which runs the target etcd image for its
-			// version-matched etcdutl — can exec it.
+			// Stages this binary for the restore-agent container to exec from the
+			// etcd image; no cluster I/O, so no timeout needed.
 			if err := agent.RunInstallTools(); err != nil {
 				fmt.Fprintln(os.Stderr, "install-tools failed:", err)
 				os.Exit(1)

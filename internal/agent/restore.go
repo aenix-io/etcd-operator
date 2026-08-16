@@ -133,12 +133,10 @@ func RunRestore(ctx context.Context) error {
 	return nil
 }
 
-// runEtcdutlRestore rebuilds the data dir under outputDir from snapPath by
-// exec-ing the etcdutl binary shipped in the target etcd image — the version
-// this cluster runs — rather than a single compiled-in one, so restore works
-// across etcd minors. --skip-hash-check is required: a clientv3
-// Maintenance.Snapshot stream (how the snapshot agent captures snapshots) has
-// no appended integrity hash, unlike `etcdutl snapshot save`.
+// runEtcdutlRestore rebuilds the data dir under outputDir from snapPath, exec-ing
+// the etcd image's own etcdutl (envEtcdutlPath) rather than a compiled-in one so
+// it matches the target etcd version. --skip-hash-check is required: a clientv3
+// Maintenance.Snapshot stream carries no integrity hash.
 func runEtcdutlRestore(ctx context.Context, snapPath, outputDir string) error {
 	etcdutl := os.Getenv(envEtcdutlPath)
 	if etcdutl == "" {
@@ -165,11 +163,9 @@ func runEtcdutlRestore(ctx context.Context, snapPath, outputDir string) error {
 	return nil
 }
 
-// RunInstallTools copies the running operator binary into envToolsDir so the
-// restore initContainer — which runs from the target etcd image, not the
-// operator image — can exec it while still reaching that image's version-matched
-// etcdutl. This bridges two distroless images that share no binaries: the etcd
-// image has etcdutl but no way to copy it out, so we bring the operator to it.
+// RunInstallTools copies the running operator binary into envToolsDir, so the
+// restore initContainer can exec it from the etcd image — which ships etcdutl
+// but can't copy it out — while keeping the agent's own logic.
 func RunInstallTools() error {
 	dest := os.Getenv(envToolsDir)
 	if dest == "" {
