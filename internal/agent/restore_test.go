@@ -125,53 +125,116 @@ func TestEnsureRestoreSpace(t *testing.T) {
 	}
 }
 
-func TestCheckRestoreVersionCompat(t *testing.T) {
-	cases := []struct {
-		name, cluster, etcdutl string
-		wantErr                bool
-	}{
-		{"exact match", "3.6.11", "3.6", false},
-		{"same minor, different patch", "3.6.0", "3.6", false},
-		{"minor mismatch (3.5 cluster, 3.6 etcdutl)", "3.5.17", "3.6", true},
-		{"major mismatch", "4.0.0", "3.6", true},
-		{"empty cluster version skips", "", "3.6", false},
-		{"empty etcdutl version skips", "3.5.17", "", false},
-		{"unparseable cluster version skips", "garbage", "3.6", false},
+// writeFakeEtcdutl writes an executable stub standing in for the etcd image's
+// etcdutl: it records its argv to argsFile and, mimicking a real restore,
+// creates member/ under the dir passed to --data-dir. Lets the exec path be
+// exercised without the etcd binary.
+func writeFakeEtcdutl(t *testing.T, argsFile string) string {
+	t.Helper()
+	script := "#!/bin/sh\n" +
+		": > \"" + argsFile + "\"\n" +
+		"out=\"\"\nprev=\"\"\n" +
+		"for a in \"$@\"; do\n" +
+		"  printf '%s\\n' \"$a\" >> \"" + argsFile + "\"\n" +
+		"  if [ \"$prev\" = \"--data-dir\" ]; then out=\"$a\"; fi\n" +
+		"  prev=\"$a\"\n" +
+		"done\n" +
+		"mkdir -p \"$out/member\"\n" +
+		"printf restored > \"$out/member/db\"\n"
+	path := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake etcdutl: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := checkRestoreVersionCompat(tc.cluster, tc.etcdutl)
-			if tc.wantErr && err == nil {
-				t.Errorf("checkRestoreVersionCompat(%q, %q) = nil, want error", tc.cluster, tc.etcdutl)
-			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("checkRestoreVersionCompat(%q, %q) = %v, want nil", tc.cluster, tc.etcdutl, err)
-			}
-		})
+	return path
+}
+
+// RunRestore must exec the (version-matched) etcdutl binary to rebuild the data
+// dir, pass the member identity plus --skip-hash-check, and move the result into
+// place. The etcdutl is faked so the exec path runs without the etcd image.
+func TestRunRestore_ExecsEtcdutlAndMovesIntoPlace(t *testing.T) {
+	dataDir := t.TempDir() // empty: no member/ dir, so the no-op gate is passed
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	argsFile := filepath.Join(t.TempDir(), "args")
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok-xyz")
+	t.Setenv(envPeerURLs, "http://c1-0:2380")
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, argsFile))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	if err := RunRestore(context.Background()); err != nil {
+		t.Fatalf("RunRestore = %v, want nil", err)
+	}
+
+	// The restored member/ must be moved into the real data dir, and the staging
+	// dir cleaned up.
+	if _, err := os.Stat(filepath.Join(dataDir, "member", "db")); err != nil {
+		t.Errorf("restored member/ not in place: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, ".restore")); !os.IsNotExist(err) {
+		t.Errorf(".restore staging dir not cleaned up (stat err=%v)", err)
+	}
+
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read recorded args: %v", err)
+	}
+	for _, want := range []string{"snapshot", "restore", "--skip-hash-check", "--name", "c1-0", "--initial-cluster-token", "tok-xyz"} {
+		if !strings.Contains(string(args), want) {
+			t.Errorf("etcdutl not invoked with %q; got:\n%s", want, args)
+		}
 	}
 }
 
-// RunRestore must reject a version-incompatible restore early (before fetching
-// the snapshot), since the agent's etcdutl (3.6.x) would rebuild a data dir an
-// older etcd can't boot. The agent's etcdutl is 3.6.x, so a 3.5.x cluster fails.
-func TestRunRestore_VersionMismatchFailsEarly(t *testing.T) {
-	dataDir := t.TempDir() // empty: no member/ dir, so the no-op gate is passed
+// RunInstallTools copies the running binary to TOOLS_DEST_DIR/manager so the
+// restore container (etcd image) can exec it.
+func TestRunInstallTools(t *testing.T) {
+	dest := t.TempDir()
+	t.Setenv(envToolsDir, dest)
 
-	t.Setenv(envDataDir, dataDir)
-	t.Setenv(envEtcdVersion, "3.5.17") // mismatch vs the 3.6.x etcdutl the agent is built with
-	// No destination env: if the version gate didn't fire first, loadDestination
-	// would be the next failure — assert we fail on the version, not that.
-	t.Setenv(envDestKind, "s3")
-	t.Setenv(envS3Endpoint, "https://s3.example.com")
-	t.Setenv(envS3Bucket, "etcd")
-	t.Setenv(envS3Key, "snap.db")
-
-	err := RunRestore(context.Background())
-	if err == nil {
-		t.Fatal("RunRestore with a mismatched etcd version = nil, want error")
+	if err := RunInstallTools(); err != nil {
+		t.Fatalf("RunInstallTools = %v, want nil", err)
 	}
-	if !strings.Contains(err.Error(), "restore is only supported when") {
-		t.Errorf("error was not the version-compat rejection: %v", err)
+
+	out := filepath.Join(dest, "manager")
+	fi, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("stat copied binary: %v", err)
+	}
+	if fi.Mode().Perm()&0o111 == 0 {
+		t.Errorf("copied binary is not executable: mode %v", fi.Mode())
+	}
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	want, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("read source binary: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read copied binary: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Errorf("copied binary size = %d, want %d (source)", len(got), len(want))
+	}
+}
+
+// RunInstallTools must fail loudly when its destination is unset rather than
+// silently no-op, which would leave the restore container with no binary to exec.
+func TestRunInstallTools_NoDestFails(t *testing.T) {
+	t.Setenv(envToolsDir, "")
+	if err := RunInstallTools(); err == nil {
+		t.Error("RunInstallTools with no TOOLS_DEST_DIR = nil, want error")
 	}
 }
 

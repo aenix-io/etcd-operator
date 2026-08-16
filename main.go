@@ -107,6 +107,16 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "install-tools":
+			// Runs from the operator image as the restore seed's first
+			// initContainer, copying this binary onto a shared volume so the
+			// restore-agent container — which runs the target etcd image for its
+			// version-matched etcdutl — can exec it.
+			if err := agent.RunInstallTools(); err != nil {
+				fmt.Fprintln(os.Stderr, "install-tools failed:", err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 

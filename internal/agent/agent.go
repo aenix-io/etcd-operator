@@ -77,8 +77,20 @@ const (
 	envInitialCluster = "ETCD_INITIAL_CLUSTER"
 	envInitialToken   = "ETCD_INITIAL_CLUSTER_TOKEN"
 	envPeerURLs       = "ETCD_PEER_URLS" // comma-separated
-	envEtcdVersion    = "ETCD_VERSION"   // cluster's spec.version, for the restore version-compat pre-flight
+	// envEtcdutlPath is the etcdutl the restore agent execs to rebuild the data
+	// dir. The restore container runs from the version-matched etcd image, so
+	// this points at that image's etcdutl — the binary and spec.version share a
+	// release by construction, which is what lets restore support any etcd minor.
+	envEtcdutlPath = "ETCDUTL_PATH"
+
+	// install-tools-only: where the operator copies its own binary so the
+	// restore container (running the etcd image) can exec it.
+	envToolsDir = "TOOLS_DEST_DIR"
 )
+
+// defaultEtcdutlPath is etcdutl's location in the upstream etcd image
+// (quay.io/coreos/etcd), used when envEtcdutlPath is unset.
+const defaultEtcdutlPath = "/usr/local/bin/etcdutl"
 
 // destination captures the resolved snapshot destination / restore source.
 type destination struct {
