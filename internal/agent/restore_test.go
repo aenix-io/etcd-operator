@@ -193,6 +193,44 @@ func TestRunRestore_ExecsEtcdutlAndMovesIntoPlace(t *testing.T) {
 	}
 }
 
+// A non-zero etcdutl exit must abort the restore: RunRestore returns the error
+// and must NOT move a nonexistent member/ into place, leaving the data dir
+// uninitialized. This is the core "never silently brick a data dir" contract.
+func TestRunRestore_EtcdutlFailureAborts(t *testing.T) {
+	dataDir := t.TempDir() // empty: no member/ dir, so the no-op gate is passed
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	// A fake etcdutl that fails and creates nothing.
+	fake := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake etcdutl: %v", err)
+	}
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok")
+	t.Setenv(envEtcdutlPath, fake)
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	err := RunRestore(context.Background())
+	if err == nil {
+		t.Fatal("RunRestore with a failing etcdutl = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "etcdutl snapshot restore") {
+		t.Errorf("error did not wrap the etcdutl failure: %v", err)
+	}
+	// A failed rebuild must leave the data dir uninitialized — never move a
+	// nonexistent member/ into place.
+	if _, statErr := os.Stat(filepath.Join(dataDir, "member")); !os.IsNotExist(statErr) {
+		t.Errorf("member/ exists after a failed restore (stat err=%v); a failed rebuild must not initialize the data dir", statErr)
+	}
+}
+
 // RunInstallTools copies the running binary to TOOLS_DEST_DIR/manager so the
 // restore container (etcd image) can exec it.
 func TestRunInstallTools(t *testing.T) {
