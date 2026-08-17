@@ -66,6 +66,13 @@ func RunRestore(ctx context.Context) error {
 		return fmt.Errorf("restore source requires the exact snapshot file path within the volume (%s); got empty", envPVCSubPath)
 	}
 
+	// Resolve etcdutl before fetching the snapshot: a target etcd image that
+	// ships no etcdutl (etcd < 3.5) must fail here, not after a full download.
+	etcdutl, err := resolveEtcdutl()
+	if err != nil {
+		return err
+	}
+
 	// A prior attempt may have crashed (OOM, node reboot) after staging a
 	// snapshot download but before its deferred cleanup ran. We are past the
 	// member/ no-op gate, so the data dir is uninitialized and any staged
@@ -120,7 +127,7 @@ func RunRestore(ctx context.Context) error {
 	staging := filepath.Join(dataDir, ".restore")
 	_ = os.RemoveAll(staging) // clean any partial prior attempt
 
-	if err := runEtcdutlRestore(ctx, snapPath, staging); err != nil {
+	if err := runEtcdutlRestore(ctx, etcdutl, snapPath, staging); err != nil {
 		return err
 	}
 
@@ -133,16 +140,33 @@ func RunRestore(ctx context.Context) error {
 	return nil
 }
 
-// runEtcdutlRestore rebuilds the data dir under outputDir from snapPath, exec-ing
-// the etcd image's own etcdutl (envEtcdutlPath) rather than a compiled-in one so
-// it matches the target etcd version. --skip-hash-check is required: a clientv3
-// Maintenance.Snapshot stream carries no integrity hash.
-func runEtcdutlRestore(ctx context.Context, snapPath, outputDir string) error {
-	etcdutl := os.Getenv(envEtcdutlPath)
-	if etcdutl == "" {
-		etcdutl = defaultEtcdutlPath
+// resolveEtcdutl locates the etcdutl binary to exec: ETCDUTL_PATH if set, the
+// etcd image's usual /usr/local/bin/etcdutl next, and finally whatever is on
+// PATH (covers images that lay it out elsewhere, e.g. Bitnami). Resolved and
+// existence-checked before the snapshot is fetched so a target image with no
+// etcdutl (etcd < 3.5 ships none) fails immediately instead of after a full
+// download and an indefinite re-download CrashLoop.
+func resolveEtcdutl() (string, error) {
+	if p := os.Getenv(envEtcdutlPath); p != "" {
+		if _, err := os.Stat(p); err != nil {
+			return "", fmt.Errorf("etcdutl (%s=%s): %w", envEtcdutlPath, p, err)
+		}
+		return p, nil
 	}
+	if _, err := os.Stat(defaultEtcdutlPath); err == nil {
+		return defaultEtcdutlPath, nil
+	}
+	if p, err := exec.LookPath("etcdutl"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("etcdutl not found at %s or on PATH; the target etcd image must ship etcdutl (etcd < 3.5 does not) — check spec.version", defaultEtcdutlPath)
+}
 
+// runEtcdutlRestore rebuilds the data dir under outputDir from snapPath, exec-ing
+// the etcd image's own etcdutl (resolved by resolveEtcdutl) rather than a
+// compiled-in one so it matches the target etcd version. --skip-hash-check is
+// required: a clientv3 Maintenance.Snapshot stream carries no integrity hash.
+func runEtcdutlRestore(ctx context.Context, etcdutl, snapPath, outputDir string) error {
 	args := []string{
 		"snapshot", "restore", snapPath,
 		"--data-dir", outputDir,

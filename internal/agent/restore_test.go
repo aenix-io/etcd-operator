@@ -186,10 +186,74 @@ func TestRunRestore_ExecsEtcdutlAndMovesIntoPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read recorded args: %v", err)
 	}
-	for _, want := range []string{"snapshot", "restore", "--skip-hash-check", "--name", "c1-0", "--initial-cluster-token", "tok-xyz"} {
+	for _, want := range []string{
+		"snapshot", "restore", "--skip-hash-check",
+		"--name", "c1-0",
+		"--initial-cluster", "c1-0=http://c1-0:2380",
+		"--initial-cluster-token", "tok-xyz",
+		"--initial-advertise-peer-urls", "http://c1-0:2380",
+	} {
 		if !strings.Contains(string(args), want) {
 			t.Errorf("etcdutl not invoked with %q; got:\n%s", want, args)
 		}
+	}
+}
+
+// ETCD_PEER_URLS is unset for some sources; --initial-advertise-peer-urls must
+// then be omitted (etcdutl's VerifyBootstrap rejects its localhost:2380 default
+// against a real --initial-cluster, so a spurious flag would fail closed). This
+// pins the conditional shape that changed from the old []string field.
+func TestRunRestore_OmitsPeerURLsFlagWhenUnset(t *testing.T) {
+	dataDir := t.TempDir()
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	argsFile := filepath.Join(t.TempDir(), "args")
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok-xyz")
+	// envPeerURLs deliberately left unset.
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, argsFile))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	if err := RunRestore(context.Background()); err != nil {
+		t.Fatalf("RunRestore = %v, want nil", err)
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read recorded args: %v", err)
+	}
+	if strings.Contains(string(args), "--initial-advertise-peer-urls") {
+		t.Errorf("--initial-advertise-peer-urls passed though ETCD_PEER_URLS was unset; got:\n%s", args)
+	}
+}
+
+// A target image with no etcdutl (etcd < 3.5) must fail BEFORE the snapshot is
+// fetched — the "fails early" guarantee — with an actionable message, not after
+// a full download.
+func TestRunRestore_MissingEtcdutlFailsBeforeFetch(t *testing.T) {
+	dataDir := t.TempDir()
+	mount := t.TempDir() // empty: the snapshot file is absent, so a fetch would fail first if it ran
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	// Point at a path that does not exist — stands in for an image with no etcdutl.
+	t.Setenv(envEtcdutlPath, filepath.Join(t.TempDir(), "no-etcdutl-here"))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	err := RunRestore(context.Background())
+	if err == nil {
+		t.Fatal("RunRestore with no etcdutl = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "etcdutl") {
+		t.Errorf("error did not mention etcdutl: %v", err)
 	}
 }
 
@@ -393,6 +457,7 @@ func TestRunRestore_PVCDirectorySourceFails(t *testing.T) {
 	}
 
 	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, filepath.Join(t.TempDir(), "args"))) // resolve passes; the directory check is what must fire
 	t.Setenv(envDestKind, "pvc")
 	t.Setenv(envPVCMountPath, mount)
 	t.Setenv(envPVCSubPath, "subdir") // exists, but is a directory

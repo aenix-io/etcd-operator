@@ -280,7 +280,9 @@ kubectl logs -n <ns> job/my-etcd-2026-06-02-snapshot
 
 Restore is a **first-bootstrap-only** path: a *new* cluster initializes its seed member's data dir from a snapshot instead of starting empty. You cannot restore into an existing, already-bootstrapped cluster (`spec.bootstrap` is immutable post-create) — delete and recreate.
 
-> **Restore rebuilds the data dir with a version-matched `etcdutl`.** The restore agent runs the `etcdutl` bundled in the target etcd image (`v<spec.version>`), the very version that then boots on the rebuilt data dir — so the on-disk storage format matches by construction. Restore works for any etcd version the operator supports; there is no requirement that `spec.version` match the operator's own build.
+> **Restore rebuilds the data dir with a version-matched `etcdutl`.** The restore agent runs the `etcdutl` bundled in the target etcd image (`v<spec.version>`), the very version that then boots on the rebuilt data dir — so the `etcdutl`↔etcd on-disk format matches by construction, for any etcd version the operator supports, with no requirement that `spec.version` match the operator's own build.
+>
+> This guarantees `etcdutl`↔etcd, **not** snapshot↔etcd: the snapshot's origin version is not recorded or checked anywhere. Restoring a snapshot taken from a **newer** etcd into an **older** `spec.version` (e.g. a 3.6 snapshot into a `3.5.x` cluster) runs an older `etcdutl` over a db written by a newer minor — unvalidated and unsupported. Restore into `spec.version` at or above the snapshot's source version.
 
 > **⚠️ Restoring a snapshot from an auth-enabled cluster.** An etcd snapshot captures the data store *including its auth state* — users, roles, and the auth-enabled flag. A snapshot taken while auth was on restores into a cluster where **etcd boots with auth already ON**. You must therefore set `spec.auth` on the new `EtcdCluster` to match, or the operator can never manage it:
 >

@@ -53,6 +53,27 @@ func initContainerNames(pod *corev1.Pod) []string {
 	return names
 }
 
+// The restore container's image must track spec.version exactly — the property
+// the whole feature rests on. Asserting it at a single version elsewhere does
+// not prove it varies with the version.
+func TestBuildPod_RestoreImageTracksVersion(t *testing.T) {
+	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
+	for _, version := range []string{"3.5.21", "3.6.11"} {
+		m := seedMember(&lll.RestoreSpec{Source: lll.SnapshotLocation{
+			PVC: &lll.PVCSnapshotLocation{ClaimName: "snap-pvc", SubPath: "b1.db"},
+		}})
+		m.Spec.Version = version
+		pod := r.buildPod(m, false)
+		ic, ok := findInitContainer(pod, "restore")
+		if !ok {
+			t.Fatalf("version %s: restore initContainer missing", version)
+		}
+		if want := "quay.io/coreos/etcd:v" + version; ic.Image != want {
+			t.Errorf("version %s: restore image = %q, want %q", version, ic.Image, want)
+		}
+	}
+}
+
 func TestBuildPod_NoRestoreInitContainerWithoutSpec(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
 	pod := r.buildPod(seedMember(nil), false)
@@ -114,6 +135,11 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 	}
 	if m, ok := mountByName(ic.VolumeMounts, "restore-tools"); !ok || m.MountPath != "/tools" {
 		t.Errorf("restore restore-tools mount = %+v, want /tools", m)
+	}
+	// Both containers mount restore-tools by name; the backing Volume must
+	// actually exist, or the Pod is rejected at create and bootstrap bricks.
+	if v, ok := volumeByName(pod.Spec.Volumes, "restore-tools"); !ok || v.EmptyDir == nil {
+		t.Errorf("restore-tools volume = %+v, want an emptyDir", v)
 	}
 
 	// Restore identity must match what the etcd container will run with.

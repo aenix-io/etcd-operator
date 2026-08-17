@@ -937,9 +937,13 @@ func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcd
 		mounts = append(mounts, corev1.VolumeMount{Name: "restore-src", MountPath: restoreSrcMountPath, ReadOnly: true})
 	}
 
-	restrictedSecurityContext := &corev1.SecurityContext{
-		AllowPrivilegeEscalation: ptrBool(false),
-		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	// A fresh SecurityContext per container — not one pointer shared by both —
+	// so a later edit to one can't silently mutate the other.
+	restrictedSecurityContext := func() *corev1.SecurityContext {
+		return &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptrBool(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		}
 	}
 
 	installTools := corev1.Container{
@@ -947,7 +951,7 @@ func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcd
 		Image:           operatorImage,
 		Command:         []string{"/manager", "install-tools"},
 		Env:             []corev1.EnvVar{{Name: "TOOLS_DEST_DIR", Value: restoreToolsMountPath}},
-		SecurityContext: restrictedSecurityContext,
+		SecurityContext: restrictedSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: restoreToolsVolumeName, MountPath: restoreToolsMountPath},
 		},
@@ -959,7 +963,7 @@ func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcd
 		Image:           etcdImage,
 		Command:         []string{restoreToolsMountPath + "/manager", "restore-agent"},
 		Env:             env,
-		SecurityContext: restrictedSecurityContext,
+		SecurityContext: restrictedSecurityContext(),
 		VolumeMounts:    mounts,
 		Resources:       restoreAgentResources(),
 	}
