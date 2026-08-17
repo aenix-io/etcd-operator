@@ -125,53 +125,254 @@ func TestEnsureRestoreSpace(t *testing.T) {
 	}
 }
 
-func TestCheckRestoreVersionCompat(t *testing.T) {
-	cases := []struct {
-		name, cluster, etcdutl string
-		wantErr                bool
-	}{
-		{"exact match", "3.6.11", "3.6", false},
-		{"same minor, different patch", "3.6.0", "3.6", false},
-		{"minor mismatch (3.5 cluster, 3.6 etcdutl)", "3.5.17", "3.6", true},
-		{"major mismatch", "4.0.0", "3.6", true},
-		{"empty cluster version skips", "", "3.6", false},
-		{"empty etcdutl version skips", "3.5.17", "", false},
-		{"unparseable cluster version skips", "garbage", "3.6", false},
+// writeFakeEtcdutl writes an executable stub standing in for the etcd image's
+// etcdutl: it records its argv to argsFile and, mimicking a real restore,
+// creates member/ under the dir passed to --data-dir. Lets the exec path be
+// exercised without the etcd binary.
+func writeFakeEtcdutl(t *testing.T, argsFile string) string {
+	t.Helper()
+	script := "#!/bin/sh\n" +
+		": > \"" + argsFile + "\"\n" +
+		"out=\"\"\nprev=\"\"\n" +
+		"for a in \"$@\"; do\n" +
+		"  printf '%s\\n' \"$a\" >> \"" + argsFile + "\"\n" +
+		"  if [ \"$prev\" = \"--data-dir\" ]; then out=\"$a\"; fi\n" +
+		"  prev=\"$a\"\n" +
+		"done\n" +
+		"mkdir -p \"$out/member\"\n" +
+		"printf restored > \"$out/member/db\"\n"
+	path := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake etcdutl: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := checkRestoreVersionCompat(tc.cluster, tc.etcdutl)
-			if tc.wantErr && err == nil {
-				t.Errorf("checkRestoreVersionCompat(%q, %q) = nil, want error", tc.cluster, tc.etcdutl)
+	return path
+}
+
+// RunRestore must exec the (version-matched) etcdutl binary to rebuild the data
+// dir, pass the member identity plus --skip-hash-check, and move the result into
+// place. The etcdutl is faked so the exec path runs without the etcd image.
+func TestRunRestore_ExecsEtcdutlAndMovesIntoPlace(t *testing.T) {
+	dataDir := t.TempDir() // empty: no member/ dir, so the no-op gate is passed
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	argsFile := filepath.Join(t.TempDir(), "args")
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok-xyz")
+	t.Setenv(envPeerURLs, "http://c1-0:2380")
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, argsFile))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	if err := RunRestore(context.Background()); err != nil {
+		t.Fatalf("RunRestore = %v, want nil", err)
+	}
+
+	// The restored member/ must be moved into the real data dir, and the staging
+	// dir cleaned up.
+	if _, err := os.Stat(filepath.Join(dataDir, "member", "db")); err != nil {
+		t.Errorf("restored member/ not in place: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, ".restore")); !os.IsNotExist(err) {
+		t.Errorf(".restore staging dir not cleaned up (stat err=%v)", err)
+	}
+
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read recorded args: %v", err)
+	}
+	for _, want := range []string{
+		"snapshot", "restore", "--skip-hash-check",
+		"--name", "c1-0",
+		"--initial-cluster", "c1-0=http://c1-0:2380",
+		"--initial-cluster-token", "tok-xyz",
+		"--initial-advertise-peer-urls", "http://c1-0:2380",
+	} {
+		if !strings.Contains(string(args), want) {
+			t.Errorf("etcdutl not invoked with %q; got:\n%s", want, args)
+		}
+	}
+}
+
+// ETCD_PEER_URLS is unset for some sources; --initial-advertise-peer-urls must
+// then be omitted (etcdutl's VerifyBootstrap rejects its localhost:2380 default
+// against a real --initial-cluster, so a spurious flag would fail closed). This
+// pins the conditional shape that changed from the old []string field.
+func TestRunRestore_OmitsPeerURLsFlagWhenUnset(t *testing.T) {
+	dataDir := t.TempDir()
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	argsFile := filepath.Join(t.TempDir(), "args")
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok-xyz")
+	// envPeerURLs deliberately left unset.
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, argsFile))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	if err := RunRestore(context.Background()); err != nil {
+		t.Fatalf("RunRestore = %v, want nil", err)
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read recorded args: %v", err)
+	}
+	if strings.Contains(string(args), "--initial-advertise-peer-urls") {
+		t.Errorf("--initial-advertise-peer-urls passed though ETCD_PEER_URLS was unset; got:\n%s", args)
+	}
+}
+
+// A target image with no etcdutl (etcd < 3.5) must fail BEFORE the snapshot is
+// fetched — the "fails early" guarantee — with an actionable message, not after
+// a full download.
+func TestRunRestore_MissingEtcdutlFailsBeforeFetch(t *testing.T) {
+	dataDir := t.TempDir()
+	mount := t.TempDir() // empty: the snapshot file is absent, so a fetch would fail first if it ran
+
+	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envMemberName, "c1-0")
+	// Point at a path that does not exist — stands in for an image with no etcdutl.
+	t.Setenv(envEtcdutlPath, filepath.Join(t.TempDir(), "no-etcdutl-here"))
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
+
+	err := RunRestore(context.Background())
+	if err == nil {
+		t.Fatal("RunRestore with no etcdutl = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "etcdutl") {
+		t.Errorf("error did not mention etcdutl: %v", err)
+	}
+}
+
+// os.Stat succeeds for a directory and for a non-executable file, so the
+// pre-flight must check what exec actually needs. Otherwise these pass the gate,
+// the snapshot is fetched, and the failure lands at exec — the late failure the
+// pre-flight exists to prevent.
+func TestRunRestore_UnrunnableEtcdutlFailsBeforeFetch(t *testing.T) {
+	nonExec := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(nonExec, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatalf("write non-executable etcdutl: %v", err)
+	}
+	cases := map[string]string{
+		"directory":           t.TempDir(),
+		"non-executable file": nonExec,
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			mount := t.TempDir() // empty: a fetch would fail first if it ran
+
+			t.Setenv(envDataDir, dataDir)
+			t.Setenv(envMemberName, "c1-0")
+			t.Setenv(envEtcdutlPath, path)
+			t.Setenv(envDestKind, "pvc")
+			t.Setenv(envPVCMountPath, mount)
+			t.Setenv(envPVCSubPath, "snap.db")
+
+			err := RunRestore(context.Background())
+			if err == nil {
+				t.Fatal("RunRestore with an unrunnable etcdutl = nil, want error")
 			}
-			if !tc.wantErr && err != nil {
-				t.Errorf("checkRestoreVersionCompat(%q, %q) = %v, want nil", tc.cluster, tc.etcdutl, err)
+			if !strings.Contains(err.Error(), "etcdutl") {
+				t.Errorf("error did not mention etcdutl: %v", err)
 			}
 		})
 	}
 }
 
-// RunRestore must reject a version-incompatible restore early (before fetching
-// the snapshot), since the agent's etcdutl (3.6.x) would rebuild a data dir an
-// older etcd can't boot. The agent's etcdutl is 3.6.x, so a 3.5.x cluster fails.
-func TestRunRestore_VersionMismatchFailsEarly(t *testing.T) {
+// A non-zero etcdutl exit must abort the restore: RunRestore returns the error
+// and must NOT move a nonexistent member/ into place, leaving the data dir
+// uninitialized. This is the core "never silently brick a data dir" contract.
+func TestRunRestore_EtcdutlFailureAborts(t *testing.T) {
 	dataDir := t.TempDir() // empty: no member/ dir, so the no-op gate is passed
+	mount := t.TempDir()
+	if err := os.WriteFile(filepath.Join(mount, "snap.db"), []byte("snapshot bytes"), 0o644); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	// A fake etcdutl that fails and creates nothing.
+	fake := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake etcdutl: %v", err)
+	}
 
 	t.Setenv(envDataDir, dataDir)
-	t.Setenv(envEtcdVersion, "3.5.17") // mismatch vs the 3.6.x etcdutl the agent is built with
-	// No destination env: if the version gate didn't fire first, loadDestination
-	// would be the next failure — assert we fail on the version, not that.
-	t.Setenv(envDestKind, "s3")
-	t.Setenv(envS3Endpoint, "https://s3.example.com")
-	t.Setenv(envS3Bucket, "etcd")
-	t.Setenv(envS3Key, "snap.db")
+	t.Setenv(envMemberName, "c1-0")
+	t.Setenv(envInitialCluster, "c1-0=http://c1-0:2380")
+	t.Setenv(envInitialToken, "tok")
+	t.Setenv(envEtcdutlPath, fake)
+	t.Setenv(envDestKind, "pvc")
+	t.Setenv(envPVCMountPath, mount)
+	t.Setenv(envPVCSubPath, "snap.db")
 
 	err := RunRestore(context.Background())
 	if err == nil {
-		t.Fatal("RunRestore with a mismatched etcd version = nil, want error")
+		t.Fatal("RunRestore with a failing etcdutl = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "restore is only supported when") {
-		t.Errorf("error was not the version-compat rejection: %v", err)
+	if !strings.Contains(err.Error(), "etcdutl snapshot restore") {
+		t.Errorf("error did not wrap the etcdutl failure: %v", err)
+	}
+	// A failed rebuild must leave the data dir uninitialized — never move a
+	// nonexistent member/ into place.
+	if _, statErr := os.Stat(filepath.Join(dataDir, "member")); !os.IsNotExist(statErr) {
+		t.Errorf("member/ exists after a failed restore (stat err=%v); a failed rebuild must not initialize the data dir", statErr)
+	}
+}
+
+// RunInstallTools copies the running binary to TOOLS_DEST_DIR/manager so the
+// restore container (etcd image) can exec it.
+func TestRunInstallTools(t *testing.T) {
+	dest := t.TempDir()
+	t.Setenv(envToolsDir, dest)
+
+	if err := RunInstallTools(); err != nil {
+		t.Fatalf("RunInstallTools = %v, want nil", err)
+	}
+
+	out := filepath.Join(dest, "manager")
+	fi, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("stat copied binary: %v", err)
+	}
+	if fi.Mode().Perm()&0o111 == 0 {
+		t.Errorf("copied binary is not executable: mode %v", fi.Mode())
+	}
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	want, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatalf("read source binary: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read copied binary: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Errorf("copied binary size = %d, want %d (source)", len(got), len(want))
+	}
+}
+
+// RunInstallTools must fail loudly when its destination is unset rather than
+// silently no-op, which would leave the restore container with no binary to exec.
+func TestRunInstallTools_NoDestFails(t *testing.T) {
+	t.Setenv(envToolsDir, "")
+	if err := RunInstallTools(); err == nil {
+		t.Error("RunInstallTools with no TOOLS_DEST_DIR = nil, want error")
 	}
 }
 
@@ -292,6 +493,7 @@ func TestRunRestore_PVCDirectorySourceFails(t *testing.T) {
 	}
 
 	t.Setenv(envDataDir, dataDir)
+	t.Setenv(envEtcdutlPath, writeFakeEtcdutl(t, filepath.Join(t.TempDir(), "args"))) // resolve passes; the directory check is what must fire
 	t.Setenv(envDestKind, "pvc")
 	t.Setenv(envPVCMountPath, mount)
 	t.Setenv(envPVCSubPath, "subdir") // exists, but is a directory

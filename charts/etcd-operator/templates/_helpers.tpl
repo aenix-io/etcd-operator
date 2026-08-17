@@ -52,7 +52,8 @@ would hand those permissions to every workload using the default SA. */ -}}
 {{/*
 Full operator image reference. Used for BOTH the manager container image and
 its OPERATOR_IMAGE env var — they MUST be identical, or the operator refuses to
-start (the snapshot/restore agent runs this same image).
+start (the snapshot Job and the restore seed's install-tools initContainer run
+this same image).
 */}}
 {{- define "etcd-operator.image" -}}
 {{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) -}}

@@ -13,17 +13,15 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	etcdversion "go.etcd.io/etcd/api/v3/version"
-	"go.etcd.io/etcd/etcdutl/v3/snapshot"
-	"go.uber.org/zap"
 )
 
 // RunRestore populates the etcd data dir from a snapshot before etcd starts.
@@ -68,12 +66,10 @@ func RunRestore(ctx context.Context) error {
 		return fmt.Errorf("restore source requires the exact snapshot file path within the volume (%s); got empty", envPVCSubPath)
 	}
 
-	// Version-compat pre-flight: snapshot.Restore (this agent's etcdutl) writes a
-	// data dir with that etcdutl minor's storage semantics. A data dir rebuilt by
-	// a different minor than the etcd that will boot on it is unvalidated and can
-	// fail opaquely at the seed — the exact silent brick restore must avoid. Fail
-	// early with a clear, actionable message instead.
-	if err := checkRestoreVersionCompat(os.Getenv(envEtcdVersion), etcdutlMajorMinor()); err != nil {
+	// Resolve etcdutl before fetching the snapshot: a target etcd image that
+	// ships no etcdutl (etcd < 3.5) must fail here, not after a full download.
+	etcdutl, err := resolveEtcdutl()
+	if err != nil {
 		return err
 	}
 
@@ -125,30 +121,14 @@ func RunRestore(ctx context.Context) error {
 		}
 	}
 
-	// etcdutl restore into a staging dir (it refuses to overwrite an
-	// existing OutputDataDir), then move member/ into the real data dir so
-	// etcd's --data-dir stays /var/lib/etcd.
+	// etcdutl refuses a non-empty output dir, so restore into a fresh staging
+	// subdir, then move member/ into the real data dir so etcd's --data-dir stays
+	// /var/lib/etcd.
 	staging := filepath.Join(dataDir, ".restore")
 	_ = os.RemoveAll(staging) // clean any partial prior attempt
 
-	var peerURLs []string
-	if p := os.Getenv(envPeerURLs); p != "" {
-		peerURLs = strings.Split(p, ",")
-	}
-
-	mgr := snapshot.NewV3(zap.NewExample())
-	if err := mgr.Restore(snapshot.RestoreConfig{
-		SnapshotPath:        snapPath,
-		Name:                os.Getenv(envMemberName),
-		OutputDataDir:       staging,
-		PeerURLs:            peerURLs,
-		InitialCluster:      os.Getenv(envInitialCluster),
-		InitialClusterToken: os.Getenv(envInitialToken),
-		// A clientv3 Maintenance.Snapshot stream has no appended integrity
-		// hash (unlike `etcdutl snapshot save`), so skip the check.
-		SkipHashCheck: true,
-	}); err != nil {
-		return fmt.Errorf("etcdutl restore: %w", err)
+	if err := runEtcdutlRestore(ctx, etcdutl, snapPath, staging); err != nil {
+		return err
 	}
 
 	if err := os.Rename(filepath.Join(staging, "member"), memberDir); err != nil {
@@ -160,35 +140,113 @@ func RunRestore(ctx context.Context) error {
 	return nil
 }
 
-// etcdutlMajorMinor returns the "X.Y" of the etcd release the restore agent is
-// built against. The etcdutl, api, and server modules ship in lockstep under
-// one git tag, so the api module's compiled-in version.Version is a reliable
-// proxy for the etcdutl that snapshot.Restore uses — and unlike build info it
-// is a compile-time constant present in every build mode (including tests).
-func etcdutlMajorMinor() string {
-	return majorMinor(etcdversion.Version)
+// resolveEtcdutl locates the etcdutl binary to exec: ETCDUTL_PATH if set, the
+// etcd image's usual /usr/local/bin/etcdutl next, and finally whatever is on
+// PATH (covers images that lay it out elsewhere, e.g. Bitnami). Resolved and
+// existence-checked before the snapshot is fetched so a target image with no
+// etcdutl (etcd < 3.5 ships none) fails immediately instead of after a full
+// download and an indefinite re-download CrashLoop.
+func resolveEtcdutl() (string, error) {
+	if p := os.Getenv(envEtcdutlPath); p != "" {
+		if err := executableFile(p); err != nil {
+			return "", fmt.Errorf("etcdutl (%s=%s): %w", envEtcdutlPath, p, err)
+		}
+		return p, nil
+	}
+	if err := executableFile(defaultEtcdutlPath); err == nil {
+		return defaultEtcdutlPath, nil
+	}
+	if p, err := exec.LookPath("etcdutl"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("etcdutl not found at %s or on PATH; the target etcd image must ship etcdutl (etcd < 3.5 does not) — check spec.version", defaultEtcdutlPath)
 }
 
-// majorMinor extracts "X.Y" from a "X.Y.Z"(-ish) version, or "" if it lacks two
-// leading components.
-func majorMinor(v string) string {
-	parts := strings.SplitN(v, ".", 3)
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return ""
+// executableFile checks that path is something exec can actually run. A bare
+// os.Stat also accepts directories and non-executable files, which would pass
+// the pre-flight and then fail at exec — after the snapshot download the
+// pre-flight exists to happen before. (exec.LookPath already checks this.)
+func executableFile(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
 	}
-	return parts[0] + "." + parts[1]
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (%s)", fi.Mode().Type())
+	}
+	if fi.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("not executable (mode %s)", fi.Mode().Perm())
+	}
+	return nil
 }
 
-// checkRestoreVersionCompat fails when the cluster's etcd version and the
-// restore agent's etcdutl differ in major.minor. Empty/unparseable inputs skip
-// the check (best-effort) rather than block a restore.
-func checkRestoreVersionCompat(clusterVersion, etcdutlVersion string) error {
-	cm, um := majorMinor(clusterVersion), majorMinor(etcdutlVersion)
-	if cm == "" || um == "" {
-		return nil
+// runEtcdutlRestore rebuilds the data dir under outputDir from snapPath, exec-ing
+// the etcd image's own etcdutl (resolved by resolveEtcdutl) rather than a
+// compiled-in one so it matches the target etcd version. --skip-hash-check is
+// required: a clientv3 Maintenance.Snapshot stream carries no integrity hash.
+func runEtcdutlRestore(ctx context.Context, etcdutl, snapPath, outputDir string) error {
+	args := []string{
+		"snapshot", "restore", snapPath,
+		"--data-dir", outputDir,
+		"--name", os.Getenv(envMemberName),
+		"--initial-cluster", os.Getenv(envInitialCluster),
+		"--initial-cluster-token", os.Getenv(envInitialToken),
+		"--skip-hash-check",
 	}
-	if cm != um {
-		return fmt.Errorf("restore is only supported when the cluster's etcd version matches the restore agent's etcdutl (%s.x): spec.version=%s. A data dir rebuilt by a different etcd minor may not boot. Run an etcd %s.x cluster, or use an operator build whose etcdutl matches your etcd version", um, clusterVersion, um)
+	if p := os.Getenv(envPeerURLs); p != "" {
+		args = append(args, "--initial-advertise-peer-urls", p)
+	}
+
+	cmd := exec.CommandContext(ctx, etcdutl, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("etcdutl snapshot restore: %w", err)
+	}
+	return nil
+}
+
+// RunInstallTools copies the running operator binary into envToolsDir, so the
+// restore initContainer can exec it from the etcd image — which ships etcdutl
+// but can't copy it out — while keeping the agent's own logic.
+func RunInstallTools() error {
+	dest := os.Getenv(envToolsDir)
+	if dest == "" {
+		return fmt.Errorf("%s is not set; nowhere to install the operator binary", envToolsDir)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate running binary: %w", err)
+	}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return fmt.Errorf("create tools dir %s: %w", dest, err)
+	}
+	out := filepath.Join(dest, "manager")
+	if err := copyExecutable(self, out); err != nil {
+		return err
+	}
+	fmt.Printf("install-tools: copied %s to %s\n", self, out)
+	return nil
+}
+
+func copyExecutable(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", src, err)
+	}
+	// Discarded deliberately: src is read-only, and on the copy failure below the
+	// io.Copy error is the one worth reporting. Only the success-path Close can
+	// surface a lost write, and that one is checked.
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", dst, err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return fmt.Errorf("copy %s to %s: %w", src, dst, err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("finalize %s: %w", dst, err)
 	}
 	return nil
 }

@@ -107,6 +107,14 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "install-tools":
+			// Stages this binary for the restore-agent container to exec from the
+			// etcd image; no cluster I/O, so no timeout needed.
+			if err := agent.RunInstallTools(); err != nil {
+				fmt.Fprintln(os.Stderr, "install-tools failed:", err)
+				os.Exit(1)
+			}
+			return
 		}
 	}
 

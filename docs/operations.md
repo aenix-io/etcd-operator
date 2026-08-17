@@ -280,7 +280,9 @@ kubectl logs -n <ns> job/my-etcd-2026-06-02-snapshot
 
 Restore is a **first-bootstrap-only** path: a *new* cluster initializes its seed member's data dir from a snapshot instead of starting empty. You cannot restore into an existing, already-bootstrapped cluster (`spec.bootstrap` is immutable post-create) — delete and recreate.
 
-> **⚠️ Restore requires the cluster's etcd version to match the operator's `etcdutl`.** The restore agent rebuilds the data dir with the `etcdutl` vendored into the operator image (currently **etcd 3.6.x**), and that data dir carries 3.6's on-disk storage semantics — an etcd container of a different minor (e.g. 3.5.x) booting on it is unvalidated and can fail at the seed. The agent enforces this: it **fails the restore early with a clear message** if `spec.version`'s major.minor differs from its `etcdutl`. So a restored cluster must run a **3.6.x** `spec.version` (the example below uses `3.6.11`). This applies only to restore-on-bootstrap; non-restore clusters can run any supported version. To restore into a different minor, use an operator build whose `etcdutl` matches.
+> **Restore rebuilds the data dir with a version-matched `etcdutl`.** The restore agent runs the `etcdutl` bundled in the target etcd image (`v<spec.version>`), the very version that then boots on the rebuilt data dir — so the `etcdutl`↔etcd on-disk format matches by construction, for any etcd version the operator supports, with no requirement that `spec.version` match the operator's own build.
+>
+> This guarantees `etcdutl`↔etcd, **not** snapshot↔etcd: the snapshot's origin version is not recorded or checked anywhere. Restoring a snapshot taken from a **newer** etcd into an **older** `spec.version` (e.g. a 3.6 snapshot into a `3.5.x` cluster) runs an older `etcdutl` over a db written by a newer minor — unvalidated and unsupported. Restore into `spec.version` at or above the snapshot's source version.
 
 > **⚠️ Restoring a snapshot from an auth-enabled cluster.** An etcd snapshot captures the data store *including its auth state* — users, roles, and the auth-enabled flag. A snapshot taken while auth was on restores into a cluster where **etcd boots with auth already ON**. You must therefore set `spec.auth` on the new `EtcdCluster` to match, or the operator can never manage it:
 >
@@ -298,7 +300,7 @@ metadata:
   namespace: <ns>
 spec:
   replicas: 3
-  version: 3.6.11          # must match the operator's etcdutl minor (3.6.x) — see warning above
+  version: 3.6.11          # restore rebuilds with this version's etcdutl
   storage:
     size: 1Gi
   bootstrap:
@@ -314,9 +316,12 @@ spec:
             name: s3-creds
 EOF
 
-# The seed Pod runs an init container named "restore" before etcd starts.
+# The seed Pod runs two init containers before etcd starts, in this order:
+# "install-tools" stages the agent binary, then "restore" rebuilds the data dir.
 kubectl get etcdcluster.etcd-operator.cozystack.io my-etcd -n <ns> -w
 kubectl logs -n <ns> <seed-pod> -c restore
+# If "restore" never starts, staging failed — look there instead:
+kubectl logs -n <ns> <seed-pod> -c install-tools
 ```
 
 Notes:

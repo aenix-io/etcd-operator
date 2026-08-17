@@ -778,17 +778,17 @@ func (r *EtcdMemberReconciler) buildPod(member *lll.EtcdMember, clusterFormed bo
 		})
 	}
 
-	// Restore initContainer: when the seed carries a restore spec, populate
+	etcdImage := resolveEtcdImage(member, r.EtcdImageRepository)
+
+	// Restore initContainers: when the seed carries a restore spec, populate
 	// the data dir from the snapshot before etcd starts. The agent no-ops if
 	// the data dir is already initialized, so it's safe across Pod restarts.
 	var initContainers []corev1.Container
 	if member.Spec.Restore != nil {
-		ic, extraVols := restoreInitContainer(member, pAddr, r.OperatorImage)
-		initContainers = append(initContainers, ic)
+		ics, extraVols := restoreInitContainers(member, pAddr, r.OperatorImage, etcdImage)
+		initContainers = append(initContainers, ics...)
 		volumes = append(volumes, extraVols...)
 	}
-
-	etcdImage := resolveEtcdImage(member, r.EtcdImageRepository)
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -870,13 +870,23 @@ func (r *EtcdMemberReconciler) buildPod(member *lll.EtcdMember, clusterFormed bo
 
 const restoreSrcMountPath = "/restore/src"
 
-// restoreInitContainer builds the initContainer that restores the data dir
-// from a snapshot before etcd starts. peerAddr is this member's peer URL; the
-// agent feeds it (with the member name / initial-cluster / token) to etcdutl
-// so the restored data matches the identity the etcd container will run with.
-// For an S3 source the object key is exact (not a prefix); for a PVC source
-// the volume is mounted read-only and PVC_SUBPATH points to the snapshot file.
-func restoreInitContainer(member *lll.EtcdMember, peerAddr, operatorImage string) (corev1.Container, []corev1.Volume) {
+// restore-tools carries the operator binary from install-tools to the restore
+// container, which runs the etcd image (for its version-matched etcdutl).
+const (
+	restoreToolsVolumeName = "restore-tools"
+	restoreToolsMountPath  = "/tools"
+)
+
+// restoreInitContainers builds the ordered initContainers that restore the data
+// dir before etcd starts. The rebuild runs a version-matched etcdutl by running
+// the agent from the target etcd image; that image can't copy etcdutl out, so
+// install-tools first stages the operator binary onto a shared volume for the
+// restore container to exec. peerAddr is this member's peer URL, fed (with
+// member name / initial-cluster / token) to etcdutl so the restored data matches
+// the identity the etcd container runs with. For an S3 source the object key is
+// exact (not a prefix); for a PVC source the volume is mounted read-only and
+// PVC_SUBPATH points to the snapshot file.
+func restoreInitContainers(member *lll.EtcdMember, peerAddr, operatorImage, etcdImage string) ([]corev1.Container, []corev1.Volume) {
 	src := member.Spec.Restore.Source
 	env := []corev1.EnvVar{
 		{Name: "ETCD_DATA_DIR", Value: "/var/lib/etcd"},
@@ -884,12 +894,15 @@ func restoreInitContainer(member *lll.EtcdMember, peerAddr, operatorImage string
 		{Name: "ETCD_INITIAL_CLUSTER", Value: member.Spec.InitialCluster},
 		{Name: "ETCD_INITIAL_CLUSTER_TOKEN", Value: member.Spec.ClusterToken},
 		{Name: "ETCD_PEER_URLS", Value: peerAddr},
-		// The cluster's etcd version, for the agent's version-compat pre-flight
-		// (the restored data dir must match the etcd that boots on it).
-		{Name: "ETCD_VERSION", Value: member.Spec.Version},
 	}
-	mounts := []corev1.VolumeMount{{Name: "data", MountPath: "/var/lib/etcd"}}
-	var vols []corev1.Volume
+	mounts := []corev1.VolumeMount{
+		{Name: "data", MountPath: "/var/lib/etcd"},
+		{Name: restoreToolsVolumeName, MountPath: restoreToolsMountPath, ReadOnly: true},
+	}
+	vols := []corev1.Volume{{
+		Name:         restoreToolsVolumeName,
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	}}
 
 	switch {
 	case src.S3 != nil:
@@ -924,18 +937,38 @@ func restoreInitContainer(member *lll.EtcdMember, peerAddr, operatorImage string
 		mounts = append(mounts, corev1.VolumeMount{Name: "restore-src", MountPath: restoreSrcMountPath, ReadOnly: true})
 	}
 
-	return corev1.Container{
-		Name:    "restore",
-		Image:   operatorImage,
-		Command: []string{"/manager", "restore-agent"},
-		Env:     env,
-		SecurityContext: &corev1.SecurityContext{
+	// A fresh SecurityContext per container — not one pointer shared by both —
+	// so a later edit to one can't silently mutate the other.
+	restrictedSecurityContext := func() *corev1.SecurityContext {
+		return &corev1.SecurityContext{
 			AllowPrivilegeEscalation: ptrBool(false),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		}
+	}
+
+	installTools := corev1.Container{
+		Name:            "install-tools",
+		Image:           operatorImage,
+		Command:         []string{"/manager", "install-tools"},
+		Env:             []corev1.EnvVar{{Name: "TOOLS_DEST_DIR", Value: restoreToolsMountPath}},
+		SecurityContext: restrictedSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: restoreToolsVolumeName, MountPath: restoreToolsMountPath},
 		},
-		VolumeMounts: mounts,
-		Resources:    restoreAgentResources(),
-	}, vols
+		Resources: restoreAgentResources(),
+	}
+
+	restore := corev1.Container{
+		Name:            "restore",
+		Image:           etcdImage,
+		Command:         []string{restoreToolsMountPath + "/manager", "restore-agent"},
+		Env:             env,
+		SecurityContext: restrictedSecurityContext(),
+		VolumeMounts:    mounts,
+		Resources:       restoreAgentResources(),
+	}
+
+	return []corev1.Container{installTools, restore}, vols
 }
 
 // dataLossRestartThreshold is how many times the etcd container must have

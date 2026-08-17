@@ -77,8 +77,12 @@ const (
 	envInitialCluster = "ETCD_INITIAL_CLUSTER"
 	envInitialToken   = "ETCD_INITIAL_CLUSTER_TOKEN"
 	envPeerURLs       = "ETCD_PEER_URLS" // comma-separated
-	envEtcdVersion    = "ETCD_VERSION"   // cluster's spec.version, for the restore version-compat pre-flight
+	envEtcdutlPath    = "ETCDUTL_PATH"   // etcdutl to exec; default is the etcd image's
+	envToolsDir       = "TOOLS_DEST_DIR" // where install-tools copies the operator binary
 )
+
+// defaultEtcdutlPath is etcdutl's location in the upstream etcd image.
+const defaultEtcdutlPath = "/usr/local/bin/etcdutl"
 
 // destination captures the resolved snapshot destination / restore source.
 type destination struct {

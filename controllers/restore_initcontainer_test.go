@@ -45,11 +45,43 @@ func findInitContainer(pod *corev1.Pod, name string) (corev1.Container, bool) {
 	return corev1.Container{}, false
 }
 
+func initContainerNames(pod *corev1.Pod) []string {
+	names := make([]string, len(pod.Spec.InitContainers))
+	for i, ic := range pod.Spec.InitContainers {
+		names[i] = ic.Name
+	}
+	return names
+}
+
+// The restore container's image must track spec.version exactly — the property
+// the whole feature rests on. Asserting it at a single version elsewhere does
+// not prove it varies with the version.
+func TestBuildPod_RestoreImageTracksVersion(t *testing.T) {
+	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
+	for _, version := range []string{"3.5.21", "3.6.11"} {
+		m := seedMember(&lll.RestoreSpec{Source: lll.SnapshotLocation{
+			PVC: &lll.PVCSnapshotLocation{ClaimName: "snap-pvc", SubPath: "b1.db"},
+		}})
+		m.Spec.Version = version
+		pod := r.buildPod(m, false)
+		ic, ok := findInitContainer(pod, "restore")
+		if !ok {
+			t.Fatalf("version %s: restore initContainer missing", version)
+		}
+		if want := "quay.io/coreos/etcd:v" + version; ic.Image != want {
+			t.Errorf("version %s: restore image = %q, want %q", version, ic.Image, want)
+		}
+	}
+}
+
 func TestBuildPod_NoRestoreInitContainerWithoutSpec(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
 	pod := r.buildPod(seedMember(nil), false)
 	if _, ok := findInitContainer(pod, "restore"); ok {
 		t.Error("restore initContainer present though no restore spec was set")
+	}
+	if _, ok := findInitContainer(pod, "install-tools"); ok {
+		t.Error("install-tools initContainer present though no restore spec was set")
 	}
 }
 
@@ -66,15 +98,48 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 	r := &EtcdMemberReconciler{Scheme: testScheme(t), OperatorImage: "operator:latest"}
 	pod := r.buildPod(seedMember(restore), false)
 
+	// install-tools stages the operator binary onto the shared volume so the
+	// restore container (etcd image) can exec it.
+	it, ok := findInitContainer(pod, "install-tools")
+	if !ok {
+		t.Fatal("install-tools initContainer missing")
+	}
+	if it.Image != "operator:latest" {
+		t.Errorf("install-tools image = %q, want operator:latest", it.Image)
+	}
+	if got, want := it.Command, []string{"/manager", "install-tools"}; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("install-tools command = %v, want %v", got, want)
+	}
+	if m, ok := mountByName(it.VolumeMounts, "restore-tools"); !ok || m.MountPath != "/tools" || m.ReadOnly {
+		t.Errorf("install-tools restore-tools mount = %+v, want writable at /tools", m)
+	}
+
+	// install-tools must precede restore: it stages the binary the restore
+	// container execs, so the order is correctness-critical.
+	if got := initContainerNames(pod); len(got) != 2 || got[0] != "install-tools" || got[1] != "restore" {
+		t.Errorf("initContainer order = %v, want [install-tools restore]", got)
+	}
+
 	ic, ok := findInitContainer(pod, "restore")
 	if !ok {
 		t.Fatal("restore initContainer missing")
 	}
-	if ic.Image != "operator:latest" {
-		t.Errorf("image = %q, want operator:latest", ic.Image)
+	// The restore container runs the target etcd image, so its bundled etcdutl
+	// matches spec.version — the whole point of restoring per-version.
+	if ic.Image != "quay.io/coreos/etcd:v3.6.4" {
+		t.Errorf("restore image = %q, want quay.io/coreos/etcd:v3.6.4 (version-matched)", ic.Image)
 	}
-	if got, want := ic.Command, []string{"/manager", "restore-agent"}; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("command = %v, want %v", got, want)
+	// It execs the operator binary staged on the shared volume, not the etcd image's entrypoint.
+	if got, want := ic.Command, []string{"/tools/manager", "restore-agent"}; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("restore command = %v, want %v", got, want)
+	}
+	if m, ok := mountByName(ic.VolumeMounts, "restore-tools"); !ok || m.MountPath != "/tools" {
+		t.Errorf("restore restore-tools mount = %+v, want /tools", m)
+	}
+	// Both containers mount restore-tools by name; the backing Volume must
+	// actually exist, or the Pod is rejected at create and bootstrap bricks.
+	if v, ok := volumeByName(pod.Spec.Volumes, "restore-tools"); !ok || v.EmptyDir == nil {
+		t.Errorf("restore-tools volume = %+v, want an emptyDir", v)
 	}
 
 	// Restore identity must match what the etcd container will run with.
@@ -90,11 +155,6 @@ func TestBuildPod_RestoreInitContainerS3(t *testing.T) {
 	}
 	if vals["ETCD_DATA_DIR"] != "/var/lib/etcd" {
 		t.Errorf("ETCD_DATA_DIR = %q, want /var/lib/etcd", vals["ETCD_DATA_DIR"])
-	}
-	// The cluster's etcd version must be passed for the agent's version-compat
-	// pre-flight (the restored data dir must match the etcd that boots on it).
-	if vals["ETCD_VERSION"] != "3.6.4" {
-		t.Errorf("ETCD_VERSION = %q, want 3.6.4", vals["ETCD_VERSION"])
 	}
 	if vals["SNAPSHOT_DEST_KIND"] != "s3" || vals["S3_KEY"] != "snapshots/b1.db" {
 		t.Errorf("s3 source env = %+v", vals)
