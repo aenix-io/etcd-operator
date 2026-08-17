@@ -35,12 +35,20 @@ type EtcdClusterClient interface {
 	MemberPromote(ctx context.Context, id uint64) (*clientv3.MemberPromoteResponse, error)
 	MemberRemove(ctx context.Context, id uint64) (*clientv3.MemberRemoveResponse, error)
 
-	// Status returns a single endpoint's server status, including the etcd
-	// version it is actually running (StatusResponse.Version). Used by the
-	// member controller to observe the running version into
-	// EtcdMember.status.version. *clientv3.Client satisfies this via its
+	// Status returns a single endpoint's server status: the etcd version it is
+	// actually running (StatusResponse.Version, observed into
+	// EtcdMember.status.version), its backend sizes (DbSize / DbSizeInUse), the
+	// leader it sees and any alarms — all read by the EtcdDefrag controller to
+	// gate and decide a defragmentation. *clientv3.Client satisfies this via its
 	// embedded Maintenance interface.
 	Status(ctx context.Context, endpoint string) (*clientv3.StatusResponse, error)
+
+	// Defragment releases a single endpoint's reclaimable backend space to the
+	// filesystem. It is per-endpoint (defrag is a member-local operation) and
+	// briefly blocks that member, so the EtcdDefrag controller calls it one
+	// member at a time on a healthy cluster. *clientv3.Client satisfies this via
+	// its embedded Maintenance interface.
+	Defragment(ctx context.Context, endpoint string) (*clientv3.DefragmentResponse, error)
 
 	// Auth surface — used by reconcileAuth to provision the single root
 	// user/role and turn on authentication. The "root" role is built into

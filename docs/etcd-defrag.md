@@ -1,12 +1,5 @@
 # Defragmentation (`EtcdDefrag`)
 
-> **Status:** this ships the `EtcdDefrag` **API type** ahead of its reconciling
-> controller. Until that controller lands the resource is **inert** — creating
-> one records intent but nothing acts on it (no sweep runs, `status` stays
-> empty, `ttlSecondsAfterFinished` does not fire). The "Safety model",
-> "Timeouts and retries" and `status` sections below describe the **controller
-> contract the follow-up implements**, not behaviour that exists today.
-
 etcd never reclaims backend disk on its own: compaction frees pages logically,
 but the file — and the space counted against `--quota-backend-bytes` — stays
 allocated until a **defragment** returns it. `EtcdDefrag` is how you ask the
@@ -66,7 +59,7 @@ spec:
     minReclaim: 32Mi        # … but never a no-op defrag
 ```
 
-Inspect progress and history (once the controller exists):
+Inspect progress and history:
 
 ```sh
 kubectl get etcddefrag.etcd-operator.cozystack.io -n team-a
@@ -101,7 +94,7 @@ out.
 > `autoCompactionRetention`) has `DbSizeInUse ≈ DbSize` and little to reclaim.
 > Set auto-compaction if you rely on defrag to hold the backend down.
 
-## Safety model (planned controller behaviour)
+## Safety model
 
 - **One member at a time, followers before the leader**, only while the whole
   cluster is healthy. A defrag due on a not-fully-healthy cluster is **deferred**
@@ -113,7 +106,7 @@ out.
   local status read while partitioned, alarmed (`NOSPACE`/`CORRUPT`), or behind
   in raft, so those are checked before acting.
 
-## Status (planned controller behaviour)
+## Status
 
 `status.phase` moves `Pending → Running → Complete | Failed`; a `Pending` run
 waiting on cluster health carries a condition saying so. `status.members[]`
@@ -121,7 +114,7 @@ records, per member (keyed by name), the role at processing time, the outcome
 (`Skipped` / `Defragmented` / `Failed`), the before/after `DbSize`, and the
 bytes reclaimed — the run's full history, not a single rolled-up condition.
 
-## Timeouts and retries (planned controller behaviour)
+## Timeouts and retries
 
 Following [`EtcdSnapshot`](concepts.md#snapshots--restore) — where the Job's
 deadlines are controller constants and terminal phases are sticky — this needs

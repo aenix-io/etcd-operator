@@ -201,10 +201,6 @@ type MemberDefragStatus struct {
 // run-to-completion defragmentation of an EtcdCluster's members. Like
 // EtcdSnapshot it is a record: the operator drives it through status.phase and
 // it never re-runs.
-//
-// NOTE: this ships the API type ahead of its reconciling controller. Until that
-// controller lands, an EtcdDefrag is inert — creating one records intent but
-// nothing acts on it (no sweep runs, status stays empty, TTL does not fire).
 type EtcdDefrag struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
