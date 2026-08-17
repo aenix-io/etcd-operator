@@ -794,3 +794,47 @@ func TestCEL_AuthAddOnExistingClusterRejected(t *testing.T) {
 		t.Fatalf("error did not mention add/remove rejection: %v", err)
 	}
 }
+
+// TestCEL_DefragRuleQuantityIntegerInput exercises the kubectl-style integer
+// input path for EtcdDefrag's rule quantities (`freeSpaceAbove: 0` / a bare byte
+// count, received as a JSON number, not a string). CEL's quantity() requires a
+// string; the rules coerce with string(), so integer input must validate on its
+// merits — a zero rejected with the human-readable message, a positive byte
+// count accepted — rather than tripping a "no such overload" runtime error.
+func TestCEL_DefragRuleQuantityIntegerInput(t *testing.T) {
+	skipIfNoEnvtest(t)
+	ctx := context.Background()
+
+	mk := func(name string, freeSpace int64) *unstructured.Unstructured {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "etcd-operator.cozystack.io",
+			Version: "v1alpha2",
+			Kind:    "EtcdDefrag",
+		})
+		u.SetName(name)
+		u.SetNamespace("default")
+		u.Object["spec"] = map[string]any{
+			"clusterRef": map[string]any{"name": "etcd"},
+			"rule":       map[string]any{"freeSpaceAbove": freeSpace}, // integer, not "200Mi"
+		}
+		return u
+	}
+
+	// Zero must be rejected with the intended message, not a CEL overload error.
+	err := k8s.Create(ctx, mk("defrag-zero-int", 0))
+	if err == nil {
+		_ = k8s.Delete(ctx, mk("defrag-zero-int", 0))
+		t.Fatalf("apiserver accepted rule.freeSpaceAbove=0 (integer); expected rejection")
+	}
+	if !strings.Contains(err.Error(), "freeSpaceAbove must be greater than 0") {
+		t.Fatalf("error did not surface the intended message (CEL string() coercion missing?): %v", err)
+	}
+
+	// A positive bare byte count is a legitimate Quantity and must be accepted.
+	valid := mk("defrag-bytes-int", 209715200) // 200Mi as a plain integer
+	if err := k8s.Create(ctx, valid); err != nil {
+		t.Fatalf("apiserver rejected a valid integer rule.freeSpaceAbove=209715200: %v", err)
+	}
+	_ = k8s.Delete(ctx, valid)
+}
