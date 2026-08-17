@@ -316,9 +316,12 @@ spec:
             name: s3-creds
 EOF
 
-# The seed Pod runs an init container named "restore" before etcd starts.
+# The seed Pod runs two init containers before etcd starts, in this order:
+# "install-tools" stages the agent binary, then "restore" rebuilds the data dir.
 kubectl get etcdcluster.etcd-operator.cozystack.io my-etcd -n <ns> -w
 kubectl logs -n <ns> <seed-pod> -c restore
+# If "restore" never starts, staging failed — look there instead:
+kubectl logs -n <ns> <seed-pod> -c install-tools
 ```
 
 Notes:
