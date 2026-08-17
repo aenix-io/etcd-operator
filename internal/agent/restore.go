@@ -148,18 +148,36 @@ func RunRestore(ctx context.Context) error {
 // download and an indefinite re-download CrashLoop.
 func resolveEtcdutl() (string, error) {
 	if p := os.Getenv(envEtcdutlPath); p != "" {
-		if _, err := os.Stat(p); err != nil {
+		if err := executableFile(p); err != nil {
 			return "", fmt.Errorf("etcdutl (%s=%s): %w", envEtcdutlPath, p, err)
 		}
 		return p, nil
 	}
-	if _, err := os.Stat(defaultEtcdutlPath); err == nil {
+	if err := executableFile(defaultEtcdutlPath); err == nil {
 		return defaultEtcdutlPath, nil
 	}
 	if p, err := exec.LookPath("etcdutl"); err == nil {
 		return p, nil
 	}
 	return "", fmt.Errorf("etcdutl not found at %s or on PATH; the target etcd image must ship etcdutl (etcd < 3.5 does not) — check spec.version", defaultEtcdutlPath)
+}
+
+// executableFile checks that path is something exec can actually run. A bare
+// os.Stat also accepts directories and non-executable files, which would pass
+// the pre-flight and then fail at exec — after the snapshot download the
+// pre-flight exists to happen before. (exec.LookPath already checks this.)
+func executableFile(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (%s)", fi.Mode().Type())
+	}
+	if fi.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("not executable (mode %s)", fi.Mode().Perm())
+	}
+	return nil
 }
 
 // runEtcdutlRestore rebuilds the data dir under outputDir from snapPath, exec-ing

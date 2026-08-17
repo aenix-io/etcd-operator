@@ -257,6 +257,42 @@ func TestRunRestore_MissingEtcdutlFailsBeforeFetch(t *testing.T) {
 	}
 }
 
+// os.Stat succeeds for a directory and for a non-executable file, so the
+// pre-flight must check what exec actually needs. Otherwise these pass the gate,
+// the snapshot is fetched, and the failure lands at exec — the late failure the
+// pre-flight exists to prevent.
+func TestRunRestore_UnrunnableEtcdutlFailsBeforeFetch(t *testing.T) {
+	nonExec := filepath.Join(t.TempDir(), "etcdutl")
+	if err := os.WriteFile(nonExec, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+		t.Fatalf("write non-executable etcdutl: %v", err)
+	}
+	cases := map[string]string{
+		"directory":           t.TempDir(),
+		"non-executable file": nonExec,
+	}
+	for name, path := range cases {
+		t.Run(name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			mount := t.TempDir() // empty: a fetch would fail first if it ran
+
+			t.Setenv(envDataDir, dataDir)
+			t.Setenv(envMemberName, "c1-0")
+			t.Setenv(envEtcdutlPath, path)
+			t.Setenv(envDestKind, "pvc")
+			t.Setenv(envPVCMountPath, mount)
+			t.Setenv(envPVCSubPath, "snap.db")
+
+			err := RunRestore(context.Background())
+			if err == nil {
+				t.Fatal("RunRestore with an unrunnable etcdutl = nil, want error")
+			}
+			if !strings.Contains(err.Error(), "etcdutl") {
+				t.Errorf("error did not mention etcdutl: %v", err)
+			}
+		})
+	}
+}
+
 // A non-zero etcdutl exit must abort the restore: RunRestore returns the error
 // and must NOT move a nonexistent member/ into place, leaving the data dir
 // uninitialized. This is the core "never silently brick a data dir" contract.
