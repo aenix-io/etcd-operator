@@ -215,13 +215,16 @@ func copyExecutable(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
+	// Discarded deliberately: src is read-only, and on the copy failure below the
+	// io.Copy error is the one worth reporting. Only the success-path Close can
+	// surface a lost write, and that one is checked.
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dst, err)
 	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
+		_ = out.Close()
 		return fmt.Errorf("copy %s to %s: %w", src, dst, err)
 	}
 	if err := out.Close(); err != nil {
