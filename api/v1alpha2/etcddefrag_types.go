@@ -70,9 +70,10 @@ type DefragRule struct {
 	// QuotaUsageAbove: when DbSize exceeds this fraction of the backend quota
 	// (approaching NOSPACE), lower the reclaimable floor to MinReclaim so small
 	// wins are taken under pressure. A member is never defragmented when its
-	// reclaimable space is below MinReclaim. Integer percent 1..100 with a "%"
-	// suffix, e.g. "80%".
-	// +kubebuilder:validation:Pattern=`^([1-9][0-9]?|100)%$`
+	// reclaimable space is below MinReclaim. Integer percent 1..99 with a "%"
+	// suffix, e.g. "80%"; 100% is rejected because a backend never exceeds its
+	// quota (etcd raises NOSPACE first), so the arm could never fire.
+	// +kubebuilder:validation:Pattern=`^[1-9][0-9]?%$`
 	// +optional
 	QuotaUsageAbove string `json:"quotaUsageAbove,omitempty"`
 

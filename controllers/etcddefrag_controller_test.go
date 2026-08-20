@@ -48,6 +48,7 @@ func TestDefragRuleTriggered(t *testing.T) {
 		{"freeSpaceAbove met", &lll.DefragRule{FreeSpaceAbove: q("200Mi")}, 500 << 20, 100 << 20, true},
 		{"quota arm: full but unfragmented never fires", &lll.DefragRule{QuotaUsageAbove: "80%"}, int64(1.9 * float64(gib)), int64(1.9 * float64(gib)), false},
 		{"quota arm: under pressure with reclaimable fires", &lll.DefragRule{QuotaUsageAbove: "80%", MinReclaim: q("32Mi")}, int64(1.9 * float64(gib)), int64(1.9*float64(gib)) - (64 << 20), true},
+		{"quota arm: 100% is inert, only the free-space floor applies", &lll.DefragRule{QuotaUsageAbove: "100%", MinReclaim: q("32Mi")}, int64(1.9 * float64(gib)), int64(1.9*float64(gib)) - (64 << 20), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

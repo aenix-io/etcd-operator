@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -508,11 +509,12 @@ func defragRuleTriggered(rule *lll.DefragRule, dbSize, dbSizeInUse, quota int64)
 }
 
 // parsePercent parses "80%" into 0.80. Returns ok=false for anything outside
-// 1–100 or non-numeric; the CRD pattern rejects such values at admission, so
-// this is a defensive fallback.
+// 1–99 or non-numeric; the CRD pattern rejects such values at admission, so this
+// is a defensive fallback. 100% is excluded on purpose: a backend never exceeds
+// its quota (etcd raises NOSPACE first), so the quota arm could never fire.
 func parsePercent(s string) (float64, bool) {
 	n, err := strconv.Atoi(strings.TrimSuffix(s, "%"))
-	if err != nil || n <= 0 || n > 100 {
+	if err != nil || n <= 0 || n >= 100 {
 		return 0, false
 	}
 	return float64(n) / 100, true
@@ -616,7 +618,22 @@ func (r *EtcdDefragReconciler) fail(ctx context.Context, df *lll.EtcdDefrag, rea
 }
 
 func (r *EtcdDefragReconciler) persistAndRequeue(ctx context.Context, df *lll.EtcdDefrag) (ctrl.Result, error) {
-	if err := r.Status().Update(ctx, df); err != nil {
+	// A Defragment RPC can block for defragRPCTimeout; an unrelated metadata write
+	// (a kubectl label/annotate) in that window would make this status write
+	// conflict and discard the recorded outcome, so the member would be
+	// defragmented again next pass. The defrag controller owns these status
+	// fields, so on conflict re-fetch and re-apply the computed status rather than
+	// dropping it.
+	desired := df.Status
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &lll.EtcdDefrag{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(df), latest); err != nil {
+			return err
+		}
+		latest.Status = desired
+		return r.Status().Update(ctx, latest)
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: defragRequeueAfter}, nil
