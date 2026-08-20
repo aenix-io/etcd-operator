@@ -59,6 +59,12 @@ type fakeEtcd struct {
 	defragCalls         []string
 	defragErr           error
 
+	// Alarm surface. alarms is what AlarmList returns; alarmListErr fails it;
+	// disarmCalls records each AlarmDisarm target in call order.
+	alarms       []*etcdserverpb.AlarmMember
+	alarmListErr error
+	disarmCalls  []*etcdserverpb.AlarmMember
+
 	addCalls        []string
 	addLearnerCalls []string
 	promoteCalls    []uint64
@@ -218,6 +224,21 @@ func (f *fakeEtcd) Defragment(_ context.Context, endpoint string) (*clientv3.Def
 		return nil, f.defragErr
 	}
 	return &clientv3.DefragmentResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
+}
+
+func (f *fakeEtcd) AlarmList(_ context.Context) (*clientv3.AlarmResponse, error) {
+	if f.alarmListErr != nil {
+		return nil, f.alarmListErr
+	}
+	return &clientv3.AlarmResponse{
+		Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID},
+		Alarms: f.alarms,
+	}, nil
+}
+
+func (f *fakeEtcd) AlarmDisarm(_ context.Context, m *clientv3.AlarmMember) (*clientv3.AlarmResponse, error) {
+	f.disarmCalls = append(f.disarmCalls, (*etcdserverpb.AlarmMember)(m))
+	return &clientv3.AlarmResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
 }
 
 func (f *fakeEtcd) Close() error { f.closed = true; return nil }

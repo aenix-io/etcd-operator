@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	etcdserverpb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -82,6 +83,16 @@ func defragCluster3() (*lll.EtcdCluster, []lll.EtcdMember) {
 
 func status(memberID, leader uint64, dbSize, inUse int64) *clientv3.StatusResponse {
 	return &clientv3.StatusResponse{Header: &etcdserverpb.ResponseHeader{MemberId: memberID}, Leader: leader, DbSize: dbSize, DbSizeInUse: inUse}
+}
+
+// statusAlarm is status() with the given active-alarm lines, formatted the way
+// etcd's Status RPC reports them in StatusResponse.Errors.
+func statusAlarm(memberID, leader uint64, dbSize, inUse int64, alarms ...etcdserverpb.AlarmType) *clientv3.StatusResponse {
+	s := status(memberID, leader, dbSize, inUse)
+	for _, a := range alarms {
+		s.Errors = append(s.Errors, fmt.Sprintf("memberID:%d alarm:%s", memberID, a.String()))
+	}
+	return s
 }
 
 func objs(cluster *lll.EtcdCluster, members []lll.EtcdMember, dfs ...*lll.EtcdDefrag) []client.Object {
@@ -286,6 +297,126 @@ func TestEtcdDefrag_SerializedPerCluster(t *testing.T) {
 	_ = c.Get(ctx, nn("d-new", "ns"), got)
 	if got.Status.Phase != lll.EtcdDefragPhasePending {
 		t.Errorf("d-new phase = %q, want Pending (queued)", got.Status.Phase)
+	}
+}
+
+// A NOSPACE alarm is the case defrag exists to relieve: the health gate admits
+// the run rather than refusing the one cluster that needs it, and the alarm is
+// disarmed once space has been reclaimed.
+func TestEtcdDefrag_NoSpaceAlarmPermitsRunAndDisarms(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"}, Spec: lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}}}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): statusAlarm(10, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-1"): statusAlarm(11, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-2"): statusAlarm(12, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+	}
+	fe.alarms = []*etcdserverpb.AlarmMember{{MemberID: 10, Alarm: etcdserverpb.AlarmType_NOSPACE}}
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: record.NewFakeRecorder(20)}
+
+	got := driveDefrag(t, r, c, "d1")
+	if got.Status.Phase != lll.EtcdDefragPhaseComplete {
+		t.Fatalf("phase = %q, want Complete (NOSPACE must not block)", got.Status.Phase)
+	}
+	if len(fe.defragCalls) != 3 {
+		t.Fatalf("defragCalls = %v, want all 3 under NOSPACE", fe.defragCalls)
+	}
+	if len(fe.disarmCalls) != 1 || fe.disarmCalls[0].Alarm != etcdserverpb.AlarmType_NOSPACE {
+		t.Fatalf("disarmCalls = %+v, want one NOSPACE disarm after the sweep", fe.disarmCalls)
+	}
+}
+
+// A CORRUPT alarm blocks the run: it is deferred, not forced.
+func TestEtcdDefrag_CorruptAlarmBlocksRun(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"}, Spec: lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}}}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): statusAlarm(10, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_CORRUPT),
+		defragEndpoint("c1-1"): status(11, 10, 500<<20, 100<<20),
+		defragEndpoint("c1-2"): status(12, 10, 500<<20, 100<<20),
+	}
+	rec := record.NewFakeRecorder(20)
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: rec}
+
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn("d1", "ns")})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Errorf("expected a requeue while deferred, got %+v", res)
+	}
+	if len(fe.defragCalls) != 0 {
+		t.Fatalf("defrag ran despite a CORRUPT alarm: %v", fe.defragCalls)
+	}
+	got := mustGet(t, c, "d1", "ns", &lll.EtcdDefrag{})
+	if got.Status.Phase != lll.EtcdDefragPhasePending {
+		t.Errorf("phase = %q, want Pending", got.Status.Phase)
+	}
+	if cond := findDefragCond(got); cond == nil || cond.Reason != "ClusterNotHealthy" {
+		t.Errorf("DefragChecked = %+v, want ClusterNotHealthy", cond)
+	}
+}
+
+// A run that flaps Pending->Running->Pending must not keep re-stamping StartedAt:
+// the active-deadline is measured from it, and re-stamping would let a stuck run
+// hold the per-cluster slot forever.
+func TestEtcdDefrag_StartedAtNotResetAcrossFlap(t *testing.T) {
+	cluster, members := defragCluster3()
+	seeded := metav1.NewTime(time.Now().Add(-25 * time.Minute))
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}},
+		Status:     lll.EtcdDefragStatus{Phase: lll.EtcdDefragPhasePending, StartedAt: &seeded},
+	}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): status(10, 10, 50<<20, 50<<20),
+		defragEndpoint("c1-1"): status(11, 10, 50<<20, 50<<20),
+		defragEndpoint("c1-2"): status(12, 10, 50<<20, 50<<20),
+	}
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: record.NewFakeRecorder(20)}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn("d1", "ns")}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := mustGet(t, c, "d1", "ns", &lll.EtcdDefrag{})
+	if got.Status.StartedAt == nil {
+		t.Fatal("StartedAt was cleared")
+	}
+	if age := time.Since(got.Status.StartedAt.Time); age < 20*time.Minute {
+		t.Fatalf("StartedAt age = %s, want ~25m (it was reset on the Pending->Running transition)", age)
+	}
+}
+
+// A defrag whose post-defrag Status read fails records the after-size and
+// reclaimed bytes as unset rather than reporting a real defrag as reclaiming 0.
+func TestMarkMember_AfterSizeUnknownLeavesReclaimedUnset(t *testing.T) {
+	newDF := func() *lll.EtcdDefrag {
+		return &lll.EtcdDefrag{Status: lll.EtcdDefragStatus{Members: []lll.MemberDefragStatus{{Name: "m", Outcome: lll.DefragOutcomePending}}}}
+	}
+
+	unknown := newDF()
+	markMember(unknown, "m", lll.DefragOutcomeDefragmented, "AfterSizeUnavailable",
+		&memberBackend{status: status(1, 1, 500<<20, 100<<20)})
+	if m := unknown.Status.Members[0]; m.DBSizeBefore != 500<<20 || m.DBSizeAfter != 0 || m.ReclaimedBytes != 0 {
+		t.Fatalf("after-size unknown: got before=%d after=%d reclaimed=%d, want before=%d after/reclaimed=0",
+			m.DBSizeBefore, m.DBSizeAfter, m.ReclaimedBytes, 500<<20)
+	}
+
+	known := newDF()
+	markMember(known, "m", lll.DefragOutcomeDefragmented, "",
+		&memberBackend{status: status(1, 1, 500<<20, 100<<20), after: 120 << 20, afterKnown: true})
+	if m := known.Status.Members[0]; m.DBSizeAfter != 120<<20 || m.ReclaimedBytes != 380<<20 {
+		t.Fatalf("after-size known: got after=%d reclaimed=%d, want after=%d reclaimed=%d",
+			m.DBSizeAfter, m.ReclaimedBytes, 120<<20, 380<<20)
 	}
 }
 

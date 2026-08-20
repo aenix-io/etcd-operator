@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	etcdserverpb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	lll "github.com/cozystack/etcd-operator/api/v1alpha2"
@@ -53,6 +55,10 @@ const (
 	// so a run stuck on an unhealthy cluster can't hold the per-cluster slot
 	// forever.
 	defragActiveDeadline = 30 * time.Minute
+
+	// defragMaxConcurrentReconciles lets distinct clusters' runs proceed in
+	// parallel (per-cluster serialization is enforced separately by oldestActive).
+	defragMaxConcurrentReconciles = 4
 )
 
 // EtcdDefragReconciler drives an EtcdDefrag: a one-shot, run-to-completion
@@ -141,13 +147,20 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	defer c.Close()
 
 	// Health gate: defrag is only safe when every desired member is present,
-	// reachable, alarm-free and agrees on a leader.
+	// reachable, free of blocking alarms and agreeing on a leader.
 	if reason, ok := clusterDefragHealthy(cluster, running, backends); !ok {
 		msg := "a defragmentation is due but the cluster is not fully healthy; deferring to protect quorum: " + reason
 		if setDefragCondition(df, metav1.ConditionFalse, "ClusterNotHealthy", msg) {
 			r.event(df, corev1.EventTypeWarning, "DefragDeferred", msg)
 		}
-		df.Status.Phase = lll.EtcdDefragPhasePending
+		// Keep a run that has already started (partial results in
+		// status.members) in Running and let the condition carry the reason;
+		// only a run that never started falls back to Pending. StartedAt is what
+		// the active-deadline is measured against, so it must not be re-stamped
+		// by such a flap — see the Running transition below.
+		if df.Status.StartedAt == nil {
+			df.Status.Phase = lll.EtcdDefragPhasePending
+		}
 		if err := r.Status().Update(ctx, df); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -161,7 +174,7 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	next := firstPendingMember(df)
 	if next == nil {
-		return r.finalize(ctx, df)
+		return r.finalize(ctx, df, c)
 	}
 
 	b := backendByName(backends, next.Name)
@@ -171,12 +184,19 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.persistAndRequeue(ctx, df)
 	}
 
-	if df.Status.Phase != lll.EtcdDefragPhaseRunning {
-		df.Status.Phase = lll.EtcdDefragPhaseRunning
+	df.Status.Phase = lll.EtcdDefragPhaseRunning
+	// Stamp StartedAt exactly once, on the first Running transition. The
+	// active-deadline is measured from it, so re-stamping on a Pending->Running
+	// flap (a cluster that recovers between health-gate blips) would keep
+	// resetting the deadline and a stuck run could hold the per-cluster slot
+	// forever.
+	if df.Status.StartedAt == nil {
 		now := metav1.Now()
 		df.Status.StartedAt = &now
-		setDefragCondition(df, metav1.ConditionTrue, "Running", "defragmenting members")
 	}
+	// Refresh the condition each active pass so a run that resumes after a
+	// health-gate flap does not stay reading ClusterNotHealthy.
+	setDefragCondition(df, metav1.ConditionTrue, "Running", "defragmenting members")
 
 	quota := effectiveQuotaBytes(cluster)
 	if trig, reason := defragRuleTriggered(df.Spec.Rule, b.status.DbSize, b.status.DbSizeInUse, quota); !trig {
@@ -194,22 +214,32 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.persistAndRequeue(ctx, df)
 	}
 
-	// Read the post-defrag size for the record (best-effort).
+	// Read the post-defrag size for the record. When the read fails, leave the
+	// after-size unset rather than defaulting it to the before-size — reporting
+	// a successful defrag as reclaiming zero would be silently wrong in the very
+	// field the per-member status exists to provide.
+	outcomeReason := ""
 	if after, serr := statusWithTimeout(ctx, c, b.endpoint); serr == nil {
 		b.after = after.DbSize
+		b.afterKnown = true
+	} else {
+		outcomeReason = "AfterSizeUnavailable"
+		logger.Info("defrag: post-defrag Status read failed; reclaimed size unrecorded",
+			"member", b.member.Name, "err", serr)
 	}
-	markMember(df, b.member.Name, lll.DefragOutcomeDefragmented, "", b)
+	markMember(df, b.member.Name, lll.DefragOutcomeDefragmented, outcomeReason, b)
 	df.Status.Defragmented++
-	logger.Info("defragmented member", "member", b.member.Name, "reclaimed", b.status.DbSize-b.after)
+	logger.Info("defragmented member", "member", b.member.Name)
 	return r.persistAndRequeue(ctx, df)
 }
 
 // memberBackend pairs a running member with its live Maintenance Status.
 type memberBackend struct {
-	member   *lll.EtcdMember
-	endpoint string
-	status   *clientv3.StatusResponse
-	after    int64 // DbSize after a successful defrag
+	member     *lll.EtcdMember
+	endpoint   string
+	status     *clientv3.StatusResponse
+	after      int64 // DbSize after a successful defrag; valid only if afterKnown
+	afterKnown bool  // whether the post-defrag Status read succeeded
 }
 
 // dialAndProbe opens one client and reads every running member's Status. The
@@ -241,7 +271,7 @@ func (r *EtcdDefragReconciler) dialAndProbe(ctx context.Context, cluster *lll.Et
 			backends = append(backends, memberBackend{member: &running[i], endpoint: endpoints[i]})
 			continue
 		}
-		backends = append(backends, memberBackend{member: &running[i], endpoint: endpoints[i], status: resp, after: resp.DbSize})
+		backends = append(backends, memberBackend{member: &running[i], endpoint: endpoints[i], status: resp})
 	}
 	return c, backends, nil
 }
@@ -252,11 +282,41 @@ func statusWithTimeout(ctx context.Context, c EtcdClusterClient, endpoint string
 	return c.Status(sctx, endpoint)
 }
 
+// disarmNoSpaceAlarms clears any armed NOSPACE alarm. The health gate lets a
+// NOSPACE cluster through so the run can reclaim its backend space; etcd keeps
+// the alarm armed — and the cluster read-only — until it is explicitly disarmed.
+// Best-effort: etcd re-arms on the next write if the space was not actually
+// freed, so a failure here is logged by the caller rather than failing the run.
+func (r *EtcdDefragReconciler) disarmNoSpaceAlarms(ctx context.Context, c EtcdClusterClient) error {
+	lctx, cancel := context.WithTimeout(ctx, defragStatusTimeout)
+	defer cancel()
+	resp, err := c.AlarmList(lctx)
+	if err != nil {
+		return err
+	}
+	for _, a := range resp.Alarms {
+		if a == nil || a.Alarm != etcdserverpb.AlarmType_NOSPACE {
+			continue
+		}
+		dctx, dcancel := context.WithTimeout(ctx, defragStatusTimeout)
+		_, derr := c.AlarmDisarm(dctx, (*clientv3.AlarmMember)(a))
+		dcancel()
+		if derr != nil {
+			return derr
+		}
+	}
+	return nil
+}
+
 // clusterDefragHealthy reports whether the cluster is safe to defragment: every
-// desired member present and reachable, alarm-free, and agreeing on a single
-// non-zero leader. Status is a local read — a member answers it while
-// partitioned or alarmed — so agreement and Errors are checked, not just that
-// the RPC returned.
+// desired member present and reachable, free of blocking alarms, and agreeing on
+// a single non-zero leader. Status is a local read — a member answers it while
+// partitioned or alarmed — so agreement and reported alarms are checked, not just
+// that the RPC returned.
+//
+// A NOSPACE alarm does not block: a backend at its quota is exactly what a defrag
+// is meant to relieve, and refusing it would leave the one cluster this feature
+// exists for read-only forever. Every other alarm (notably CORRUPT) blocks.
 func clusterDefragHealthy(cluster *lll.EtcdCluster, running []lll.EtcdMember, backends []memberBackend) (string, bool) {
 	desired := 0
 	if cluster.Status.Observed != nil {
@@ -271,8 +331,8 @@ func clusterDefragHealthy(cluster *lll.EtcdCluster, running []lll.EtcdMember, ba
 		if b.status == nil {
 			return fmt.Sprintf("member %s is unreachable", b.member.Name), false
 		}
-		if len(b.status.Errors) > 0 {
-			return fmt.Sprintf("member %s reports alarms: %s", b.member.Name, strings.Join(b.status.Errors, ",")), false
+		if e, blocking := blockingStatusError(b.status.Errors); blocking {
+			return fmt.Sprintf("member %s reports: %s", b.member.Name, e), false
 		}
 		if b.status.Leader == 0 {
 			return fmt.Sprintf("member %s reports no leader", b.member.Name), false
@@ -284,6 +344,21 @@ func clusterDefragHealthy(cluster *lll.EtcdCluster, running []lll.EtcdMember, ba
 		}
 	}
 	return "", true
+}
+
+// blockingStatusError returns the first StatusResponse.Errors entry that should
+// block a defragmentation, and whether one exists. etcd reports active alarms
+// there as "memberID:<id> alarm:<TYPE>"; a NOSPACE line is the reclaimable-space
+// case defrag relieves and does not block, while anything else (a CORRUPT alarm
+// or any other health string) does.
+func blockingStatusError(errs []string) (string, bool) {
+	for _, e := range errs {
+		if strings.Contains(e, "alarm:"+etcdserverpb.AlarmType_NOSPACE.String()) {
+			continue
+		}
+		return e, true
+	}
+	return "", false
 }
 
 // plannedMembers builds the ordered work list: followers first, the leader
@@ -340,9 +415,11 @@ func markMember(df *lll.EtcdDefrag, name string, outcome lll.DefragOutcome, reas
 		m.FinishedAt = &now
 		if b != nil && b.status != nil {
 			m.DBSizeBefore = b.status.DbSize
-			m.DBSizeAfter = b.after
-			if outcome == lll.DefragOutcomeDefragmented && b.status.DbSize >= b.after {
-				m.ReclaimedBytes = b.status.DbSize - b.after
+			if b.afterKnown {
+				m.DBSizeAfter = b.after
+				if outcome == lll.DefragOutcomeDefragmented && b.status.DbSize >= b.after {
+					m.ReclaimedBytes = b.status.DbSize - b.after
+				}
 			}
 		}
 		return
@@ -437,7 +514,7 @@ func (r *EtcdDefragReconciler) oldestActive(ctx context.Context, namespace, clus
 	return active[0].Name, nil
 }
 
-func (r *EtcdDefragReconciler) finalize(ctx context.Context, df *lll.EtcdDefrag) (ctrl.Result, error) {
+func (r *EtcdDefragReconciler) finalize(ctx context.Context, df *lll.EtcdDefrag, c EtcdClusterClient) (ctrl.Result, error) {
 	phase := lll.EtcdDefragPhaseComplete
 	reason := "Complete"
 	for _, m := range df.Status.Members {
@@ -445,6 +522,13 @@ func (r *EtcdDefragReconciler) finalize(ctx context.Context, df *lll.EtcdDefrag)
 			phase = lll.EtcdDefragPhaseFailed
 			reason = "MemberFailed"
 			break
+		}
+	}
+	// A cluster admitted with a NOSPACE alarm stays read-only until the alarm is
+	// disarmed; do it once the sweep has actually reclaimed space.
+	if phase == lll.EtcdDefragPhaseComplete && df.Status.Defragmented > 0 {
+		if err := r.disarmNoSpaceAlarms(ctx, c); err != nil {
+			log.FromContext(ctx).Error(err, "defrag: could not disarm NOSPACE alarm after sweep")
 		}
 	}
 	df.Status.Phase = phase
@@ -533,5 +617,10 @@ func (r *EtcdDefragReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&lll.EtcdDefrag{}).
+		// A wedged member holds a Defragment RPC for up to defragRPCTimeout;
+		// with a single worker that would stall every other cluster's run too.
+		// oldestActive already serializes runs per cluster, so distinct clusters
+		// are safe to reconcile in parallel.
+		WithOptions(controller.Options{MaxConcurrentReconciles: defragMaxConcurrentReconciles}).
 		Complete(r)
 }

@@ -129,8 +129,7 @@ no `spec` knobs:
   the next one forever.
 - **Retry within a run:** a deferred `Pending` re-checks cluster health with
   backoff up to the deadline; a failed per-member RPC is retried a bounded number
-  of times then marked `Failed` (a failing leader fails the run); and a defrag
-  that doesn't shrink `DbSize` is backed off rather than repeated.
+  of times then marked `Failed` (a failing leader fails the run).
 - **Retry across runs:** terminal phases (`Complete`/`Failed`) are sticky — an
   `EtcdDefrag` never re-runs itself. A retry is a *new* `EtcdDefrag`: the external
   scheduler's next tick for periodic use, or a re-create for a one-shot. Each

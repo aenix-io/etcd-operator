@@ -50,6 +50,15 @@ type EtcdClusterClient interface {
 	// its embedded Maintenance interface.
 	Defragment(ctx context.Context, endpoint string) (*clientv3.DefragmentResponse, error)
 
+	// AlarmList and AlarmDisarm let the EtcdDefrag controller close the NOSPACE
+	// loop: a cluster at its backend quota raises NOSPACE and goes read-only,
+	// which is the case defrag exists to relieve, so the health gate permits the
+	// run — but the alarm stays armed after the space is reclaimed until it is
+	// explicitly disarmed. A CORRUPT alarm, by contrast, blocks the run.
+	// *clientv3.Client satisfies both via its embedded Maintenance interface.
+	AlarmList(ctx context.Context) (*clientv3.AlarmResponse, error)
+	AlarmDisarm(ctx context.Context, m *clientv3.AlarmMember) (*clientv3.AlarmResponse, error)
+
 	// Auth surface — used by reconcileAuth to provision the single root
 	// user/role and turn on authentication. The "root" role is built into
 	// etcd, so a RoleAdd is not needed: UserAdd("root", …) +
