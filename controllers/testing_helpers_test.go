@@ -51,19 +51,22 @@ type fakeEtcd struct {
 	// Defrag surface. statusByEndpoint overrides Status per endpoint (backend
 	// sizes, leader); statusErrByEndpoint fails Status for a specific endpoint
 	// (an unhealthy member); leader is the default StatusResponse.Leader.
-	// defragCalls records each Defragment endpoint in call order; defragErr,
-	// when set, fails Defragment.
+	// defragCalls records each Defragment endpoint in call order; defragErr fails
+	// every Defragment, defragErrByEndpoint fails it for a specific endpoint.
 	statusByEndpoint    map[string]*clientv3.StatusResponse
 	statusErrByEndpoint map[string]error
 	leader              uint64
 	defragCalls         []string
 	defragErr           error
+	defragErrByEndpoint map[string]error
 
 	// Alarm surface. alarms is what AlarmList returns; alarmListErr fails it;
-	// disarmCalls records each AlarmDisarm target in call order.
-	alarms       []*etcdserverpb.AlarmMember
-	alarmListErr error
-	disarmCalls  []*etcdserverpb.AlarmMember
+	// disarmCalls records each AlarmDisarm target in call order;
+	// disarmErrByMember fails AlarmDisarm for a specific member.
+	alarms            []*etcdserverpb.AlarmMember
+	alarmListErr      error
+	disarmCalls       []*etcdserverpb.AlarmMember
+	disarmErrByMember map[uint64]error
 
 	addCalls        []string
 	addLearnerCalls []string
@@ -223,6 +226,9 @@ func (f *fakeEtcd) Defragment(_ context.Context, endpoint string) (*clientv3.Def
 	if f.defragErr != nil {
 		return nil, f.defragErr
 	}
+	if err := f.defragErrByEndpoint[endpoint]; err != nil {
+		return nil, err
+	}
 	return &clientv3.DefragmentResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
 }
 
@@ -238,6 +244,9 @@ func (f *fakeEtcd) AlarmList(_ context.Context) (*clientv3.AlarmResponse, error)
 
 func (f *fakeEtcd) AlarmDisarm(_ context.Context, m *clientv3.AlarmMember) (*clientv3.AlarmResponse, error) {
 	f.disarmCalls = append(f.disarmCalls, (*etcdserverpb.AlarmMember)(m))
+	if err := f.disarmErrByMember[m.MemberID]; err != nil {
+		return nil, err
+	}
 	return &clientv3.AlarmResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
 }
 

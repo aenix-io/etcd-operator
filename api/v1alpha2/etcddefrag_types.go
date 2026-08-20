@@ -38,9 +38,8 @@ type EtcdDefragSpec struct {
 
 	// TTLSecondsAfterFinished records how long after a terminal phase this
 	// object should be garbage-collected — meaningful for objects a scheduler
-	// stamps out. NOTE: acted on by the (not-yet-implemented) reconciling
-	// controller; the API server does not garbage-collect custom resources on
-	// its own. Absent means the record is kept.
+	// stamps out. Acted on by the reconciling controller; the API server does not
+	// garbage-collect custom resources on its own. Absent means the record is kept.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`

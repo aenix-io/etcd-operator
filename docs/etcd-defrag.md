@@ -12,8 +12,8 @@ the operator drives it through `status.phase` and it never re-runs.
 Today, recurring defragmentation is driven by creating `EtcdDefrag` objects from
 outside (a `CronJob`, a GitOps cron). A companion `EtcdDefragPolicy` kind — a
 cadence (`schedule`) and/or a condition (`when`) that stamps out `EtcdDefrag`
-runs — is planned so the operator absorbs that scheduling itself; it is not part
-of this API PR.
+runs — is planned so the operator absorbs that scheduling itself; it is not
+implemented yet.
 
 ## Why in the operator (not a bare CronJob)
 
@@ -103,8 +103,12 @@ out.
 - **Serialized per cluster:** at most one `EtcdDefrag` runs against a given
   `EtcdCluster` at a time; others wait in `Pending`.
 - Health is judged from more than "the member answered": a member replies to a
-  local status read while partitioned, alarmed (`NOSPACE`/`CORRUPT`), or behind
-  in raft, so those are checked before acting.
+  local status read while partitioned or alarmed, so the gate checks that every
+  desired member is present and reachable, that they agree on a single non-zero
+  leader, and that no member reports a blocking alarm. A `CORRUPT` alarm blocks;
+  a `NOSPACE` alarm does **not** — a backend at its quota is exactly what a defrag
+  relieves, so the run is admitted and the alarm is disarmed once space has been
+  reclaimed. Raft lag is not yet part of the gate.
 
 ## Status
 
@@ -127,9 +131,11 @@ no `spec` knobs:
   together; on expiry the run is `Failed`. This also protects the per-cluster
   serialization slot — a run stuck waiting on an unhealthy cluster can't block
   the next one forever.
-- **Retry within a run:** a deferred `Pending` re-checks cluster health with
-  backoff up to the deadline; a failed per-member RPC is retried a bounded number
-  of times then marked `Failed` (a failing leader fails the run).
+- **Retry within a run:** a deferred `Pending` re-checks cluster health each pass
+  up to the deadline. A failed per-member `Defragment` RPC marks that member
+  `Failed` immediately, and any failed member fails the run — a partial sweep that
+  reclaimed space still disarms `NOSPACE` on the way out. (Per-member RPC retry is
+  a possible follow-up, not shipped here.)
 - **Retry across runs:** terminal phases (`Complete`/`Failed`) are sticky — an
   `EtcdDefrag` never re-runs itself. A retry is a *new* `EtcdDefrag`: the external
   scheduler's next tick for periodic use, or a re-create for a one-shot. Each

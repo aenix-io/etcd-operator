@@ -12,6 +12,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -51,10 +52,17 @@ const (
 	// defragRequeueAfter paces the one-member-per-pass sweep and the retry while
 	// deferred on an unhealthy cluster.
 	defragRequeueAfter = 10 * time.Second
+
+	// defragMaxSupportedMembers bounds the worst-case serial sweep the active
+	// deadline must outlast. etcd clusters are odd-sized and rarely exceed 7.
+	defragMaxSupportedMembers = 7
 	// defragActiveDeadline bounds a whole run (Running + waiting-while-Pending),
 	// so a run stuck on an unhealthy cluster can't hold the per-cluster slot
-	// forever.
-	defragActiveDeadline = 30 * time.Minute
+	// forever. It must outlast the worst-case serial sweep — one member per pass,
+	// each pass probing every member then a stop-the-world Defragment and a
+	// requeue gap — or a healthy-but-slow big-backend cluster is killed mid-sweep;
+	// derived from the constants above so it stays consistent if any is retuned.
+	defragActiveDeadline = defragMaxSupportedMembers*(defragRPCTimeout+defragRequeueAfter+defragMaxSupportedMembers*defragStatusTimeout) + 5*time.Minute
 
 	// defragMaxConcurrentReconciles lets distinct clusters' runs proceed in
 	// parallel (per-cluster serialization is enforced separately by oldestActive).
@@ -121,17 +129,6 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{RequeueAfter: defragRequeueAfter}, nil
 	}
 
-	// Overall deadline: a run that can't make progress must fail, not linger.
-	// (CreationTimestamp is zero before the apiserver stamps it — e.g. in unit
-	// tests — so only enforce against a non-zero reference time.)
-	if started := df.Status.StartedAt; started != nil && time.Since(started.Time) > defragActiveDeadline {
-		return r.fail(ctx, df, "DeadlineExceeded",
-			fmt.Sprintf("defragmentation did not complete within %s", defragActiveDeadline))
-	} else if started == nil && !df.CreationTimestamp.IsZero() && time.Since(df.CreationTimestamp.Time) > defragActiveDeadline {
-		return r.fail(ctx, df, "DeadlineExceeded",
-			fmt.Sprintf("defragmentation could not start within %s (cluster never became healthy)", defragActiveDeadline))
-	}
-
 	var memberList lll.EtcdMemberList
 	if err := r.List(ctx, &memberList, client.InNamespace(df.Namespace),
 		client.MatchingLabels{LabelCluster: cluster.Name}); err != nil {
@@ -141,10 +138,24 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	c, backends, err := r.dialAndProbe(ctx, cluster, running)
 	if err != nil {
+		// Without a client we can neither defragment nor disarm; if the run has
+		// outlived its deadline while stuck here, fail it rather than requeue
+		// forever.
+		if exceededDeadline(df) {
+			return r.fail(ctx, df, "DeadlineExceeded", deadlineMsg(df))
+		}
 		logger.Error(err, "defrag: cannot dial/probe cluster; retrying")
 		return ctrl.Result{RequeueAfter: defragRequeueAfter}, nil
 	}
 	defer c.Close()
+
+	// Overall deadline: a run that can't make progress must fail, not linger. A
+	// run that already reclaimed space disarms NOSPACE on the way out (failRun),
+	// so a deadline-terminated partial sweep still lifts the wedge that admitted
+	// it. Checked after dialing so the disarm has a client.
+	if exceededDeadline(df) {
+		return r.failRun(ctx, df, c, "DeadlineExceeded", deadlineMsg(df))
+	}
 
 	// Health gate: defrag is only safe when every desired member is present,
 	// reachable, free of blocking alarms and agreeing on a leader.
@@ -177,19 +188,14 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.finalize(ctx, df, c)
 	}
 
-	b := backendByName(backends, next.Name)
-	if b == nil {
-		// A planned member vanished between passes despite the health gate.
-		markMember(df, next.Name, lll.DefragOutcomeFailed, "MemberGone", nil)
-		return r.persistAndRequeue(ctx, df)
-	}
-
 	df.Status.Phase = lll.EtcdDefragPhaseRunning
 	// Stamp StartedAt exactly once, on the first Running transition. The
 	// active-deadline is measured from it, so re-stamping on a Pending->Running
 	// flap (a cluster that recovers between health-gate blips) would keep
 	// resetting the deadline and a stuck run could hold the per-cluster slot
-	// forever.
+	// forever. Done before the backend lookup so a run whose first planned member
+	// has vanished is still stamped Running and its deadline measured from work,
+	// not creation.
 	if df.Status.StartedAt == nil {
 		now := metav1.Now()
 		df.Status.StartedAt = &now
@@ -197,6 +203,13 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Refresh the condition each active pass so a run that resumes after a
 	// health-gate flap does not stay reading ClusterNotHealthy.
 	setDefragCondition(df, metav1.ConditionTrue, "Running", "defragmenting members")
+
+	b := backendByName(backends, next.Name)
+	if b == nil {
+		// A planned member vanished between passes despite the health gate.
+		markMember(df, next.Name, lll.DefragOutcomeFailed, "MemberGone", nil)
+		return r.persistAndRequeue(ctx, df)
+	}
 
 	quota := effectiveQuotaBytes(cluster)
 	if trig, reason := defragRuleTriggered(df.Spec.Rule, b.status.DbSize, b.status.DbSizeInUse, quota); !trig {
@@ -282,11 +295,13 @@ func statusWithTimeout(ctx context.Context, c EtcdClusterClient, endpoint string
 	return c.Status(sctx, endpoint)
 }
 
-// disarmNoSpaceAlarms clears any armed NOSPACE alarm. The health gate lets a
+// disarmNoSpaceAlarms clears every armed NOSPACE alarm. The health gate lets a
 // NOSPACE cluster through so the run can reclaim its backend space; etcd keeps
-// the alarm armed — and the cluster read-only — until it is explicitly disarmed.
-// Best-effort: etcd re-arms on the next write if the space was not actually
-// freed, so a failure here is logged by the caller rather than failing the run.
+// each member's alarm armed — and the cluster read-only — until it is explicitly
+// disarmed. AlarmList returns one entry per member that raised NOSPACE, so a
+// transient failure on one must not abandon the rest: the loop continues and
+// joins the errors, naming every member it could not disarm. Best-effort in that
+// etcd re-arms on the next write if the space was not actually freed.
 func (r *EtcdDefragReconciler) disarmNoSpaceAlarms(ctx context.Context, c EtcdClusterClient) error {
 	lctx, cancel := context.WithTimeout(ctx, defragStatusTimeout)
 	defer cancel()
@@ -294,6 +309,7 @@ func (r *EtcdDefragReconciler) disarmNoSpaceAlarms(ctx context.Context, c EtcdCl
 	if err != nil {
 		return err
 	}
+	var errs error
 	for _, a := range resp.Alarms {
 		if a == nil || a.Alarm != etcdserverpb.AlarmType_NOSPACE {
 			continue
@@ -302,10 +318,27 @@ func (r *EtcdDefragReconciler) disarmNoSpaceAlarms(ctx context.Context, c EtcdCl
 		_, derr := c.AlarmDisarm(dctx, (*clientv3.AlarmMember)(a))
 		dcancel()
 		if derr != nil {
-			return derr
+			errs = errors.Join(errs, fmt.Errorf("member %d: %w", a.MemberID, derr))
 		}
 	}
-	return nil
+	return errs
+}
+
+// maybeDisarm clears any armed NOSPACE alarm when the run reclaimed backend
+// space, on any terminal path — a partial or deadline-terminated sweep still
+// relieves the wedge that admitted it, and etcd holds the cluster read-only
+// until the alarm is disarmed. Best-effort: a failure is logged and surfaced as
+// an event rather than propagated, since etcd re-arms on the next write if the
+// space was not actually freed.
+func (r *EtcdDefragReconciler) maybeDisarm(ctx context.Context, df *lll.EtcdDefrag, c EtcdClusterClient) {
+	if c == nil || df.Status.Defragmented == 0 {
+		return
+	}
+	if err := r.disarmNoSpaceAlarms(ctx, c); err != nil {
+		log.FromContext(ctx).Error(err, "defrag: could not disarm NOSPACE alarm after sweep")
+		r.event(df, corev1.EventTypeWarning, "AlarmDisarmFailed",
+			fmt.Sprintf("reclaimed backend space but could not disarm NOSPACE alarm; cluster may stay read-only: %v", err))
+	}
 }
 
 // clusterDefragHealthy reports whether the cluster is safe to defragment: every
@@ -525,12 +558,10 @@ func (r *EtcdDefragReconciler) finalize(ctx context.Context, df *lll.EtcdDefrag,
 		}
 	}
 	// A cluster admitted with a NOSPACE alarm stays read-only until the alarm is
-	// disarmed; do it once the sweep has actually reclaimed space.
-	if phase == lll.EtcdDefragPhaseComplete && df.Status.Defragmented > 0 {
-		if err := r.disarmNoSpaceAlarms(ctx, c); err != nil {
-			log.FromContext(ctx).Error(err, "defrag: could not disarm NOSPACE alarm after sweep")
-		}
-	}
+	// disarmed; disarm whenever the sweep reclaimed space, even if a later member
+	// failed — the reclaimed space is what lifts the wedge, and gating this on a
+	// wholly-clean run would leave the one cluster this feature rescues read-only.
+	r.maybeDisarm(ctx, df, c)
 	df.Status.Phase = phase
 	now := metav1.Now()
 	df.Status.CompletedAt = &now
@@ -544,6 +575,31 @@ func (r *EtcdDefragReconciler) finalize(ctx context.Context, df *lll.EtcdDefrag,
 		return ctrl.Result{}, err
 	}
 	return r.handleTTL(ctx, df)
+}
+
+// failRun is fail() for a terminal path that holds a client: it disarms any
+// NOSPACE alarm the run relieved before recording the failure.
+func (r *EtcdDefragReconciler) failRun(ctx context.Context, df *lll.EtcdDefrag, c EtcdClusterClient, reason, msg string) (ctrl.Result, error) {
+	r.maybeDisarm(ctx, df, c)
+	return r.fail(ctx, df, reason, msg)
+}
+
+// exceededDeadline reports whether the run has outlived defragActiveDeadline,
+// measured from StartedAt once work began, else from creation. CreationTimestamp
+// is zero before the apiserver stamps it (e.g. in unit tests), so a zero
+// reference never trips the deadline.
+func exceededDeadline(df *lll.EtcdDefrag) bool {
+	if s := df.Status.StartedAt; s != nil {
+		return time.Since(s.Time) > defragActiveDeadline
+	}
+	return !df.CreationTimestamp.IsZero() && time.Since(df.CreationTimestamp.Time) > defragActiveDeadline
+}
+
+func deadlineMsg(df *lll.EtcdDefrag) string {
+	if df.Status.StartedAt != nil {
+		return fmt.Sprintf("defragmentation did not complete within %s", defragActiveDeadline)
+	}
+	return fmt.Sprintf("defragmentation could not start within %s (cluster never became healthy)", defragActiveDeadline)
 }
 
 func (r *EtcdDefragReconciler) fail(ctx context.Context, df *lll.EtcdDefrag, reason, msg string) (ctrl.Result, error) {

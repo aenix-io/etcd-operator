@@ -420,6 +420,170 @@ func TestMarkMember_AfterSizeUnknownLeavesReclaimedUnset(t *testing.T) {
 	}
 }
 
+// A NOSPACE sweep where one member's Defragment fails still disarms the alarm:
+// the space reclaimed on the members that succeeded is what lifts the read-only
+// wedge, so gating the disarm on a wholly-clean run would strand the cluster.
+func TestEtcdDefrag_PartialFailureStillDisarmsNoSpace(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"}, Spec: lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}}}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): statusAlarm(10, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-1"): statusAlarm(11, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-2"): statusAlarm(12, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+	}
+	fe.alarms = []*etcdserverpb.AlarmMember{{MemberID: 10, Alarm: etcdserverpb.AlarmType_NOSPACE}}
+	// One follower's Defragment fails; the other follower and the leader succeed.
+	fe.defragErrByEndpoint = map[string]error{defragEndpoint("c1-1"): errors.New("boom")}
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: record.NewFakeRecorder(20)}
+
+	got := driveDefrag(t, r, c, "d1")
+	if got.Status.Phase != lll.EtcdDefragPhaseFailed {
+		t.Fatalf("phase = %q, want Failed (one member's Defragment failed)", got.Status.Phase)
+	}
+	if got.Status.Defragmented != 2 {
+		t.Fatalf("Defragmented = %d, want 2", got.Status.Defragmented)
+	}
+	if len(fe.disarmCalls) != 1 {
+		t.Fatalf("disarmCalls = %+v, want one NOSPACE disarm despite the failed run", fe.disarmCalls)
+	}
+}
+
+// AlarmList returns one entry per member that raised NOSPACE; a transient disarm
+// failure on one must not abandon the rest.
+func TestEtcdDefrag_DisarmContinuesAfterFailure(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"}, Spec: lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}}}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): statusAlarm(10, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-1"): statusAlarm(11, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+		defragEndpoint("c1-2"): statusAlarm(12, 10, 500<<20, 100<<20, etcdserverpb.AlarmType_NOSPACE),
+	}
+	fe.alarms = []*etcdserverpb.AlarmMember{
+		{MemberID: 10, Alarm: etcdserverpb.AlarmType_NOSPACE},
+		{MemberID: 11, Alarm: etcdserverpb.AlarmType_NOSPACE},
+		{MemberID: 12, Alarm: etcdserverpb.AlarmType_NOSPACE},
+	}
+	fe.disarmErrByMember = map[uint64]error{10: errors.New("transient")}
+	rec := record.NewFakeRecorder(20)
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: rec}
+
+	got := driveDefrag(t, r, c, "d1")
+	if got.Status.Phase != lll.EtcdDefragPhaseComplete {
+		t.Fatalf("phase = %q, want Complete", got.Status.Phase)
+	}
+	if len(fe.disarmCalls) != 3 {
+		t.Fatalf("disarmCalls = %d, want 3 (loop must not abort on the first failure)", len(fe.disarmCalls))
+	}
+	assertDefragEvent(t, rec, "AlarmDisarmFailed")
+}
+
+// ttlSecondsAfterFinished GCs a finished record once it expires, and requeues
+// (not deletes) one that has not.
+func TestEtcdDefrag_TTLGarbageCollects(t *testing.T) {
+	ctx := context.Background()
+	newFinished := func(name string, completedAt metav1.Time) *lll.EtcdDefrag {
+		return &lll.EtcdDefrag{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+			Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, TTLSecondsAfterFinished: ptrInt32(3600)},
+			Status:     lll.EtcdDefragStatus{Phase: lll.EtcdDefragPhaseComplete, CompletedAt: &completedAt},
+		}
+	}
+
+	expired := newFinished("d-expired", metav1.NewTime(time.Now().Add(-2*time.Hour)))
+	fresh := newFinished("d-fresh", metav1.NewTime(time.Now().Add(-1*time.Second)))
+	c, s := newTestClient(t, expired, fresh)
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(newFakeEtcd(0xabc)), Recorder: record.NewFakeRecorder(20)}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: nn("d-expired", "ns")}); err != nil {
+		t.Fatalf("reconcile d-expired: %v", err)
+	}
+	if err := c.Get(ctx, nn("d-expired", "ns"), &lll.EtcdDefrag{}); err == nil {
+		t.Fatal("expired EtcdDefrag was not garbage-collected")
+	} else if client.IgnoreNotFound(err) != nil {
+		t.Fatalf("get d-expired: %v", err)
+	}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: nn("d-fresh", "ns")})
+	if err != nil {
+		t.Fatalf("reconcile d-fresh: %v", err)
+	}
+	if res.RequeueAfter <= 0 || res.RequeueAfter > 3600*time.Second {
+		t.Fatalf("RequeueAfter = %s, want 0 < requeue <= 3600s", res.RequeueAfter)
+	}
+	if err := c.Get(ctx, nn("d-fresh", "ns"), &lll.EtcdDefrag{}); err != nil {
+		t.Fatalf("fresh EtcdDefrag was deleted before expiry: %v", err)
+	}
+}
+
+// A run that outlives the active deadline fails with DeadlineExceeded rather than
+// lingering and holding the per-cluster slot.
+func TestEtcdDefrag_DeadlineExceededFails(t *testing.T) {
+	cluster, members := defragCluster3()
+	started := metav1.NewTime(time.Now().Add(-defragActiveDeadline - time.Minute))
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}},
+		Status:     lll.EtcdDefragStatus{Phase: lll.EtcdDefragPhaseRunning, StartedAt: &started},
+	}
+	c, s := newTestClient(t, objs(cluster, members, df)...)
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusErr = errors.New("context deadline exceeded") // cluster unreachable
+	rec := record.NewFakeRecorder(20)
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(fe), Recorder: rec}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn("d1", "ns")}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := mustGet(t, c, "d1", "ns", &lll.EtcdDefrag{})
+	if got.Status.Phase != lll.EtcdDefragPhaseFailed {
+		t.Fatalf("phase = %q, want Failed", got.Status.Phase)
+	}
+	if cond := findDefragCond(got); cond == nil || cond.Reason != "DeadlineExceeded" {
+		t.Fatalf("DefragChecked = %+v, want DeadlineExceeded", cond)
+	}
+	assertDefragEvent(t, rec, "DeadlineExceeded")
+}
+
+// A run whose clusterRef names no EtcdCluster fails with ClusterNotFound.
+func TestEtcdDefrag_ClusterNotFoundFails(t *testing.T) {
+	df := &lll.EtcdDefrag{ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"}, Spec: lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "nope"}}}
+	c, s := newTestClient(t, df)
+	rec := record.NewFakeRecorder(20)
+	r := &EtcdDefragReconciler{Client: c, Scheme: s, EtcdClientFactory: factoryReturning(newFakeEtcd(0xabc)), Recorder: rec}
+
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: nn("d1", "ns")}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	got := mustGet(t, c, "d1", "ns", &lll.EtcdDefrag{})
+	if got.Status.Phase != lll.EtcdDefragPhaseFailed {
+		t.Fatalf("phase = %q, want Failed", got.Status.Phase)
+	}
+	if cond := findDefragCond(got); cond == nil || cond.Reason != "ClusterNotFound" {
+		t.Fatalf("DefragChecked = %+v, want ClusterNotFound", cond)
+	}
+	assertDefragEvent(t, rec, "ClusterNotFound")
+}
+
+// The active deadline must outlast the worst-case serial sweep for the largest
+// supported cluster: one member per pass, each probing every member then a
+// stop-the-world Defragment and a requeue gap. This reads the constants the
+// controller actually uses, so retuning any of them without widening the deadline
+// fails the build.
+func TestDefragActiveDeadlineCoversWorstCaseSweep(t *testing.T) {
+	worst := defragMaxSupportedMembers * (defragRPCTimeout + defragRequeueAfter + defragMaxSupportedMembers*defragStatusTimeout)
+	if defragActiveDeadline < worst {
+		t.Fatalf("defragActiveDeadline %s < worst-case sweep %s for %d members",
+			defragActiveDeadline, worst, defragMaxSupportedMembers)
+	}
+}
+
 func findDefragCond(df *lll.EtcdDefrag) *metav1.Condition {
 	for i := range df.Status.Conditions {
 		if df.Status.Conditions[i].Type == "DefragChecked" {
