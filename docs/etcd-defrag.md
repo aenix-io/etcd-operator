@@ -166,7 +166,9 @@ metadata:
 spec:
   clusterRef:
     name: etcd
-  schedule: "0 3 * * *"        # standard five-field cron, evaluated in UTC
+  schedule:
+    cron: "0 3 * * *"          # standard five-field cron
+    timezone: Europe/Moscow    # optional IANA zone; UTC when absent
   concurrencyPolicy: Forbid    # skip a tick while a previous run is still active (default)
   ttlSecondsAfterFinished: 3600
   historyLimit: 3              # keep the last 3 finished runs
@@ -176,15 +178,20 @@ spec:
     minReclaim: 32Mi
 ```
 
-- **`schedule`** is a standard five-field cron expression in UTC. Prefix it with
-  `CRON_TZ=<zone>` to use another zone.
+- **`schedule.cron`** is a standard five-field cron expression (descriptors like
+  `@daily` are rejected). **`schedule.timezone`** is an IANA zone name it is read
+  in; absent means UTC.
 - **`concurrencyPolicy`** is `Forbid` (default — a tick is skipped while a
   stamped run is still active) or `Allow` (stamp anyway; `EtcdDefrag`'s own
   per-cluster serialization queues it behind the active run).
-- **`suspend: true`** pauses stamping without deleting the policy; missed ticks
-  are not backfilled on resume.
+- **`suspend: true`** pauses stamping without deleting the policy. On resume the
+  single most recent missed tick may be stamped (subject to
+  `startingDeadlineSeconds`); earlier missed ticks are never replayed.
 - **`startingDeadlineSeconds`** skips a tick that is already older than the
-  deadline (e.g. after the operator was down) instead of starting it late.
+  deadline (e.g. after the operator was down) instead of starting it late. With
+  no deadline, a backlog longer than the catch-up window parks the policy on a
+  `TooManyMissedTicks` condition rather than guessing — set a deadline or check
+  the clock.
 - **`historyLimit`** caps retained finished runs; `ttlSecondsAfterFinished` (per
   run) is the other cleanup path.
 - **`rule`** / **`ttlSecondsAfterFinished`** are copied verbatim into each
@@ -194,8 +201,34 @@ spec:
 twice), `status.lastSuccessfulTime` records the last `Complete`, and
 `status.active` lists runs still in flight.
 
+Deleting a policy cascades to its runs. A run still `Running` when the policy is
+deleted is aborted mid-sweep; if it had already reclaimed space it never disarms
+a `NOSPACE` alarm, leaving the backend read-only. Suspend the policy (or delete
+with `--cascade=orphan`) to let an in-flight run finish first.
+
+**Why a policy and not a CronJob.** The safety argument above is about the
+`EtcdDefrag` run; it holds whether that run is created by the operator or by a
+`kubectl create` in a CronJob. What a CronJob *cannot* express is the scheduling
+itself: its `concurrencyPolicy` governs overlapping Jobs, but `kubectl create`
+exits in milliseconds while the defrag it asked for runs for minutes, so it can
+never skip a tick because last night's sweep is still going — `EtcdDefragPolicy`
+gates on `EtcdDefrag.status.phase`, the thing actually still running. A Job also
+can't own the CR it created, so the CronJob route leaks `EtcdDefrag` objects;
+`historyLimit` plus the owner-ref cascade close that. And it saves a
+per-namespace ServiceAccount + Role granting `create` on `etcddefrags` (a
+privilege better not handed to a tenant) plus a pinned kubectl image to patch.
+The API is a deliberate subset of CronJob — one `historyLimit`, no `Replace`
+concurrency — not a clone.
+
 ## Relationship to capacity metrics
 
 The capacity metrics and alert rules that tell you *when* a defrag is worth
 running are tracked separately (see #357); `EtcdDefrag` records sizes in its own
 `status` during a run rather than as continuously-scraped gauges.
+
+A condition-triggered mode — a policy that stamps a run when observed
+fragmentation crosses a threshold, rather than on a clock — is contemplated once
+those metrics land: nothing observes fragmentation between runs today, so
+`schedule` is required for now. That mode would be a different feature, not a
+replacement for cron, and whether the two are exclusive or combinable ("nightly,
+or sooner if fragmentation trips") is left open here.
