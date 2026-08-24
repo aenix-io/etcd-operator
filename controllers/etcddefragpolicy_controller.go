@@ -12,9 +12,9 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -37,11 +37,16 @@ const (
 	// suspended or holding an unparseable schedule.
 	defragPolicyCondition = "Active"
 
-	// defragPolicyMaxCatchup bounds how many missed ticks the controller walks
-	// after being down; beyond it a long backlog is collapsed into a single run
-	// rather than replaying every slot.
+	// defragPolicyMaxCatchup bounds how many missed ticks nextSchedule walks to
+	// find the most recent one. It never replays slots (only the latest tick is
+	// ever returned); the bound just caps the walk so a large clock jump or a
+	// long outage surfaces as a condition instead of an unbounded loop.
 	defragPolicyMaxCatchup = 100
 )
+
+// errTooManyMissed reports that more than defragPolicyMaxCatchup ticks are
+// unaccounted for — a clock jump or an outage longer than the catch-up window.
+var errTooManyMissed = errors.New("too many missed ticks; check the clock or set spec.startingDeadlineSeconds")
 
 // EtcdDefragPolicyReconciler stamps out EtcdDefrag runs on a cron schedule so
 // the operator drives recurring defragmentation itself. Each run is a discrete
@@ -70,13 +75,16 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Observe the runs this policy owns.
+	// Observe the runs this policy owns. The label narrows the list server-side;
+	// the ownerRef is the authority, so a hand-copied run that kept the label but
+	// isn't controlled by this policy is ignored rather than counted as active or
+	// deleted by history GC.
 	var runs lll.EtcdDefragList
 	if err := r.List(ctx, &runs, client.InNamespace(pol.Namespace),
 		client.MatchingLabels{LabelDefragPolicy: pol.Name}); err != nil {
 		return ctrl.Result{}, err
 	}
-	active, finished := partitionDefragRuns(runs.Items)
+	active, finished := partitionDefragRuns(ownedRuns(runs.Items, pol))
 	pol.Status.Active = defragRunRefs(active)
 	if t := latestSuccessfulTime(finished); t != nil {
 		pol.Status.LastSuccessfulTime = t
@@ -95,10 +103,10 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, r.Status().Update(ctx, pol)
 	}
 
-	sched, err := parseUTCSchedule(pol.Spec.Schedule)
+	sched, err := parseSchedule(pol.Spec.Schedule)
 	if err != nil {
 		setDefragPolicyCondition(pol, metav1.ConditionFalse, "InvalidSchedule",
-			fmt.Sprintf("cannot parse schedule %q: %v", pol.Spec.Schedule, err))
+			fmt.Sprintf("cannot parse schedule %q: %v", pol.Spec.Schedule.Cron, err))
 		// Only a spec change can fix this; the watch re-triggers, so don't requeue.
 		return ctrl.Result{}, r.Status().Update(ctx, pol)
 	}
@@ -109,7 +117,21 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if pol.Status.LastScheduleTime != nil {
 		earliest = pol.Status.LastScheduleTime.Time
 	}
-	due, next := nextSchedule(sched, earliest, now, defragPolicyMaxCatchup)
+	// StartingDeadlineSeconds bounds how late a tick may still start, so a tick
+	// older than the deadline is skipped anyway: never walk further back than the
+	// deadline window. This both enforces the deadline and keeps the walk short.
+	if d := pol.Spec.StartingDeadlineSeconds; d != nil {
+		if cutoff := now.Add(-time.Duration(*d) * time.Second); cutoff.After(earliest) {
+			earliest = cutoff
+		}
+	}
+	due, next, err := nextSchedule(sched, earliest, now, defragPolicyMaxCatchup)
+	if err != nil {
+		setDefragPolicyCondition(pol, metav1.ConditionFalse, "TooManyMissedTicks", err.Error())
+		// A long backlog with no deadline needs operator action (fix the clock, or
+		// set startingDeadlineSeconds); the watch re-triggers on a spec edit.
+		return ctrl.Result{}, r.Status().Update(ctx, pol)
+	}
 
 	if due == nil {
 		if err := r.Status().Update(ctx, pol); err != nil {
@@ -118,18 +140,6 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: requeueFor(next, now)}, nil
 	}
 	tick := *due
-
-	// A tick too far in the past (operator was down, or held by Forbid) is
-	// skipped rather than started late.
-	if d := pol.Spec.StartingDeadlineSeconds; d != nil && now.Sub(tick) > time.Duration(*d)*time.Second {
-		r.event(pol, corev1.EventTypeWarning, "MissedSchedule",
-			fmt.Sprintf("skipped scheduled time %s: past the %ds starting deadline", tickString(tick), *d))
-		pol.Status.LastScheduleTime = &metav1.Time{Time: tick}
-		if err := r.Status().Update(ctx, pol); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: requeueFor(next, now)}, nil
-	}
 
 	if concurrencyPolicy(pol) == lll.ForbidConcurrent && len(active) > 0 {
 		r.event(pol, corev1.EventTypeNormal, "ConcurrencyForbidden",
@@ -147,6 +157,14 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	if err := r.Create(ctx, run); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
+			// A rejected Create (e.g. an invalid clusterRef caught by the stamped
+			// run's CEL rule) otherwise leaves the policy looking healthy while it
+			// silently never runs — surface it on the condition, not just in logs.
+			setDefragPolicyCondition(pol, metav1.ConditionFalse, "StampFailed",
+				fmt.Sprintf("cannot stamp EtcdDefrag for %s: %v", tickString(tick), err))
+			if uerr := r.Status().Update(ctx, pol); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
 			return ctrl.Result{}, err
 		}
 		// The deterministic name means a re-reconcile of the same tick is a
@@ -166,11 +184,12 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 // buildDefrag renders the EtcdDefrag stamped for a tick. The name is
 // deterministic in the scheduled time so a re-reconcile of the same tick
-// collides (IsAlreadyExists) instead of double-stamping.
+// collides (IsAlreadyExists) instead of double-stamping. Cron's finest
+// granularity is one minute, so the name keys on the tick's minute.
 func (r *EtcdDefragPolicyReconciler) buildDefrag(pol *lll.EtcdDefragPolicy, tick time.Time) *lll.EtcdDefrag {
 	return &lll.EtcdDefrag{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%d", pol.Name, tick.Unix()),
+			Name:      fmt.Sprintf("%s-%d", pol.Name, tick.Unix()/60),
 			Namespace: pol.Namespace,
 			Labels: map[string]string{
 				LabelDefragPolicy: pol.Name,
@@ -225,25 +244,36 @@ func (r *EtcdDefragPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // ── pure helpers ────────────────────────────────────────────────────────────
 
-// parseUTCSchedule parses a standard five-field cron expression in UTC. A
-// user-supplied CRON_TZ/TZ prefix is honoured as-is; otherwise UTC is forced so
-// the schedule does not silently follow the operator process's local zone.
-func parseUTCSchedule(schedule string) (cron.Schedule, error) {
-	spec := strings.TrimSpace(schedule)
-	if !strings.Contains(spec, "TZ=") {
-		spec = "CRON_TZ=UTC " + spec
+// defragScheduleParser accepts only the standard five fields — no descriptors
+// (@daily, @every) — so the parser matches the documented grammar.
+var defragScheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+// parseSchedule builds a cron schedule from the policy's schedule, read in the
+// named zone (UTC when absent). The zone is validated first so a bad one gets a
+// clear message instead of a parse error naming an expression the user did not
+// write; it reaches the parser as a CRON_TZ prefix, an implementation detail
+// rather than user-facing syntax.
+func parseSchedule(s lll.DefragSchedule) (cron.Schedule, error) {
+	tz := s.Timezone
+	if tz == "" {
+		tz = "UTC"
 	}
-	return cron.ParseStandard(spec)
+	if _, err := time.LoadLocation(tz); err != nil {
+		return nil, fmt.Errorf("unknown timezone %q: %w", tz, err)
+	}
+	return defragScheduleParser.Parse("CRON_TZ=" + tz + " " + s.Cron)
 }
 
-// nextSchedule returns the most recent scheduled time at or before now that is
+// nextSchedule returns the most recent scheduled tick at or before now that is
 // strictly after earliest (nil if the next tick is still in the future), and
-// the next tick after now. A backlog longer than maxCatchup is collapsed into a
-// single run stamped at now.
-func nextSchedule(sched cron.Schedule, earliest, now time.Time, maxCatchup int) (due *time.Time, next time.Time) {
+// the next tick after now. It walks at most maxCatchup missed ticks; a longer
+// backlog returns errTooManyMissed rather than fabricating a non-boundary tick,
+// so the caller surfaces a condition instead of silently starting a run the
+// deadline was meant to suppress.
+func nextSchedule(sched cron.Schedule, earliest, now time.Time, maxCatchup int) (due *time.Time, next time.Time, err error) {
 	t := sched.Next(earliest)
 	if t.After(now) {
-		return nil, t
+		return nil, t, nil
 	}
 	last := t
 	for n := 0; ; n++ {
@@ -252,12 +282,11 @@ func nextSchedule(sched cron.Schedule, earliest, now time.Time, maxCatchup int) 
 			break
 		}
 		if n >= maxCatchup {
-			last = now
-			return &last, sched.Next(now)
+			return nil, time.Time{}, errTooManyMissed
 		}
 		last = t
 	}
-	return &last, t
+	return &last, t, nil
 }
 
 // requeueFor is the delay until next, floored so a just-passed boundary still
@@ -274,6 +303,18 @@ func concurrencyPolicy(pol *lll.EtcdDefragPolicy) lll.ConcurrencyPolicy {
 		return lll.ForbidConcurrent
 	}
 	return pol.Spec.ConcurrencyPolicy
+}
+
+// ownedRuns keeps only the EtcdDefrags this policy actually controls (by
+// ownerRef), dropping any that merely carry the policy label.
+func ownedRuns(items []lll.EtcdDefrag, pol *lll.EtcdDefragPolicy) []lll.EtcdDefrag {
+	owned := make([]lll.EtcdDefrag, 0, len(items))
+	for i := range items {
+		if metav1.IsControlledBy(&items[i], pol) {
+			owned = append(owned, items[i])
+		}
+	}
+	return owned
 }
 
 func partitionDefragRuns(items []lll.EtcdDefrag) (active, finished []lll.EtcdDefrag) {

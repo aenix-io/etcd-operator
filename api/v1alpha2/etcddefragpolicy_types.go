@@ -36,26 +36,45 @@ const (
 	ForbidConcurrent ConcurrencyPolicy = "Forbid"
 )
 
+// DefragSchedule names when runs are stamped: a five-field cron expression and
+// the zone it is read in. The zone is a dedicated field rather than a CRON_TZ
+// prefix so it is visible to `kubectl get -o custom-columns` and validated on
+// its own.
+type DefragSchedule struct {
+	// Cron is a standard five-field cron expression (e.g. "0 3 * * *" for 03:00).
+	// Descriptors (@daily) and a TZ=/CRON_TZ= prefix are rejected; use Timezone
+	// for the zone.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:XValidation:rule="!self.contains('TZ=')",message="set the zone in schedule.timezone, not a TZ= prefix"
+	Cron string `json:"cron"`
+
+	// Timezone is an IANA zone name (e.g. "Europe/Moscow") the cron expression is
+	// read in. Absent reads it in UTC.
+	// +optional
+	Timezone string `json:"timezone,omitempty"`
+}
+
 // EtcdDefragPolicySpec is the desired state of an EtcdDefragPolicy: a recurring
 // schedule that stamps out EtcdDefrag runs against one EtcdCluster, so the
 // operator absorbs the cadence instead of relying on an external CronJob.
+// +kubebuilder:validation:XValidation:rule="size(self.clusterRef.name) != 0",message="spec.clusterRef.name is required"
 type EtcdDefragPolicySpec struct {
 	// ClusterRef names the EtcdCluster (same namespace) each stamped EtcdDefrag
 	// targets.
 	ClusterRef corev1.LocalObjectReference `json:"clusterRef"`
 
-	// Schedule is a standard five-field cron expression, interpreted in UTC,
-	// naming when a run is stamped (e.g. "0 3 * * *" for 03:00 daily).
-	// +kubebuilder:validation:MinLength=1
-	Schedule string `json:"schedule"`
+	// Schedule names when a run is stamped.
+	Schedule DefragSchedule `json:"schedule"`
 
-	// Suspend pauses stamping. Runs already in flight are left alone; clearing
-	// it resumes at the next scheduled tick (missed ticks are not backfilled).
+	// Suspend pauses stamping. Runs already in flight are left alone. On resume
+	// the single most recent missed tick may be stamped (subject to
+	// StartingDeadlineSeconds); earlier missed ticks are never replayed.
 	// +optional
 	Suspend *bool `json:"suspend,omitempty"`
 
 	// ConcurrencyPolicy decides what a due tick does when a previous stamped run
 	// is still active. Defaults to Forbid.
+	// +kubebuilder:default=Forbid
 	// +optional
 	ConcurrencyPolicy ConcurrencyPolicy `json:"concurrencyPolicy,omitempty"`
 
@@ -112,7 +131,8 @@ type EtcdDefragPolicyStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
-// +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule`
+// +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule.cron`
+// +kubebuilder:printcolumn:name="Timezone",type=string,JSONPath=`.spec.schedule.timezone`
 // +kubebuilder:printcolumn:name="Suspend",type=boolean,JSONPath=`.spec.suspend`
 // +kubebuilder:printcolumn:name="Last Schedule",type=date,JSONPath=`.status.lastScheduleTime`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

@@ -23,6 +23,11 @@ import (
 	"os"
 	"strings"
 
+	// The distroless base image carries no /usr/share/zoneinfo, so an
+	// EtcdDefragPolicy timezone would fail time.LoadLocation without the embedded
+	// database.
+	_ "time/tzdata"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"

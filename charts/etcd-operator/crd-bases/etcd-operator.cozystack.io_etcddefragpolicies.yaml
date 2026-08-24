@@ -18,8 +18,11 @@ spec:
     - jsonPath: .spec.clusterRef.name
       name: Cluster
       type: string
-    - jsonPath: .spec.schedule
+    - jsonPath: .spec.schedule.cron
       name: Schedule
+      type: string
+    - jsonPath: .spec.schedule.timezone
+      name: Timezone
       type: string
     - jsonPath: .spec.suspend
       name: Suspend
@@ -79,6 +82,7 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               concurrencyPolicy:
+                default: Forbid
                 description: |-
                   ConcurrencyPolicy decides what a due tick does when a previous stamped run
                   is still active. Defaults to Forbid.
@@ -150,11 +154,26 @@ spec:
                   rule: '!(has(self.minReclaim) && has(self.freeSpaceAbove)) || quantity(string(self.minReclaim)).compareTo(quantity(string(self.freeSpaceAbove)))
                     <= 0'
               schedule:
-                description: |-
-                  Schedule is a standard five-field cron expression, interpreted in UTC,
-                  naming when a run is stamped (e.g. "0 3 * * *" for 03:00 daily).
-                minLength: 1
-                type: string
+                description: Schedule names when a run is stamped.
+                properties:
+                  cron:
+                    description: |-
+                      Cron is a standard five-field cron expression (e.g. "0 3 * * *" for 03:00).
+                      Descriptors (@daily) and a TZ=/CRON_TZ= prefix are rejected; use Timezone
+                      for the zone.
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: set the zone in schedule.timezone, not a TZ= prefix
+                      rule: '!self.contains(''TZ='')'
+                  timezone:
+                    description: |-
+                      Timezone is an IANA zone name (e.g. "Europe/Moscow") the cron expression is
+                      read in. Absent reads it in UTC.
+                    type: string
+                required:
+                - cron
+                type: object
               startingDeadlineSeconds:
                 description: |-
                   StartingDeadlineSeconds bounds how late a missed tick may still be started.
@@ -166,8 +185,9 @@ spec:
                 type: integer
               suspend:
                 description: |-
-                  Suspend pauses stamping. Runs already in flight are left alone; clearing
-                  it resumes at the next scheduled tick (missed ticks are not backfilled).
+                  Suspend pauses stamping. Runs already in flight are left alone. On resume
+                  the single most recent missed tick may be stamped (subject to
+                  StartingDeadlineSeconds); earlier missed ticks are never replayed.
                 type: boolean
               ttlSecondsAfterFinished:
                 description: |-
@@ -180,6 +200,9 @@ spec:
             - clusterRef
             - schedule
             type: object
+            x-kubernetes-validations:
+            - message: spec.clusterRef.name is required
+              rule: size(self.clusterRef.name) != 0
           status:
             description: EtcdDefragPolicyStatus is the observed state of an EtcdDefragPolicy.
             properties:
