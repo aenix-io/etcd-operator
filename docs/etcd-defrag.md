@@ -100,6 +100,15 @@ out.
   cluster is healthy. A defrag due on a not-fully-healthy cluster is **deferred**
   — the object stays `Pending` with a condition explaining why — never forced,
   so quorum is never at risk.
+- **Leadership is moved off the leader before it is defragmented.** A defrag
+  blocks the member it runs on, and a block outlasting the raft election timeout
+  costs an election and a brief write-availability gap — the one disruption that
+  doing the leader *last* does not bound. The operator hands leadership to a
+  voting follower first (learners are never chosen), so the pause lands on a
+  member that is no longer leading. Single-member clusters skip this, having
+  nowhere to move it to. The transfer is best-effort: if it fails the leader is
+  defragmented in place, which is simply the behaviour without this step, and a
+  `LeadershipTransferFailed` warning event records it.
 - **Serialized per cluster:** at most one `EtcdDefrag` runs against a given
   `EtcdCluster` at a time; others wait in `Pending`.
 - Health is judged from more than "the member answered": a member replies to a

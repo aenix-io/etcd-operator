@@ -59,6 +59,18 @@ type EtcdClusterClient interface {
 	AlarmList(ctx context.Context) (*clientv3.AlarmResponse, error)
 	AlarmDisarm(ctx context.Context, m *clientv3.AlarmMember) (*clientv3.AlarmResponse, error)
 
+	// MoveLeader asks the member serving this call to hand raft leadership to
+	// transfereeID. The EtcdDefrag controller calls it before defragmenting the
+	// leader, so the stop-the-world pause lands on a follower instead of costing
+	// an election.
+	//
+	// Unlike Status/Defragment this is NOT per-endpoint: clientv3 sends it to
+	// whichever endpoint its balancer picks, and etcd answers ErrNotLeader
+	// anywhere but the leader. Callers must therefore invoke it on a client
+	// dialled with the leader as its only endpoint — see dialEndpoints.
+	// *clientv3.Client satisfies this via its embedded Maintenance interface.
+	MoveLeader(ctx context.Context, transfereeID uint64) (*clientv3.MoveLeaderResponse, error)
+
 	// Auth surface — used by reconcileAuth to provision the single root
 	// user/role and turn on authentication. The "root" role is built into
 	// etcd, so a RoleAdd is not needed: UserAdd("root", …) +

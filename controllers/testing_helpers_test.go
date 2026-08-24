@@ -60,6 +60,11 @@ type fakeEtcd struct {
 	defragErr           error
 	defragErrByEndpoint map[string]error
 
+	// Leadership-transfer surface. moveLeaderCalls records each transferee ID in
+	// call order; moveLeaderErr, when set, fails MoveLeader.
+	moveLeaderCalls []uint64
+	moveLeaderErr   error
+
 	// Alarm surface. alarms is what AlarmList returns; alarmListErr fails it;
 	// disarmCalls records each AlarmDisarm target in call order;
 	// disarmErrByMember fails AlarmDisarm for a specific member.
@@ -232,6 +237,14 @@ func (f *fakeEtcd) Defragment(_ context.Context, endpoint string) (*clientv3.Def
 	return &clientv3.DefragmentResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
 }
 
+func (f *fakeEtcd) MoveLeader(_ context.Context, transfereeID uint64) (*clientv3.MoveLeaderResponse, error) {
+	f.moveLeaderCalls = append(f.moveLeaderCalls, transfereeID)
+	if f.moveLeaderErr != nil {
+		return nil, f.moveLeaderErr
+	}
+	return &clientv3.MoveLeaderResponse{Header: &etcdserverpb.ResponseHeader{ClusterId: f.clusterID}}, nil
+}
+
 func (f *fakeEtcd) AlarmList(_ context.Context) (*clientv3.AlarmResponse, error) {
 	if f.alarmListErr != nil {
 		return nil, f.alarmListErr
@@ -254,6 +267,16 @@ func (f *fakeEtcd) Close() error { f.closed = true; return nil }
 
 func factoryReturning(c EtcdClusterClient) EtcdClientFactory {
 	return func(_ context.Context, _ []string, _ *tls.Config, _, _ string) (EtcdClusterClient, error) {
+		return c, nil
+	}
+}
+
+// factoryRecordingEndpoints is factoryReturning plus a record of every endpoint
+// set it was dialled with, so a test can assert that MoveLeader was issued on a
+// client restricted to the leader (etcd answers it nowhere else).
+func factoryRecordingEndpoints(c EtcdClusterClient, dialled *[][]string) EtcdClientFactory {
+	return func(_ context.Context, endpoints []string, _ *tls.Config, _, _ string) (EtcdClusterClient, error) {
+		*dialled = append(*dialled, append([]string(nil), endpoints...))
 		return c, nil
 	}
 }

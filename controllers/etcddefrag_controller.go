@@ -54,6 +54,12 @@ const (
 	// deferred on an unhealthy cluster.
 	defragRequeueAfter = 10 * time.Second
 
+	// defragMoveLeaderTimeout bounds the leadership handover attempted before the
+	// leader is defragmented. A raft transfer is a couple of round trips, so this
+	// is short: if it can't complete quickly the sweep proceeds anyway rather than
+	// stalling on it.
+	defragMoveLeaderTimeout = 10 * time.Second
+
 	// defragMaxSupportedMembers bounds the worst-case serial sweep the active
 	// deadline must outlast. etcd clusters are odd-sized and rarely exceed 7.
 	defragMaxSupportedMembers = 7
@@ -218,6 +224,19 @@ func (r *EtcdDefragReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.persistAndRequeue(ctx, df)
 	}
 
+	// Hand leadership to a follower first: a Defragment on the leader blocks it,
+	// and a block outlasting the election timeout costs an election. Only useful
+	// when there is somewhere to move it to, so single-member clusters skip it.
+	if len(backends) > 1 && isLeaderStatus(b.status) {
+		if mErr := r.moveLeadershipAway(ctx, cluster, b, backends); mErr != nil {
+			logger.Error(mErr, "defrag: leadership transfer failed; defragmenting the leader in place",
+				"member", b.member.Name)
+			r.event(df, corev1.EventTypeWarning, "LeadershipTransferFailed",
+				fmt.Sprintf("could not move leadership off %s before defragmenting it; proceeding in place, which may cost a brief election: %v",
+					b.member.Name, mErr))
+		}
+	}
+
 	dctx, cancel := context.WithTimeout(ctx, defragRPCTimeout)
 	defer cancel()
 	if _, derr := c.Defragment(dctx, b.endpoint); derr != nil {
@@ -294,6 +313,71 @@ func statusWithTimeout(ctx context.Context, c EtcdClusterClient, endpoint string
 	sctx, cancel := context.WithTimeout(ctx, defragStatusTimeout)
 	defer cancel()
 	return c.Status(sctx, endpoint)
+}
+
+// dialEndpoints opens a client restricted to the given endpoints, using the
+// cluster's TLS material and credentials. Used for the single-endpoint client
+// MoveLeader needs (see EtcdClusterClient.MoveLeader). The caller closes it.
+func (r *EtcdDefragReconciler) dialEndpoints(ctx context.Context, cluster *lll.EtcdCluster, endpoints ...string) (EtcdClusterClient, error) {
+	tlsCfg, err := buildOperatorTLSConfig(ctx, r.Client, cluster)
+	if err != nil {
+		return nil, err
+	}
+	user, pass, _, err := resolveEtcdCredentials(ctx, r.Client, cluster)
+	if err != nil {
+		return nil, err
+	}
+	return r.EtcdClientFactory(ctx, endpoints, tlsCfg, user, pass)
+}
+
+// pickTransferee chooses the member to hand leadership to before the current
+// leader is defragmented: a reachable voting member other than the leader.
+// Learners are skipped — they hold no vote and etcd rejects a transfer to one.
+// Returns 0 when there is no eligible candidate.
+func pickTransferee(leader *memberBackend, backends []memberBackend) (uint64, string) {
+	for i := range backends {
+		b := &backends[i]
+		if b == leader || b.status == nil || b.status.Header == nil {
+			continue
+		}
+		if b.status.IsLearner || b.status.Header.MemberId == leader.status.Header.MemberId {
+			continue
+		}
+		return b.status.Header.MemberId, b.member.Name
+	}
+	return 0, ""
+}
+
+// moveLeadershipAway hands raft leadership to a follower before the current
+// leader is defragmented. Defragment is stop-the-world for the member it runs
+// on, so doing it on the leader costs an election and a write-availability gap
+// once the pause outlasts the election timeout; moving leadership first puts
+// that pause on a member that is no longer leading.
+//
+// Best-effort by design: on failure the caller defragments the leader in place,
+// which is simply the behaviour without this step — worth an event, not worth
+// abandoning a sweep that the health gate has already cleared.
+func (r *EtcdDefragReconciler) moveLeadershipAway(ctx context.Context, cluster *lll.EtcdCluster, leader *memberBackend, backends []memberBackend) error {
+	transfereeID, transfereeName := pickTransferee(leader, backends)
+	if transfereeID == 0 {
+		return fmt.Errorf("no eligible voting member to transfer leadership to")
+	}
+	// MoveLeader is answered only by the leader, and clientv3 sends it to
+	// whichever endpoint its balancer picks — so dial the leader alone.
+	lc, err := r.dialEndpoints(ctx, cluster, leader.endpoint)
+	if err != nil {
+		return fmt.Errorf("dial leader %s: %w", leader.member.Name, err)
+	}
+	defer lc.Close()
+
+	mctx, cancel := context.WithTimeout(ctx, defragMoveLeaderTimeout)
+	defer cancel()
+	if _, err := lc.MoveLeader(mctx, transfereeID); err != nil {
+		return fmt.Errorf("move leadership from %s to %s: %w", leader.member.Name, transfereeName, err)
+	}
+	log.FromContext(ctx).Info("defrag: moved leadership before defragmenting the leader",
+		"from", leader.member.Name, "to", transfereeName)
+	return nil
 }
 
 // disarmNoSpaceAlarms clears every armed NOSPACE alarm. The health gate lets a

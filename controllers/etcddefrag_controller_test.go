@@ -605,3 +605,158 @@ func assertDefragEvent(t *testing.T, rec *record.FakeRecorder, wantReason string
 		t.Errorf("no event emitted, want one mentioning %q", wantReason)
 	}
 }
+
+// Before the leader is defragmented, leadership is handed to a follower — and
+// the MoveLeader RPC is issued on a client dialled at the leader alone, since
+// etcd answers it nowhere else.
+func TestEtcdDefrag_MovesLeadershipBeforeDefragmentingLeader(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}},
+	}
+	c, _ := newTestClient(t, objs(cluster, members, df)...)
+
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): status(10, 10, 600<<20, 100<<20), // leader
+		defragEndpoint("c1-1"): status(11, 10, 600<<20, 100<<20),
+		defragEndpoint("c1-2"): status(12, 10, 600<<20, 100<<20),
+	}
+	var dialled [][]string
+	r := &EtcdDefragReconciler{Client: c, Scheme: testScheme(t),
+		EtcdClientFactory: factoryRecordingEndpoints(fe, &dialled), Recorder: record.NewFakeRecorder(30)}
+
+	out := driveDefrag(t, r, c, "d1")
+	if out.Status.Phase != lll.EtcdDefragPhaseComplete {
+		t.Fatalf("phase = %s, want Complete", out.Status.Phase)
+	}
+	if len(fe.moveLeaderCalls) != 1 {
+		t.Fatalf("moveLeaderCalls = %v, want exactly one transfer (for the leader)", fe.moveLeaderCalls)
+	}
+	// Transferee must be a voting follower, never the leader itself.
+	if got := fe.moveLeaderCalls[0]; got == 10 {
+		t.Errorf("leadership transferred to the leader itself (%d)", got)
+	}
+	// The transfer must have gone out on a leader-only client.
+	var sawLeaderOnly bool
+	for _, eps := range dialled {
+		if len(eps) == 1 && eps[0] == defragEndpoint("c1-0") {
+			sawLeaderOnly = true
+		}
+	}
+	if !sawLeaderOnly {
+		t.Errorf("no client was dialled at the leader alone; dialled = %v", dialled)
+	}
+	// The leader is still defragmented, and last.
+	if n := len(fe.defragCalls); n != 3 || fe.defragCalls[n-1] != defragEndpoint("c1-0") {
+		t.Errorf("defragCalls = %v, want all three with the leader last", fe.defragCalls)
+	}
+}
+
+// A learner is not a voting member and etcd rejects a transfer to one, so it is
+// never chosen as the transferee.
+func TestEtcdDefrag_NeverTransfersLeadershipToALearner(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}},
+	}
+	c, _ := newTestClient(t, objs(cluster, members, df)...)
+
+	learner := status(11, 10, 600<<20, 100<<20)
+	learner.IsLearner = true
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): status(10, 10, 600<<20, 100<<20), // leader
+		defragEndpoint("c1-1"): learner,
+		defragEndpoint("c1-2"): status(12, 10, 600<<20, 100<<20),
+	}
+	r := &EtcdDefragReconciler{Client: c, Scheme: testScheme(t),
+		EtcdClientFactory: factoryReturning(fe), Recorder: record.NewFakeRecorder(30)}
+
+	driveDefrag(t, r, c, "d1")
+	if len(fe.moveLeaderCalls) != 1 || fe.moveLeaderCalls[0] != 12 {
+		t.Errorf("moveLeaderCalls = %v, want the voting follower 12, not the learner 11", fe.moveLeaderCalls)
+	}
+}
+
+// A single-member cluster has nowhere to move leadership to, so no transfer is
+// attempted and the sweep still runs.
+func TestEtcdDefrag_SingleMemberSkipsLeadershipTransfer(t *testing.T) {
+	cluster, members := defragCluster3()
+	cluster.Status.Observed.Replicas = 1
+	cluster.Spec.Replicas = ptrInt32(1)
+	members = members[:1]
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}},
+	}
+	c, _ := newTestClient(t, objs(cluster, members, df)...)
+
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): status(10, 10, 600<<20, 100<<20),
+	}
+	rec := record.NewFakeRecorder(30)
+	r := &EtcdDefragReconciler{Client: c, Scheme: testScheme(t),
+		EtcdClientFactory: factoryReturning(fe), Recorder: rec}
+
+	out := driveDefrag(t, r, c, "d1")
+	if len(fe.moveLeaderCalls) != 0 {
+		t.Errorf("attempted a leadership transfer on a single-member cluster: %v", fe.moveLeaderCalls)
+	}
+	if out.Status.Defragmented != 1 {
+		t.Errorf("defragmented = %d, want the sole member still defragmented", out.Status.Defragmented)
+	}
+	// The guard exists to keep this quiet: without it the sole member is treated
+	// as a transfer candidate that cannot be satisfied, and every single-member
+	// defrag warns about a transfer nobody asked for.
+	for len(rec.Events) > 0 {
+		if ev := <-rec.Events; strings.Contains(ev, "LeadershipTransferFailed") {
+			t.Errorf("spurious transfer-failure event on a single-member cluster: %s", ev)
+		}
+	}
+}
+
+// A failed transfer must not abandon a sweep the health gate already cleared:
+// the leader is defragmented in place (today's behaviour) and the operator is
+// told via an event.
+func TestEtcdDefrag_LeadershipTransferFailureStillDefragments(t *testing.T) {
+	cluster, members := defragCluster3()
+	df := &lll.EtcdDefrag{
+		ObjectMeta: metav1.ObjectMeta{Name: "d1", Namespace: "ns"},
+		Spec:       lll.EtcdDefragSpec{ClusterRef: corev1.LocalObjectReference{Name: "c1"}, Rule: &lll.DefragRule{All: true}},
+	}
+	c, _ := newTestClient(t, objs(cluster, members, df)...)
+
+	fe := newFakeEtcd(0xabc)
+	fe.leader = 10
+	fe.moveLeaderErr = errors.New("etcdserver: not leader")
+	fe.statusByEndpoint = map[string]*clientv3.StatusResponse{
+		defragEndpoint("c1-0"): status(10, 10, 600<<20, 100<<20),
+		defragEndpoint("c1-1"): status(11, 10, 600<<20, 100<<20),
+		defragEndpoint("c1-2"): status(12, 10, 600<<20, 100<<20),
+	}
+	rec := record.NewFakeRecorder(30)
+	r := &EtcdDefragReconciler{Client: c, Scheme: testScheme(t),
+		EtcdClientFactory: factoryReturning(fe), Recorder: rec}
+
+	out := driveDefrag(t, r, c, "d1")
+	if out.Status.Phase != lll.EtcdDefragPhaseComplete || out.Status.Defragmented != 3 {
+		t.Fatalf("phase=%s defragmented=%d, want Complete/3 despite the failed transfer",
+			out.Status.Phase, out.Status.Defragmented)
+	}
+	var sawEvent bool
+	for len(rec.Events) > 0 {
+		if strings.Contains(<-rec.Events, "LeadershipTransferFailed") {
+			sawEvent = true
+		}
+	}
+	if !sawEvent {
+		t.Error("no LeadershipTransferFailed event; a silent fallback hides the election risk")
+	}
+}
