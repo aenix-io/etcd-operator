@@ -1,12 +1,5 @@
 # Defragmentation (`EtcdDefrag`)
 
-> **Status:** this ships the `EtcdDefrag` **API type** ahead of its reconciling
-> controller. Until that controller lands the resource is **inert** — creating
-> one records intent but nothing acts on it (no sweep runs, `status` stays
-> empty, `ttlSecondsAfterFinished` does not fire). The "Safety model",
-> "Timeouts and retries" and `status` sections below describe the **controller
-> contract the follow-up implements**, not behaviour that exists today.
-
 etcd never reclaims backend disk on its own: compaction frees pages logically,
 but the file — and the space counted against `--quota-backend-bytes` — stays
 allocated until a **defragment** returns it. `EtcdDefrag` is how you ask the
@@ -19,8 +12,8 @@ the operator drives it through `status.phase` and it never re-runs.
 Today, recurring defragmentation is driven by creating `EtcdDefrag` objects from
 outside (a `CronJob`, a GitOps cron). A companion `EtcdDefragPolicy` kind — a
 cadence (`schedule`) and/or a condition (`when`) that stamps out `EtcdDefrag`
-runs — is planned so the operator absorbs that scheduling itself; it is not part
-of this API PR.
+runs — is planned so the operator absorbs that scheduling itself; it is not
+implemented yet.
 
 ## Why in the operator (not a bare CronJob)
 
@@ -66,7 +59,7 @@ spec:
     minReclaim: 32Mi        # … but never a no-op defrag
 ```
 
-Inspect progress and history (once the controller exists):
+Inspect progress and history:
 
 ```sh
 kubectl get etcddefrag.etcd-operator.cozystack.io -n team-a
@@ -101,19 +94,32 @@ out.
 > `autoCompactionRetention`) has `DbSizeInUse ≈ DbSize` and little to reclaim.
 > Set auto-compaction if you rely on defrag to hold the backend down.
 
-## Safety model (planned controller behaviour)
+## Safety model
 
 - **One member at a time, followers before the leader**, only while the whole
   cluster is healthy. A defrag due on a not-fully-healthy cluster is **deferred**
   — the object stays `Pending` with a condition explaining why — never forced,
   so quorum is never at risk.
+- **Leadership is moved off the leader before it is defragmented.** A defrag
+  blocks the member it runs on, and a block outlasting the raft election timeout
+  costs an election and a brief write-availability gap — the one disruption that
+  doing the leader *last* does not bound. The operator hands leadership to a
+  voting follower first (learners are never chosen), so the pause lands on a
+  member that is no longer leading. Single-member clusters skip this, having
+  nowhere to move it to. The transfer is best-effort: if it fails the leader is
+  defragmented in place, which is simply the behaviour without this step, and a
+  `LeadershipTransferFailed` warning event records it.
 - **Serialized per cluster:** at most one `EtcdDefrag` runs against a given
   `EtcdCluster` at a time; others wait in `Pending`.
 - Health is judged from more than "the member answered": a member replies to a
-  local status read while partitioned, alarmed (`NOSPACE`/`CORRUPT`), or behind
-  in raft, so those are checked before acting.
+  local status read while partitioned or alarmed, so the gate checks that every
+  desired member is present and reachable, that they agree on a single non-zero
+  leader, and that no member reports a blocking alarm. A `CORRUPT` alarm blocks;
+  a `NOSPACE` alarm does **not** — a backend at its quota is exactly what a defrag
+  relieves, so the run is admitted and the alarm is disarmed once space has been
+  reclaimed. Raft lag is not yet part of the gate.
 
-## Status (planned controller behaviour)
+## Status
 
 `status.phase` moves `Pending → Running → Complete | Failed`; a `Pending` run
 waiting on cluster health carries a condition saying so. `status.members[]`
@@ -121,7 +127,7 @@ records, per member (keyed by name), the role at processing time, the outcome
 (`Skipped` / `Defragmented` / `Failed`), the before/after `DbSize`, and the
 bytes reclaimed — the run's full history, not a single rolled-up condition.
 
-## Timeouts and retries (planned controller behaviour)
+## Timeouts and retries
 
 Following [`EtcdSnapshot`](concepts.md#snapshots--restore) — where the Job's
 deadlines are controller constants and terminal phases are sticky — this needs
@@ -134,10 +140,11 @@ no `spec` knobs:
   together; on expiry the run is `Failed`. This also protects the per-cluster
   serialization slot — a run stuck waiting on an unhealthy cluster can't block
   the next one forever.
-- **Retry within a run:** a deferred `Pending` re-checks cluster health with
-  backoff up to the deadline; a failed per-member RPC is retried a bounded number
-  of times then marked `Failed` (a failing leader fails the run); and a defrag
-  that doesn't shrink `DbSize` is backed off rather than repeated.
+- **Retry within a run:** a deferred `Pending` re-checks cluster health each pass
+  up to the deadline. A failed per-member `Defragment` RPC marks that member
+  `Failed` immediately, and any failed member fails the run — a partial sweep that
+  reclaimed space still disarms `NOSPACE` on the way out. (Per-member RPC retry is
+  a possible follow-up, not shipped here.)
 - **Retry across runs:** terminal phases (`Complete`/`Failed`) are sticky — an
   `EtcdDefrag` never re-runs itself. A retry is a *new* `EtcdDefrag`: the external
   scheduler's next tick for periodic use, or a re-create for a one-shot. Each
