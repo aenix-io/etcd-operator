@@ -189,9 +189,9 @@ spec:
   `startingDeadlineSeconds`); earlier missed ticks are never replayed.
 - **`startingDeadlineSeconds`** skips a tick that is already older than the
   deadline (e.g. after the operator was down) instead of starting it late. With
-  no deadline, a backlog longer than the catch-up window parks the policy on a
-  `TooManyMissedTicks` condition rather than guessing — set a deadline or check
-  the clock.
+  no deadline the window is one schedule period, so a policy that fell far
+  behind resumes at its most recent tick instead of replaying the backlog.
+  Either way a skipped tick is reported as a `MissedSchedule` event.
 - **`historyLimit`** caps retained finished runs; `ttlSecondsAfterFinished` (per
   run) is the other cleanup path.
 - **`rule`** / **`ttlSecondsAfterFinished`** are copied verbatim into each

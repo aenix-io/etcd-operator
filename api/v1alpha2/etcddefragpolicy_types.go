@@ -108,8 +108,10 @@ type EtcdDefragPolicySpec struct {
 // EtcdDefragPolicyStatus is the observed state of an EtcdDefragPolicy.
 type EtcdDefragPolicyStatus struct {
 	// LastScheduleTime is the scheduled time of the most recent tick the policy
-	// acted on (stamped or deliberately skipped). It anchors the next tick, so a
-	// tick is never acted on twice.
+	// stamped a run for, or consumed by skipping under ConcurrencyPolicy. It
+	// anchors the next tick, so a tick is never acted on twice. A tick dropped
+	// for being too far in the past does not advance it; those are reported as
+	// MissedSchedule events.
 	// +optional
 	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
 

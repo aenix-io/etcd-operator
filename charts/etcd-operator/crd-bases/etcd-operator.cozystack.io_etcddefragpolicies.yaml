@@ -289,8 +289,10 @@ spec:
               lastScheduleTime:
                 description: |-
                   LastScheduleTime is the scheduled time of the most recent tick the policy
-                  acted on (stamped or deliberately skipped). It anchors the next tick, so a
-                  tick is never acted on twice.
+                  stamped a run for, or consumed by skipping under ConcurrencyPolicy. It
+                  anchors the next tick, so a tick is never acted on twice. A tick dropped
+                  for being too far in the past does not advance it; those are reported as
+                  MissedSchedule events.
                 format: date-time
                 type: string
               lastSuccessfulTime:

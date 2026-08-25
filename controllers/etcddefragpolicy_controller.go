@@ -120,10 +120,27 @@ func (r *EtcdDefragPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// StartingDeadlineSeconds bounds how late a tick may still start, so a tick
 	// older than the deadline is skipped anyway: never walk further back than the
 	// deadline window. This both enforces the deadline and keeps the walk short.
+	// With no deadline the floor is one schedule period, so a policy that fell
+	// arbitrarily far behind resumes at its most recent tick instead of walking
+	// every slot since it was created.
+	anchor := earliest
+	cutoff := now.Add(-lookbackFloor(sched, now))
 	if d := pol.Spec.StartingDeadlineSeconds; d != nil {
-		if cutoff := now.Add(-time.Duration(*d) * time.Second); cutoff.After(earliest) {
-			earliest = cutoff
+		cutoff = now.Add(-time.Duration(*d) * time.Second)
+	}
+	if cutoff.After(earliest) {
+		earliest = cutoff
+	}
+	// A tick the cutoff dropped is a tick deliberately not started. Say so: the
+	// alternative is a policy reporting Scheduled with no trace of the skip.
+	if dropped := sched.Next(anchor); earliest.After(anchor) && dropped.Before(earliest) {
+		why := "further behind than one schedule period"
+		if pol.Spec.StartingDeadlineSeconds != nil {
+			why = fmt.Sprintf("past the %ds starting deadline", *pol.Spec.StartingDeadlineSeconds)
 		}
+		r.event(pol, corev1.EventTypeWarning, "MissedSchedule",
+			fmt.Sprintf("skipped scheduled time %s: %s late, %s",
+				tickString(dropped), now.Sub(dropped).Truncate(time.Second), why))
 	}
 	due, next, err := nextSchedule(sched, earliest, now, defragPolicyMaxCatchup)
 	if err != nil {
@@ -287,6 +304,23 @@ func nextSchedule(sched cron.Schedule, earliest, now time.Time, maxCatchup int) 
 		last = t
 	}
 	return &last, t, nil
+}
+
+// lookbackFloor bounds how far back nextSchedule walks when no starting
+// deadline is set. Sampling consecutive intervals covers irregular schedules
+// ("0 9,17 * * *"), and doubling the widest leaves margin for a tick that is
+// merely late rather than abandoned.
+func lookbackFloor(sched cron.Schedule, now time.Time) time.Duration {
+	t := sched.Next(now)
+	var widest time.Duration
+	for i := 0; i < 4; i++ {
+		n := sched.Next(t)
+		if d := n.Sub(t); d > widest {
+			widest = d
+		}
+		t = n
+	}
+	return 2 * widest
 }
 
 // requeueFor is the delay until next, floored so a just-passed boundary still

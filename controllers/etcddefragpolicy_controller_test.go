@@ -13,6 +13,7 @@ package controllers
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,19 +284,69 @@ func TestDefragPolicy_MissedDeadline(t *testing.T) {
 	}
 }
 
-// A backlog longer than the catch-up window, with no deadline to bound it,
-// parks the policy on TooManyMissedTicks instead of fabricating a run.
-func TestDefragPolicy_TooManyMissedTicks(t *testing.T) {
+// A policy arbitrarily far behind resumes at its most recent tick rather than
+// parking: with no deadline the lookback floor bounds the walk, so one run is
+// stamped for the latest tick and the skipped backlog is reported as an event.
+// Parking instead would never recover, since nothing advances the anchor.
+func TestDefragPolicy_FarBehindResumes(t *testing.T) {
 	pol := defragPolicy("p", "* * * * *") // every minute: 1000h backlog >> maxCatchup
-	r, c := policyReconciler(t, epoch.Add(1000*time.Hour), pol)
+	rec := record.NewFakeRecorder(20)
+	c, s := newTestClient(t, pol)
+	now := epoch.Add(1000 * time.Hour)
+	r := &EtcdDefragPolicyReconciler{Client: c, Scheme: s, Recorder: rec, now: func() time.Time { return now }}
+
+	reconcilePolicy(t, r, "p")
+	runs := listPolicyRuns(t, c, "p")
+	if len(runs) != 1 {
+		t.Fatalf("stamped %d runs on a large backlog, want 1 (the most recent tick)", len(runs))
+	}
+	got := mustGet(t, c, "p", "ns", &lll.EtcdDefragPolicy{})
+	if cond := findPolicyCond(got); cond == nil || cond.Reason != "Scheduled" {
+		t.Errorf("condition = %+v, want Scheduled (the policy must not park)", cond)
+	}
+	if got.Status.LastScheduleTime == nil || !got.Status.LastScheduleTime.Time.Equal(now) {
+		t.Errorf("lastScheduleTime = %v, want the latest tick %s", got.Status.LastScheduleTime, now)
+	}
+	if !drainFor(rec, "MissedSchedule") {
+		t.Error("skipping a backlog should emit a MissedSchedule warning, not pass silently")
+	}
+
+	// The anchor advanced, so a second pass is a no-op rather than a repeat.
+	reconcilePolicy(t, r, "p")
+	if runs := listPolicyRuns(t, c, "p"); len(runs) != 1 {
+		t.Errorf("second pass stamped again: %d runs, want 1", len(runs))
+	}
+}
+
+// A tick dropped by StartingDeadlineSeconds is reported, not silently swallowed:
+// otherwise the policy reads Scheduled with no trace of the run that never was.
+func TestDefragPolicy_MissedDeadlineIsReported(t *testing.T) {
+	deadline := int64(60)
+	pol := defragPolicy("p", "0 * * * *", func(p *lll.EtcdDefragPolicy) { p.Spec.StartingDeadlineSeconds = &deadline })
+	rec := record.NewFakeRecorder(20)
+	c, s := newTestClient(t, pol)
+	r := &EtcdDefragPolicyReconciler{Client: c, Scheme: s, Recorder: rec, now: func() time.Time { return epoch.Add(90 * time.Minute) }}
 
 	reconcilePolicy(t, r, "p")
 	if runs := listPolicyRuns(t, c, "p"); len(runs) != 0 {
-		t.Fatalf("stamped a run on a too-large backlog: %d runs", len(runs))
+		t.Fatalf("stamped a run past the starting deadline: %d runs", len(runs))
 	}
-	got := mustGet(t, c, "p", "ns", &lll.EtcdDefragPolicy{})
-	if cond := findPolicyCond(got); cond == nil || cond.Reason != "TooManyMissedTicks" {
-		t.Errorf("condition = %+v, want TooManyMissedTicks", cond)
+	if !drainFor(rec, "MissedSchedule") {
+		t.Error("a deadline-skipped tick should emit a MissedSchedule warning")
+	}
+}
+
+// drainFor reports whether any buffered event mentions reason.
+func drainFor(rec *record.FakeRecorder, reason string) bool {
+	for {
+		select {
+		case e := <-rec.Events:
+			if strings.Contains(e, reason) {
+				return true
+			}
+		default:
+			return false
+		}
 	}
 }
 
