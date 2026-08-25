@@ -82,7 +82,12 @@ type EtcdDefragPolicySpec struct {
 	// If the operator was down (or the tick forbidden) and more than this many
 	// seconds have passed since the scheduled time, that tick is skipped rather
 	// than started late. Absent means no deadline.
+	//
+	// Capped at ten years: the value is multiplied out to a time.Duration, which
+	// overflows past ~292 years and wraps to a negative window that silently
+	// suppresses every tick. Anything near the cap already means "no deadline".
 	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=315360000
 	// +optional
 	StartingDeadlineSeconds *int64 `json:"startingDeadlineSeconds,omitempty"`
 
@@ -132,6 +137,12 @@ type EtcdDefragPolicyStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// The name goes into a label value on every stamped EtcdDefrag, and label
+// values cap at 63 characters — a longer name makes the controller's own
+// label selector unparseable, so it fails before it can report anything. 52
+// leaves room for the "-<tick>" suffix on the stamped run, and matches the
+// cap CronJob applies to its own names for the same reason.
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 52",message="metadata.name must be 52 characters or fewer: it becomes a label value on each stamped EtcdDefrag"
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.spec.clusterRef.name`
 // +kubebuilder:printcolumn:name="Schedule",type=string,JSONPath=`.spec.schedule.cron`
 // +kubebuilder:printcolumn:name="Timezone",type=string,JSONPath=`.spec.schedule.timezone`
